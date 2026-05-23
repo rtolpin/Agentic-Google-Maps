@@ -211,6 +211,7 @@ export function VenueMap({
   const [selectedPlaceDetails, setSelectedPlaceDetails] = useState<GooglePlaceDetails | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
+  const [detectedCity, setDetectedCity] = useState<string>(""); // from reverse geocoding
 
   const { state, search, fetchPlaceDetails, selectVenue, cancel } = useVenueSearch(userId);
 
@@ -259,6 +260,54 @@ export function VenueMap({
     });
 
     infoWindowRef.current = new google.maps.InfoWindow();
+
+    // Show user's current location as a blue pulsing dot; reverse geocode for city
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+
+          // Blue pulsing dot marker
+          const dotEl = document.createElement("div");
+          dotEl.style.cssText = `
+            width: 18px; height: 18px; border-radius: 50%;
+            background: #3B82F6; border: 3px solid #fff;
+            box-shadow: 0 0 0 0 rgba(59,130,246,0.6);
+            animation: locationPulse 2s ease-out infinite;
+          `;
+          new google.maps.marker.AdvancedMarkerElement({
+            map: mapInstanceRef.current!,
+            position: userPos,
+            content: dotEl,
+            title: "Your location",
+            zIndex: 9999,
+          });
+
+          // Center map on user if no markers yet
+          if (!mapInstanceRef.current?.getBounds()?.contains(userPos)) {
+            mapInstanceRef.current?.setCenter(userPos);
+            mapInstanceRef.current?.setZoom(13);
+          }
+
+          // Reverse geocode to extract city name for auto-appending to searches
+          const geocoder = new google.maps.Geocoder();
+          geocoder.geocode({ location: userPos }, (results, status) => {
+            if (status === "OK" && results && results.length > 0) {
+              const locality = results[0].address_components.find((c) =>
+                c.types.includes("locality"),
+              );
+              const area = results[0].address_components.find((c) =>
+                c.types.includes("administrative_area_level_1"),
+              );
+              const city = locality?.long_name || area?.long_name || "";
+              if (city) setDetectedCity(city);
+            }
+          });
+        },
+        () => { /* geolocation denied or unavailable — silently skip */ },
+        { enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 },
+      );
+    }
 
     mapInstanceRef.current.addListener("click", () => {
       infoWindowRef.current?.close();
@@ -398,23 +447,28 @@ export function VenueMap({
 
   // ── Handlers ───────────────────────────────────────────────────────────
 
-  const handleSearch = useCallback(async (q: string) => {
-    if (!q.trim()) return;
+  const handleSearch = useCallback(async (rawQ: string) => {
+    const q = rawQ.trim();
+    if (!q) return;
+
     const span = traceSearch({ query: q, userId });
-    rumAction("search_submitted", { query: q, category: activeCategory });
+    const mapSpan = traceMapInteraction({ action: "ai_query" });
+    rumAction("search_submitted", { query: q });
     setQuery(q);
 
-    // Classify the query and update the active category
     const detected = classifyQueryCategory(q);
     if (detected !== "all") setActiveCategory(detected);
 
-    traceMapInteraction({ action: "ai_query" }).finish();
-    await search(q);
-    span.finish();
+    try {
+      // Pass detectedCity separately — backend applies it only when LLM can't extract a city
+      await search(q, detectedCity || undefined);
+    } finally {
+      mapSpan.finish();
+      span.finish();
+    }
 
-    // Generate AI follow-up suggestions based on the query
     setAiSuggestions(generateFollowUps(q, detected));
-  }, [search, userId, activeCategory]);
+  }, [search, userId, detectedCity]);
 
   const handleCategorySwitch = useCallback((cat: PlaceCategory) => {
     setActiveCategory(cat);
@@ -490,6 +544,15 @@ export function VenueMap({
         @keyframes chipIn {
           from { opacity: 0; transform: scale(0.78) translateY(10px); }
           to   { opacity: 1; transform: scale(1)    translateY(0);    }
+        }
+        @keyframes locationPulse {
+          0%   { box-shadow: 0 0 0 0 rgba(59,130,246,0.6); }
+          70%  { box-shadow: 0 0 0 14px rgba(59,130,246,0); }
+          100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); }
+        }
+        @keyframes gridScroll {
+          from { background-position: 0 0; }
+          to   { background-position: 48px 48px; }
         }
       `}</style>
 
@@ -916,7 +979,7 @@ export function VenueMap({
         return chips.length === 0 ? null : (
           <div style={{
             position: "absolute",
-            top: 170, // sits flush below the header (logo 46px + search 52px + pills 44px + gaps)
+            top: 188, // header: 14px padding + 36px logo + 12px gap + 50px search + 12px gap + 38px pills + 14px padding + 2px border
             left: showLeftPanel ? leftPanelW + 16 : 16,
             right: 16,
             zIndex: 10,

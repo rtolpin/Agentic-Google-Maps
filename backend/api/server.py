@@ -77,7 +77,7 @@ async def search_stream(req: SearchRequest) -> StreamingResponse:
 
     async def event_generator() -> AsyncIterator[str]:
         try:
-            async for result in orchestrate(req.query, user_id):
+            async for result in orchestrate(req.query, user_id, user_city=req.user_city):
                 yield f"data: {json.dumps(result, default=str)}\n\n"
         except Exception as exc:
             yield f"data: {json.dumps({'event': 'error', 'data': str(exc)})}\n\n"

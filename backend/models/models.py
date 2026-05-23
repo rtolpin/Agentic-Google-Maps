@@ -369,6 +369,7 @@ class FeedbackSignal(BaseModel):
 class SearchRequest(BaseModel):
     query: str = Field(..., min_length=3, max_length=500)
     user_id: Optional[str] = None
+    user_city: Optional[str] = None  # browser-detected city; used as fallback when LLM can't extract one
 
 
 class CityBenchmark(BaseModel):

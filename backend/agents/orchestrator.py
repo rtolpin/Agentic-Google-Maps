@@ -43,7 +43,7 @@ You are an intent parser for a venue discovery system.
 Extract structured intent from the user's natural language query.
 Respond ONLY with valid JSON. No preamble, no markdown fences.
 
-JSON schema (use null for unknown fields):
+JSON schema (use null for unknown fields except city):
 {
   "occasion": string,
   "group_size": int,
@@ -57,6 +57,11 @@ JSON schema (use null for unknown fields):
   "other_signals": [string]
 }
 
+IMPORTANT: city must NEVER be null or "Unknown". If the query says "in the city", "near me",
+or contains a city name anywhere (including appended at the end like "in New York City"), extract it.
+If the query mentions a known city or major metro in any form (NYC, LA, SF, Chicago, etc.), normalize it
+to the full name. If truly no city can be inferred, default to "New York City".
+
 Examples:
 - "birthday dinner for 8 quiet Italian NYC" →
   {"occasion":"birthday_dinner","group_size":8,"cuisine":"italian",
@@ -65,7 +70,11 @@ Examples:
 - "business lunch Tokyo private room 4 people" →
   {"occasion":"business_lunch","group_size":4,"cuisine":null,
    "noise_preference":"quiet","needs_private_room":true,"city":"Tokyo",
-   "date":null,"price_band":"upscale","dietary_restrictions":[],"other_signals":[]}\
+   "date":null,"price_band":"upscale","dietary_restrictions":[],"other_signals":[]}
+- "birthday dinner for 8 in San Francisco" →
+  {"occasion":"birthday_dinner","group_size":8,"cuisine":null,
+   "noise_preference":null,"needs_private_room":false,"city":"San Francisco",
+   "date":null,"price_band":null,"dietary_restrictions":[],"other_signals":[]}\
 """
 
 _SYNTHESIS_PROMPT = """\
@@ -176,7 +185,7 @@ async def synthesize_venue_intelligence(
 
 # ─── Orchestration ────────────────────────────────────────────────────────────
 
-async def orchestrate(query: str, user_id: str) -> AsyncIterator[dict]:
+async def orchestrate(query: str, user_id: str, *, user_city: str | None = None) -> AsyncIterator[dict]:
     """
     Main orchestration loop.
     Yields SSE-compatible dicts as results arrive.
@@ -186,6 +195,8 @@ async def orchestrate(query: str, user_id: str) -> AsyncIterator[dict]:
         # Step 1 — intent parsing
         yield {"event": "status", "data": "Parsing your request..."}
         intent = await parse_intent(query)
+        if intent.city == "Unknown" and user_city:
+            intent = intent.model_copy(update={"city": user_city.strip()})
         yield {"event": "intent", "data": intent.model_dump()}
 
         # Step 2 — warm cache check (non-blocking thread)
@@ -226,6 +237,10 @@ async def orchestrate(query: str, user_id: str) -> AsyncIterator[dict]:
             scored_venues: list[ScoredVenue] = await asyncio.to_thread(_ch.score_venues, intent)
             span.set_tag("db.rows_returned", len(scored_venues))
 
+        # Fallback: ClickHouse empty (cold start / unknown city) — score enriched in-memory
+        if not scored_venues and enriched_venues:
+            scored_venues = _score_enriched_fallback(enriched_venues, intent)
+
         root.set_tag("search.venues_scored", len(scored_venues))
 
         # Step 6 — synthesize intelligence for top 3 (bounded by semaphore)
@@ -250,6 +265,63 @@ async def orchestrate(query: str, user_id: str) -> AsyncIterator[dict]:
         asyncio.create_task(PublisherAgent().publish_guide(intent, scored_venues[:5]))
 
         yield {"event": "done", "data": {"total_venues": len(scored_venues)}}
+
+
+def _score_enriched_fallback(enriched: list[dict], intent: VenueIntent) -> list[ScoredVenue]:
+    """Score enriched venue dicts in-memory when ClickHouse returns nothing."""
+    price_min, price_max = intent.price_range
+    noise_pref = intent.noise_sql_value
+    occasion = intent.occasion or ""
+    results: list[ScoredVenue] = []
+    for ev in enriched:
+        name = ev.get("name") or ""
+        if not name:
+            continue
+        city = ev.get("city") or intent.city
+        score = 0.0
+        if intent.needs_private_room:
+            score += 30 if ev.get("has_private_room") else 0
+        max_group = ev.get("max_group_size") or 0
+        if max_group >= intent.group_size:
+            score += 25
+        elif max_group > 0:
+            score += max(0, float(max_group) * 2)
+        noise_raw = ev.get("noise_level") or "moderate"
+        noise = noise_raw.value if hasattr(noise_raw, "value") else str(noise_raw)
+        if noise_pref == "quiet":
+            score += {"very_quiet": 25, "quiet": 20, "moderate": 8}.get(noise, 0)
+        elif noise_pref == "lively":
+            score += {"loud": 25, "very_loud": 20, "moderate": 10}.get(noise, 5)
+        else:
+            score += {"moderate": 20, "quiet": 15, "loud": 15}.get(noise, 10)
+        birthday_score = min(100, (ev.get("birthday_mentions") or 0) * 10 + (50 if ev.get("birthday_friendly") else 0))
+        if occasion in ("birthday_dinner", "birthday_party"):
+            score += birthday_score * 0.35
+        else:
+            score += (ev.get("special_occasion_score") or 0) * 0.20
+        price = ev.get("price_per_head_usd") or 0
+        if price_min <= price <= price_max:
+            score += 10
+        venue_id = (name + city).lower().replace(" ", "_").replace("'", "")
+        results.append(ScoredVenue(
+            venue_id=venue_id,
+            name=name,
+            city=city,
+            neighborhood=ev.get("neighborhood") or "",
+            cuisine=ev.get("cuisine") or "",
+            place_id=ev.get("place_id") or "",
+            address=ev.get("address") or "",
+            latitude=ev.get("latitude"),
+            longitude=ev.get("longitude"),
+            price_per_head=price,
+            has_private_room=bool(ev.get("has_private_room")),
+            max_group_size=max_group,
+            noise_level=noise,
+            birthday_score=birthday_score,
+            key_quotes=ev.get("key_quotes") or [],
+            match_score=round(score, 1),
+        ))
+    return sorted(results, key=lambda v: v.match_score, reverse=True)
 
 
 def _apply_personalization(

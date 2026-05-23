@@ -147,17 +147,35 @@ class ScraperAgent:
         cuisine = intent.cuisine or "restaurant"
         city = intent.city
         occasion = intent.occasion
+        city_unknown = city == "Unknown"
+
+        # When city is unspecified, use location hints from other_signals or "near me"
+        location = city if not city_unknown else (
+            next((s for s in (intent.other_signals or [])
+                  if any(kw in s.lower() for kw in ["city", "near", "in ", "at ", "nyc", "sf", "la", "chicago", "york", "angeles", "francisco"])),
+                 "near me")
+        )
 
         # ── Phase 1a: Nimble google_maps engine — structured local results + Place IDs
-        maps_query = f"{cuisine} restaurant {city} {occasion}"
+        if city_unknown:
+            maps_query = f"best {cuisine} {occasion} restaurant {location}"
+        else:
+            maps_query = f"{cuisine} restaurant {city} {occasion}"
         maps_task = asyncio.create_task(self._nimble_maps_search(maps_query))
 
         # ── Phase 1b: Nimble google engine — organic SERP for review snippets
-        serp_queries = [
-            f"best {cuisine} restaurants {city} private room group dining",
-            f"{cuisine} restaurant {city} {occasion} birthday reviews",
-            f"site:reddit.com {cuisine} restaurant recommendation {city} {occasion}",
-        ]
+        if city_unknown:
+            serp_queries = [
+                f"best {cuisine} restaurant {occasion} group dining private room",
+                f"top {cuisine} restaurant {occasion} special occasion {location}",
+                f"site:reddit.com {cuisine} restaurant recommendation {occasion} group",
+            ]
+        else:
+            serp_queries = [
+                f"best {cuisine} restaurants {city} private room group dining",
+                f"{cuisine} restaurant {city} {occasion} birthday reviews",
+                f"site:reddit.com {cuisine} restaurant recommendation {city} {occasion}",
+            ]
         serp_tasks = [asyncio.create_task(self._nimble_serp_search(q)) for q in serp_queries]
 
         # Run both phases in parallel
