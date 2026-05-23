@@ -1768,12 +1768,17 @@ function VenueDetailSidebar({ venue, placeDetails, onClose }: VenueDetailSidebar
   const panelStyle: React.CSSProperties = isFullScreen
     ? {
         position: "fixed",
-        inset: 0,
-        width: "100%",
-        zIndex: 100,
-        background: "linear-gradient(180deg, #0f172a 0%, #1a2236 100%)",
-        boxShadow: "none",
+        top: "50%",
+        left: "50%",
+        transform: "translate(-50%, -50%)",
+        width: "min(900px, 92vw)",
+        maxHeight: "88vh",
+        zIndex: 101,
+        background: "linear-gradient(160deg, #0f172a 0%, #1a2236 60%, #0f172a 100%)",
+        boxShadow: "0 24px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(99,179,237,0.15)",
+        borderRadius: 20,
         display: "flex", flexDirection: "column",
+        border: "1px solid rgba(255,255,255,0.1)",
       }
     : {
         position: "absolute",
@@ -1789,6 +1794,18 @@ function VenueDetailSidebar({ venue, placeDetails, onClose }: VenueDetailSidebar
       };
 
   return (
+    <>
+    {/* Backdrop when fullscreen */}
+    {isFullScreen && (
+      <div
+        onClick={() => setIsFullScreen(false)}
+        style={{
+          position: "fixed", inset: 0, zIndex: 100,
+          background: "rgba(0,0,0,0.65)",
+          backdropFilter: "blur(4px)",
+        }}
+      />
+    )}
     <div style={panelStyle}>
       {/* Resize handle — left edge (only in non-fullscreen mode) */}
       {!isFullScreen && (
@@ -1891,104 +1908,181 @@ function VenueDetailSidebar({ venue, placeDetails, onClose }: VenueDetailSidebar
       </div>
 
       {/* Scrollable body */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "16px 18px 28px" }}>
-        {/* Why card — falls back to key quotes when intelligence is unavailable */}
-        {(intel?.why_card || venue.key_quotes.length > 0) && (
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>
-              Why this spot
-            </div>
-            <p style={{ margin: 0, fontSize: 13, color: "#CBD5E1", lineHeight: 1.65 }}>
-              {intel?.why_card || (
-                `${venue.name} is a ${venue.cuisine || "venue"} in ${venue.neighborhood || venue.city}. ` +
-                venue.key_quotes.slice(0, 2).join(" ")
+      <div style={{ flex: 1, overflowY: "auto", padding: isFullScreen ? "24px 32px 36px" : "16px 18px 28px" }}>
+        {isFullScreen ? (
+          /* ── Two-column layout in fullscreen ── */
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 28, alignItems: "start" }}>
+            {/* Left column: why + scenario + quotes */}
+            <div>
+              {(intel?.why_card || venue.key_quotes.length > 0) && (
+                <div style={{ marginBottom: 22 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+                    Why this spot
+                  </div>
+                  <p style={{ margin: 0, fontSize: 15, color: "#E2E8F0", lineHeight: 1.75 }}>
+                    {intel?.why_card || (
+                      `${venue.name} is a ${venue.cuisine || "venue"} in ${venue.neighborhood || venue.city}. ` +
+                      venue.key_quotes.slice(0, 2).join(" ")
+                    )}
+                  </p>
+                </div>
               )}
-            </p>
-          </div>
-        )}
-
-        {/* Scenario */}
-        {intel?.scenario && (
-          <div style={{
-            marginBottom: 16, background: "rgba(255,255,255,0.04)",
-            borderRadius: 10, padding: "10px 14px",
-            border: "1px solid rgba(255,255,255,0.07)",
-          }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 5 }}>
-              Your evening
+              {intel?.scenario && (
+                <div style={{
+                  marginBottom: 22, background: "rgba(255,255,255,0.04)",
+                  borderRadius: 12, padding: "14px 18px",
+                  border: "1px solid rgba(255,255,255,0.08)",
+                }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+                    Your evening
+                  </div>
+                  <p style={{ margin: 0, fontSize: 14, color: "#94A3B8", lineHeight: 1.75, fontStyle: "italic" }}>{intel.scenario}</p>
+                </div>
+              )}
+              {venue.key_quotes.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
+                    What people say
+                  </div>
+                  {venue.key_quotes.slice(0, 4).map((q, i) => (
+                    <div key={i} style={{
+                      fontSize: 13, color: "#94A3B8", marginBottom: 10,
+                      paddingLeft: 14, borderLeft: "2px solid rgba(99,179,237,0.35)",
+                      lineHeight: 1.6,
+                    }}>
+                      "{q}"
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-            <p style={{ margin: 0, fontSize: 12, color: "#94A3B8", lineHeight: 1.6, fontStyle: "italic" }}>{intel.scenario}</p>
-          </div>
-        )}
-
-        {/* Sensitivity bars */}
-        {intel?.sensitivity_bars && (
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
-              Dimensions
+            {/* Right column: sensitivity bars + live signal + contact */}
+            <div>
+              {intel?.sensitivity_bars && (
+                <div style={{ marginBottom: 22 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12 }}>
+                    Match dimensions
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {Object.entries(intel.sensitivity_bars).map(([dim, score]) => (
+                      <SensitivityBar key={dim} label={dim.replace(/_/g, " ")} value={score} large />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {intel?.live_signal && (
+                <div style={{
+                  marginBottom: 22, padding: "12px 16px",
+                  background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.25)",
+                  borderRadius: 10, fontSize: 14, color: "#FCD34D", lineHeight: 1.5,
+                }}>
+                  ⚡ {intel.live_signal}
+                </div>
+              )}
+              {(placeDetails?.website_uri || placeDetails?.phone_number) && (
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                  {placeDetails.website_uri && (
+                    <a href={placeDetails.website_uri} target="_blank" rel="noopener noreferrer"
+                      style={{ fontSize: 14, color: "#60A5FA", textDecoration: "none", display: "flex", alignItems: "center", gap: 5 }}>
+                      🌐 Website
+                    </a>
+                  )}
+                  {placeDetails.phone_number && (
+                    <a href={`tel:${placeDetails.phone_number}`}
+                      style={{ fontSize: 14, color: "#60A5FA", textDecoration: "none", display: "flex", alignItems: "center", gap: 5 }}>
+                      📞 {placeDetails.phone_number}
+                    </a>
+                  )}
+                </div>
+              )}
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 16px" }}>
-              {Object.entries(intel.sensitivity_bars).map(([dim, score]) => (
-                <SensitivityBar key={dim} label={dim.replace("_", " ")} value={score} />
-              ))}
-            </div>
           </div>
-        )}
-
-        {/* Live signal */}
-        {intel?.live_signal && (
-          <div style={{
-            marginBottom: 16, padding: "8px 12px",
-            background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.2)",
-            borderRadius: 8, fontSize: 12, color: "#FCD34D",
-          }}>
-            ⚡ {intel.live_signal}
-          </div>
-        )}
-
-        {/* Key quotes */}
-        {venue.key_quotes.length > 0 && (
-          <div style={{ marginBottom: 16 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
-              What people say
-            </div>
-            {venue.key_quotes.slice(0, 3).map((q, i) => (
-              <div key={i} style={{
-                fontSize: 12, color: "#94A3B8", marginBottom: 6,
-                paddingLeft: 10, borderLeft: "2px solid rgba(99,179,237,0.3)",
-                lineHeight: 1.5,
-              }}>
-                "{q}"
+        ) : (
+          /* ── Single-column layout in side panel ── */
+          <>
+            {(intel?.why_card || venue.key_quotes.length > 0) && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>
+                  Why this spot
+                </div>
+                <p style={{ margin: 0, fontSize: 13, color: "#CBD5E1", lineHeight: 1.65 }}>
+                  {intel?.why_card || (
+                    `${venue.name} is a ${venue.cuisine || "venue"} in ${venue.neighborhood || venue.city}. ` +
+                    venue.key_quotes.slice(0, 2).join(" ")
+                  )}
+                </p>
               </div>
-            ))}
-          </div>
-        )}
-
-        {/* Contact links */}
-        {(placeDetails?.website_uri || placeDetails?.phone_number) && (
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
-            {placeDetails.website_uri && (
-              <a href={placeDetails.website_uri} target="_blank" rel="noopener noreferrer"
-                style={{
-                  fontSize: 12, color: "#60A5FA", textDecoration: "none",
-                  display: "flex", alignItems: "center", gap: 4,
-                }}>
-                🌐 Website
-              </a>
             )}
-            {placeDetails.phone_number && (
-              <a href={`tel:${placeDetails.phone_number}`}
-                style={{
-                  fontSize: 12, color: "#60A5FA", textDecoration: "none",
-                  display: "flex", alignItems: "center", gap: 4,
-                }}>
-                📞 {placeDetails.phone_number}
-              </a>
+            {intel?.scenario && (
+              <div style={{
+                marginBottom: 16, background: "rgba(255,255,255,0.04)",
+                borderRadius: 10, padding: "10px 14px",
+                border: "1px solid rgba(255,255,255,0.07)",
+              }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 5 }}>
+                  Your evening
+                </div>
+                <p style={{ margin: 0, fontSize: 12, color: "#94A3B8", lineHeight: 1.6, fontStyle: "italic" }}>{intel.scenario}</p>
+              </div>
             )}
-          </div>
+            {intel?.sensitivity_bars && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+                  Dimensions
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 16px" }}>
+                  {Object.entries(intel.sensitivity_bars).map(([dim, score]) => (
+                    <SensitivityBar key={dim} label={dim.replace(/_/g, " ")} value={score} />
+                  ))}
+                </div>
+              </div>
+            )}
+            {intel?.live_signal && (
+              <div style={{
+                marginBottom: 16, padding: "8px 12px",
+                background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.2)",
+                borderRadius: 8, fontSize: 12, color: "#FCD34D",
+              }}>
+                ⚡ {intel.live_signal}
+              </div>
+            )}
+            {venue.key_quotes.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+                  What people say
+                </div>
+                {venue.key_quotes.slice(0, 3).map((q, i) => (
+                  <div key={i} style={{
+                    fontSize: 12, color: "#94A3B8", marginBottom: 6,
+                    paddingLeft: 10, borderLeft: "2px solid rgba(99,179,237,0.3)",
+                    lineHeight: 1.5,
+                  }}>
+                    "{q}"
+                  </div>
+                ))}
+              </div>
+            )}
+            {(placeDetails?.website_uri || placeDetails?.phone_number) && (
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
+                {placeDetails.website_uri && (
+                  <a href={placeDetails.website_uri} target="_blank" rel="noopener noreferrer"
+                    style={{ fontSize: 12, color: "#60A5FA", textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
+                    🌐 Website
+                  </a>
+                )}
+                {placeDetails.phone_number && (
+                  <a href={`tel:${placeDetails.phone_number}`}
+                    style={{ fontSize: 12, color: "#60A5FA", textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
+                    📞 {placeDetails.phone_number}
+                  </a>
+                )}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
+    </>
   );
 }
 
@@ -2023,20 +2117,20 @@ function DarkPill({ label, color, large }: { label: string; color: string; large
   );
 }
 
-function SensitivityBar({ label, value }: { label: string; value: number }) {
+function SensitivityBar({ label, value, large }: { label: string; value: number; large?: boolean }) {
   const clamped = Math.max(0, Math.min(100, value));
-  const hue = Math.round((clamped / 100) * 120); // red=0, green=120
+  const hue = Math.round((clamped / 100) * 120);
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
-        <span style={{ fontSize: 11, color: "#6B7280", textTransform: "capitalize" }}>{label}</span>
-        <span style={{ fontSize: 11, fontWeight: 600, color: "#94A3B8" }}>{clamped}%</span>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: large ? 5 : 2 }}>
+        <span style={{ fontSize: large ? 13 : 11, color: large ? "#94A3B8" : "#6B7280", textTransform: "capitalize", fontWeight: large ? 500 : 400 }}>{label}</span>
+        <span style={{ fontSize: large ? 13 : 11, fontWeight: 600, color: large ? "#E2E8F0" : "#94A3B8" }}>{clamped}%</span>
       </div>
-      <div style={{ height: 4, background: "rgba(255,255,255,0.08)", borderRadius: 2, overflow: "hidden" }}>
+      <div style={{ height: large ? 7 : 4, background: "rgba(255,255,255,0.08)", borderRadius: 4, overflow: "hidden" }}>
         <div style={{
           height: "100%", width: `${clamped}%`,
           background: `hsl(${hue},70%,45%)`,
-          borderRadius: 2,
+          borderRadius: 4,
           transition: "width 0.4s ease",
         }} />
       </div>
