@@ -18,6 +18,7 @@
 
 "use client";
 
+import { Loader } from "@googlemaps/js-api-loader";
 import {
   useCallback,
   useEffect,
@@ -48,14 +49,20 @@ import {
 
 declare global {
   interface Window {
-    google: typeof google;
     googleMapsLoaded: boolean;
   }
 }
 
-// Shared promise so concurrent calls (React StrictMode double-invoke) don't
-// inject the script twice.
-let _mapsLoadPromise: Promise<void> | null = null;
+// The Loader implements Google's Bootstrap Loader pattern and deduplicates
+// concurrent calls automatically — no manual script injection needed.
+let _loader: Loader | null = null;
+
+function getLoader(apiKey: string): Loader {
+  if (!_loader) {
+    _loader = new Loader({ apiKey, version: "weekly" });
+  }
+  return _loader;
+}
 
 async function loadGoogleMaps(
   apiKey: string,
@@ -63,36 +70,13 @@ async function loadGoogleMaps(
   onStep?: (step: number) => void,
 ): Promise<void> {
   if (window.googleMapsLoaded) return;
-
-  if (!_mapsLoadPromise) {
-    _mapsLoadPromise = (async () => {
-      onStep?.(1); // 12%
-
-      // Remove any previously injected script so we always get loading=async.
-      document.querySelector("script[data-gmaps]")?.remove();
-
-      await new Promise<void>((resolve, reject) => {
-        const script = document.createElement("script");
-        script.setAttribute("data-gmaps", "1");
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&loading=async`;
-        script.async = true;
-        script.defer = true;
-        script.onload = () => resolve();
-        script.onerror = reject;
-        document.head.appendChild(script);
-      });
-
-      // onload guarantees google.maps.importLibrary exists at this point.
-      onStep?.(2); // 45%
-      await google.maps.importLibrary("maps");
-      onStep?.(3); // 75%
-      await google.maps.importLibrary("marker");
-      onStep?.(4); // 95%
-      window.googleMapsLoaded = true;
-    })();
-  }
-
-  return _mapsLoadPromise;
+  onStep?.(1); // 12%
+  const loader = getLoader(apiKey);
+  await loader.importLibrary("maps");
+  onStep?.(3); // 75%
+  await loader.importLibrary("marker");
+  onStep?.(4); // 95%
+  window.googleMapsLoaded = true;
 }
 
 // ─── Spatial query categories ─────────────────────────────────────────────
