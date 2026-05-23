@@ -53,17 +53,24 @@ declare global {
   }
 }
 
-async function loadGoogleMaps(apiKey: string, mapId: string): Promise<void> {
+async function loadGoogleMaps(apiKey: string, _mapId: string): Promise<void> {
   if (window.googleMapsLoaded) return;
-  return new Promise((resolve, reject) => {
+  // Inject bootstrap script with loading=async, then wait for importLibrary
+  await new Promise<void>((resolve, reject) => {
+    if (document.querySelector('script[data-gmaps]')) { resolve(); return; }
     const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=maps,marker&v=beta&loading=async`;
+    script.setAttribute("data-gmaps", "1");
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&loading=async`;
     script.async = true;
     script.defer = true;
-    script.onload = () => { window.googleMapsLoaded = true; resolve(); };
+    script.onload = () => resolve();
     script.onerror = reject;
     document.head.appendChild(script);
   });
+  // importLibrary ensures the namespace is populated before we use it
+  await google.maps.importLibrary("maps");
+  await google.maps.importLibrary("marker");
+  window.googleMapsLoaded = true;
 }
 
 // ─── Spatial query categories ─────────────────────────────────────────────
