@@ -849,10 +849,12 @@ export function VenueMap({
                 <button
                   onClick={() => { setModalQuery(""); setShowAllMatches(true); }}
                   style={{
-                    padding: "4px 11px", borderRadius: 20, border: "1px solid rgba(99,179,237,0.35)",
-                    background: "linear-gradient(135deg, rgba(37,99,235,0.18), rgba(124,58,237,0.18))",
-                    color: "#93C5FD", fontSize: 11, fontWeight: 700, cursor: "pointer",
-                    letterSpacing: "0.02em",
+                    padding: "5px 13px", borderRadius: 20,
+                    border: "1px solid rgba(99,179,237,0.6)",
+                    background: "linear-gradient(135deg, #1D4ED8, #7C3AED)",
+                    color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                    letterSpacing: "0.04em",
+                    boxShadow: "0 0 10px rgba(124,58,237,0.45)",
                   }}
                 >
                   View All ↗
@@ -958,14 +960,15 @@ export function VenueMap({
                 <button
                   onClick={() => { setModalQuery(""); setShowAllMatches(true); }}
                   style={{
-                    width: "100%", padding: "10px", borderRadius: 12, marginTop: 2,
-                    border: "1.5px dashed rgba(99,179,237,0.3)",
-                    background: "rgba(59,130,246,0.06)",
-                    color: "#60A5FA", fontSize: 12, fontWeight: 700, cursor: "pointer",
-                    letterSpacing: "0.02em",
+                    width: "100%", padding: "11px", borderRadius: 12, marginTop: 4,
+                    border: "1.5px solid rgba(124,58,237,0.5)",
+                    background: "linear-gradient(135deg, rgba(29,78,216,0.22), rgba(124,58,237,0.22))",
+                    color: "#C4B5FD", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                    letterSpacing: "0.03em",
+                    boxShadow: "0 0 14px rgba(124,58,237,0.25), inset 0 0 12px rgba(99,102,241,0.08)",
                   }}
                 >
-                  + {state.venues.length - 5} more matches — View All
+                  + {state.venues.length - 5} more matches — View All ↗
                 </button>
               )}
             </div>

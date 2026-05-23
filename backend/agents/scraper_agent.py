@@ -115,6 +115,8 @@ def _build_queries(intent: VenueIntent) -> list[str]:
             (s for s in (intent.other_signals or []) if len(s) > 3),
             "near me",
         )
+    elif intent.neighborhood:
+        location = f"{intent.neighborhood} {city}"
     else:
         location = city
 

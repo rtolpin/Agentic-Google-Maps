@@ -51,6 +51,7 @@ JSON schema (use null for unknown fields except city):
   "noise_preference": "quiet" | "moderate" | "lively" | null,
   "needs_private_room": bool,
   "city": string,
+  "neighborhood": string | null,
   "date": string | null,
   "price_band": "budget" | "mid" | "upscale" | "luxury" | null,
   "dietary_restrictions": [string],
@@ -62,19 +63,28 @@ or contains a city name anywhere (including appended at the end like "in New Yor
 If the query mentions a known city or major metro in any form (NYC, LA, SF, Chicago, etc.), normalize it
 to the full name. If truly no city can be inferred, default to "New York City".
 
+neighborhood: Extract sub-city areas like "Upper East Side", "SoHo", "Williamsburg", "Brooklyn",
+"DUMBO", "Mission District", "Lower East Side", "West Village", "Chelsea", "Midtown", "FiDi",
+"South of Market", "Capitol Hill", etc. These are distinct from city. Set to null if no
+sub-area is mentioned.
+
 Examples:
 - "birthday dinner for 8 quiet Italian NYC" →
   {"occasion":"birthday_dinner","group_size":8,"cuisine":"italian",
    "noise_preference":"quiet","needs_private_room":false,"city":"New York City",
-   "date":null,"price_band":null,"dietary_restrictions":[],"other_signals":[]}
+   "neighborhood":null,"date":null,"price_band":null,"dietary_restrictions":[],"other_signals":[]}
 - "business lunch Tokyo private room 4 people" →
   {"occasion":"business_lunch","group_size":4,"cuisine":null,
    "noise_preference":"quiet","needs_private_room":true,"city":"Tokyo",
-   "date":null,"price_band":"upscale","dietary_restrictions":[],"other_signals":[]}
-- "birthday dinner for 8 in San Francisco" →
-  {"occasion":"birthday_dinner","group_size":8,"cuisine":null,
-   "noise_preference":null,"needs_private_room":false,"city":"San Francisco",
-   "date":null,"price_band":null,"dietary_restrictions":[],"other_signals":[]}\
+   "neighborhood":null,"date":null,"price_band":"upscale","dietary_restrictions":[],"other_signals":[]}
+- "restaurants on the Upper East Side" →
+  {"occasion":"dining","group_size":2,"cuisine":null,
+   "noise_preference":null,"needs_private_room":false,"city":"New York City",
+   "neighborhood":"Upper East Side","date":null,"price_band":null,"dietary_restrictions":[],"other_signals":[]}
+- "furniture stores in Brooklyn" →
+  {"occasion":"shopping","group_size":1,"cuisine":null,
+   "noise_preference":null,"needs_private_room":false,"city":"New York City",
+   "neighborhood":"Brooklyn","date":null,"price_band":null,"dietary_restrictions":[],"other_signals":["furniture"]}\
 """
 
 _SYNTHESIS_PROMPT = """\
