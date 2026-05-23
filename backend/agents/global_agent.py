@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import asyncio
 
-from ..db.clickhouse import ClickHouseClient
-from ..models.models import VenueIntent
+from db.clickhouse import ClickHouseClient
+from models.models import VenueIntent
 
 _COMPARISON_CITIES = ["New York City", "Rome", "Tokyo", "Paris", "London"]
 

@@ -32,8 +32,8 @@ from typing import Any, Optional
 
 import httpx
 
-from ..tracing import http_span
-from ..models.models import GeocodeResult, GooglePlaceDetails, GooglePriceLevel, MapMarker, ScoredVenue
+from tracing import http_span
+from models.models import GeocodeResult, GooglePlaceDetails, GooglePriceLevel, MapMarker, ScoredVenue
 
 GOOGLE_MAPS_API_KEY = os.environ.get("GOOGLE_MAPS_API_KEY", "")
 _PLACES_BASE = "https://places.googleapis.com/v1"

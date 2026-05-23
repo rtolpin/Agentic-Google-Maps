@@ -23,10 +23,10 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
-from ..agents.orchestrator import orchestrate
-from ..db.clickhouse import ClickHouseClient
-from ..integrations.google_maps_client import GoogleMapsClient
-from ..models.models import (
+from agents.orchestrator import orchestrate
+from db.clickhouse import ClickHouseClient
+from integrations.google_maps_client import GoogleMapsClient
+from models.models import (
     CityBenchmark,
     FeedbackSignal,
     GooglePlaceDetails,

@@ -18,7 +18,7 @@ from datetime import date
 
 import anthropic
 
-from ..models.models import (
+from models.models import (
     GEOMetadata,
     GovernanceScore,
     PublishedGuide,
@@ -27,7 +27,7 @@ from ..models.models import (
     VenueCitation,
     VenueIntent,
 )
-from ..integrations.senso_client import (
+from integrations.senso_client import (
     SensoClient,
     build_citation_map,
     build_geo_metadata,

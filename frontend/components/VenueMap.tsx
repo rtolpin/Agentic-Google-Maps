@@ -258,9 +258,6 @@ export function VenueMap({
       mapTypeControl: false,
       streetViewControl: false,
       fullscreenControl: false,
-      styles: [
-        { featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] },
-      ],
     });
 
     infoWindowRef.current = new google.maps.InfoWindow();

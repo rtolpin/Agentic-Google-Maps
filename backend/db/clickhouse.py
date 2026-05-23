@@ -19,7 +19,7 @@ from typing import Any
 
 import clickhouse_connect
 
-from ..models.models import CityBenchmark, ScoredVenue, VenueIntent, VenueSignal
+from models.models import CityBenchmark, ScoredVenue, VenueIntent, VenueSignal
 
 # ─── Connection config ────────────────────────────────────────────────────────
 
@@ -28,6 +28,8 @@ _CH_PORT = int(os.environ.get("CLICKHOUSE_PORT", 8123))
 _CH_USER = os.environ.get("CLICKHOUSE_USER", "default")
 _CH_PASSWORD = os.environ.get("CLICKHOUSE_PASSWORD", "")
 _CH_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "rightspot")
+# ClickHouse Cloud uses port 8443 with TLS — auto-detect
+_CH_SECURE = _CH_PORT == 8443 or os.environ.get("CLICKHOUSE_SECURE", "").lower() == "true"
 
 # ─── DDL ──────────────────────────────────────────────────────────────────────
 
@@ -197,6 +199,7 @@ class ClickHouseClient:
             port=_CH_PORT,
             username=_CH_USER,
             password=_CH_PASSWORD,
+            secure=_CH_SECURE,
         )
         bootstrap.command(f"CREATE DATABASE IF NOT EXISTS {_CH_DATABASE}")
         bootstrap.close()
@@ -206,6 +209,7 @@ class ClickHouseClient:
             username=_CH_USER,
             password=_CH_PASSWORD,
             database=_CH_DATABASE,
+            secure=_CH_SECURE,
         )
 
     @property

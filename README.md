@@ -217,7 +217,7 @@ Create a **Map ID** at Google Maps Platform → Map Management (Vector type with
 **Key restrictions** (HTTP referrers):
 ```
 localhost:3000/*
-agent-google-map.vercel.app/*
+https://agentic-engineering-hack.vercel.app/*
 ```
 
 ---

@@ -13,14 +13,14 @@ from typing import AsyncIterator
 
 import anthropic
 
-from ..tracing import ai_span, db_span, search_span
+from tracing import ai_span, db_span, search_span
 from .scraper_agent import ScraperAgent
 from .validator_agent import ValidatorAgent
 from .global_agent import GlobalIntelligenceAgent
 from .publisher_agent import PublisherAgent
-from ..db.clickhouse import ClickHouseClient
-from ..db.redis_cache import RedisCache
-from ..models.models import (
+from db.clickhouse import ClickHouseClient
+from db.redis_cache import RedisCache
+from models.models import (
     ScoredVenue,
     UserPreferences,
     VenueIntelligence,

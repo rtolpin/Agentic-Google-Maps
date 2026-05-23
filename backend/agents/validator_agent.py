@@ -6,7 +6,7 @@ Returns a validation summary dict yielded as {"event": "validation", "data": ...
 """
 from __future__ import annotations
 
-from ..models.models import VenueIntent
+from models.models import VenueIntent
 
 
 class ValidatorAgent:

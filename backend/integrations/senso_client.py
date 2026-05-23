@@ -19,7 +19,7 @@ from typing import Any
 
 import httpx
 
-from ..models.models import (
+from models.models import (
     ContentGapReport,
     GEOMetadata,
     GapPriority,
