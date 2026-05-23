@@ -53,23 +53,30 @@ declare global {
   }
 }
 
-async function loadGoogleMaps(apiKey: string, _mapId: string): Promise<void> {
+async function loadGoogleMaps(
+  apiKey: string,
+  _mapId: string,
+  onStep?: (step: number) => void,
+): Promise<void> {
   if (window.googleMapsLoaded) return;
-  // Inject bootstrap script with loading=async, then wait for importLibrary
-  await new Promise<void>((resolve, reject) => {
-    if (document.querySelector('script[data-gmaps]')) { resolve(); return; }
-    const script = document.createElement("script");
-    script.setAttribute("data-gmaps", "1");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&loading=async`;
-    script.async = true;
-    script.defer = true;
-    script.onload = () => resolve();
-    script.onerror = reject;
-    document.head.appendChild(script);
-  });
-  // importLibrary ensures the namespace is populated before we use it
+  onStep?.(1); // 10% — injecting script
+  if (!document.querySelector('script[data-gmaps]')) {
+    await new Promise<void>((resolve, reject) => {
+      const script = document.createElement("script");
+      script.setAttribute("data-gmaps", "1");
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&loading=async`;
+      script.async = true;
+      script.defer = true;
+      script.onload = () => resolve();
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+  }
+  onStep?.(2); // 45% — script loaded, importing map lib
   await google.maps.importLibrary("maps");
+  onStep?.(3); // 75% — map lib ready, importing marker lib
   await google.maps.importLibrary("marker");
+  onStep?.(4); // 95% — all libs ready
   window.googleMapsLoaded = true;
 }
 
@@ -230,22 +237,22 @@ export function VenueMap({
 
   useEffect(() => {
     if (!config.apiKey) {
-      setLoadError("Google Maps API key is missing. Add NEXT_PUBLIC_GOOGLE_MAPS_KEY to frontend/.env.local and restart.");
+      setLoadError("Missing NEXT_PUBLIC_GOOGLE_MAPS_KEY — add it to frontend/.env.local and restart the dev server.");
       return;
     }
-    // If already loaded from a previous render, skip straight to ready
     if (window.googleMapsLoaded) { setMapsReady(true); return; }
 
-    setLoadStep(1);
     const timeout = setTimeout(() => {
-      setLoadError("Map timed out. Check your API key restrictions allow localhost:3000 and that billing is enabled.");
-    }, 12000);
+      setLoadError(
+        "Map timed out after 8 s. In Google Cloud Console: enable Maps JavaScript API, add http://localhost:3000/* to the key's HTTP referrer allowlist, and ensure billing is active.",
+      );
+    }, 8000);
 
-    loadGoogleMaps(config.apiKey, config.mapId)
-      .then(() => { clearTimeout(timeout); setLoadStep(2); setMapsReady(true); })
+    loadGoogleMaps(config.apiKey, config.mapId, setLoadStep)
+      .then(() => { clearTimeout(timeout); setMapsReady(true); })
       .catch((err) => {
         clearTimeout(timeout);
-        setLoadError(`Failed to load Google Maps: ${err?.message ?? "check your API key and billing in Google Cloud Console."}`);
+        setLoadError(`Map failed to load: ${err instanceof Error ? err.message : "check API key and billing in Google Cloud Console."}`);
       });
 
     return () => clearTimeout(timeout);
@@ -443,102 +450,472 @@ export function VenueMap({
     handleSearch(inputValue);
   }, [inputValue, handleSearch]);
 
+  // ── Derived agent step statuses ────────────────────────────────────────
+  const agentSteps = useMemo(() => [
+    {
+      id: "intent", name: "Intent Agent", icon: "🧠",
+      desc: state.intent
+        ? `${state.intent.occasion} · ${state.intent.city}${state.intent.group_size > 1 ? ` · ${state.intent.group_size} people` : ""}`
+        : "Understanding your request…",
+      done: !!state.intent,
+    },
+    {
+      id: "scraper", name: "Scraper Agent", icon: "🔍",
+      desc: state.venues.length > 0 ? `Found ${state.venues.length} candidates` : "Searching Nimble SERP + maps…",
+      done: state.venues.length > 0,
+    },
+    {
+      id: "validator", name: "Validator Agent", icon: "✅",
+      desc: state.status === "done" ? "Quality checks passed" : "Checking relevance & quality…",
+      done: state.status === "done",
+    },
+    {
+      id: "scorer", name: "Score Engine", icon: "⚡",
+      desc: state.status === "done" ? `Ranked ${state.venues.length} venues` : "Scoring & personalising results…",
+      done: state.status === "done",
+    },
+    {
+      id: "global", name: "Global Intel Agent", icon: "🌍",
+      desc: state.globalIntel ? `${Object.keys(state.globalIntel).length} city benchmarks loaded` : "Loading city benchmarks…",
+      done: !!state.globalIntel,
+    },
+  ], [state.intent, state.venues.length, state.status, state.globalIntel]);
+
+  const showLeftPanel = state.status === "searching" || state.status === "done" || state.status === "error";
+  const leftPanelW = 320;
+
   // ─── Render ─────────────────────────────────────────────────────────────
 
   return (
-    <div className="venue-map-root" style={{ position: "relative", width: "100%", height: "100vh", fontFamily: "system-ui, sans-serif" }}>
+    <div className="venue-map-root" style={{ position: "relative", width: "100%", height: "100vh", fontFamily: "system-ui, -apple-system, sans-serif" }}>
+      <style>{`
+        @keyframes dotBounce {
+          0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+          40%            { transform: scale(1);   opacity: 1;   }
+        }
+        @keyframes chipIn {
+          from { opacity: 0; transform: scale(0.78) translateY(10px); }
+          to   { opacity: 1; transform: scale(1)    translateY(0);    }
+        }
+      `}</style>
 
-      {/* ── Map canvas ── */}
-      <div ref={mapRef} style={{ width: "100%", height: "100%" }} />
+      {/* ── Map canvas (shifts right when panel is open) ── */}
+      <div ref={mapRef} style={{
+        position: "absolute", top: 0, bottom: 0,
+        left: showLeftPanel ? leftPanelW : 0,
+        right: 0,
+        transition: "left 0.3s ease",
+      }} />
 
-      {/* ── AI search overlay ── */}
+      {/* ════════════════════════════════════════════════════════
+          LEFT PANEL — Agent Activity (searching) / Results (done)
+          ════════════════════════════════════════════════════════ */}
+      {showLeftPanel && (
+        <div style={{
+          position: "absolute", top: 0, left: 0, bottom: 0,
+          width: leftPanelW,
+          background: "linear-gradient(180deg, #0f172a 0%, #1a2236 100%)",
+          boxShadow: "4px 0 24px rgba(0,0,0,0.35)",
+          display: "flex", flexDirection: "column",
+          zIndex: 15, overflow: "hidden",
+        }}>
+          {/* Panel header */}
+          <div style={{
+            padding: "20px 20px 14px",
+            borderBottom: "1px solid rgba(255,255,255,0.07)",
+            flexShrink: 0,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+              <div style={{
+                width: 32, height: 32, borderRadius: 8,
+                background: "linear-gradient(135deg, #3B82F6, #8B5CF6)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 16,
+              }}>✨</div>
+              <div>
+                <div style={{ color: "#F1F5F9", fontWeight: 700, fontSize: 15 }}>The Right Spot AI</div>
+                <div style={{ color: "#64748B", fontSize: 11 }}>
+                  {state.status === "searching" ? "Agents working…" : state.status === "done" ? `${state.venues.length} venues found` : "Search error"}
+                </div>
+              </div>
+              {state.status === "searching" && (
+                <div style={{ marginLeft: "auto", display: "flex", gap: 3 }}>
+                  {[0,1,2].map(i => (
+                    <div key={i} style={{
+                      width: 6, height: 6, borderRadius: "50%", background: "#3B82F6",
+                      animation: `dotBounce 1.2s ease-in-out ${i * 0.2}s infinite`,
+                    }} />
+                  ))}
+                </div>
+              )}
+            </div>
+            {query && (
+              <div style={{
+                marginTop: 10, padding: "8px 12px",
+                background: "rgba(255,255,255,0.05)", borderRadius: 8,
+                fontSize: 12, color: "#94A3B8", fontStyle: "italic",
+                border: "1px solid rgba(255,255,255,0.07)",
+              }}>
+                "{query}"
+              </div>
+            )}
+          </div>
+
+          {/* Agent steps */}
+          <div style={{ padding: "14px 20px 10px", flexShrink: 0 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
+              AI Agents
+            </div>
+            {agentSteps.map((step, i) => {
+              const isActive = state.status === "searching" && !step.done && (i === 0 || agentSteps[i-1]?.done);
+              return (
+                <div key={step.id} style={{
+                  display: "flex", alignItems: "flex-start", gap: 10,
+                  marginBottom: 10, opacity: step.done || isActive ? 1 : 0.4,
+                  transition: "opacity 0.3s",
+                }}>
+                  {/* Status dot */}
+                  <div style={{
+                    width: 22, height: 22, borderRadius: "50%", flexShrink: 0,
+                    marginTop: 1,
+                    background: step.done ? "rgba(16,185,129,0.15)" : isActive ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.05)",
+                    border: `1.5px solid ${step.done ? "#10B981" : isActive ? "#3B82F6" : "rgba(255,255,255,0.1)"}`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 11,
+                    animation: isActive ? "agentPulse 1.5s ease-in-out infinite" : "none",
+                  }}>
+                    {step.done ? "✓" : step.icon}
+                  </div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: step.done ? "#10B981" : isActive ? "#60A5FA" : "#64748B" }}>
+                      {step.name}
+                    </div>
+                    <div style={{ fontSize: 11, color: "#475569", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {step.desc}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Status message bar */}
+          {state.statusMessage && state.status === "searching" && (
+            <div style={{
+              margin: "0 20px 12px",
+              padding: "8px 12px",
+              background: "rgba(59,130,246,0.1)", borderRadius: 8,
+              fontSize: 11, color: "#60A5FA",
+              border: "1px solid rgba(59,130,246,0.2)",
+              flexShrink: 0,
+            }}>
+              ⟳ {state.statusMessage}
+            </div>
+          )}
+
+          {/* ── Results list (status === done) ── */}
+          {state.status === "done" && state.venues.length > 0 && (
+            <div style={{ flex: 1, overflowY: "auto", padding: "0 12px 20px" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", padding: "4px 8px 10px" }}>
+                Top Matches
+              </div>
+              {state.venues.map((venue, idx) => (
+                <div
+                  key={venue.venue_id}
+                  onClick={() => {
+                    selectVenue(venue.venue_id);
+                    setSidebarOpen(true);
+                    fetchPlaceDetails(venue.venue_id).then(setSelectedPlaceDetails);
+                    onVenueSelect?.(venue);
+                  }}
+                  style={{
+                    padding: "12px", borderRadius: 12, marginBottom: 8, cursor: "pointer",
+                    background: state.selectedVenueId === venue.venue_id
+                      ? "linear-gradient(135deg, rgba(59,130,246,0.2), rgba(139,92,246,0.15))"
+                      : "rgba(255,255,255,0.04)",
+                    border: `1px solid ${state.selectedVenueId === venue.venue_id ? "rgba(59,130,246,0.5)" : "rgba(255,255,255,0.07)"}`,
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                        <span style={{
+                          fontSize: 10, fontWeight: 700, color: "#64748B",
+                          background: "rgba(255,255,255,0.06)", borderRadius: 4,
+                          padding: "1px 5px",
+                        }}>#{idx + 1}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "#F1F5F9", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {venue.name}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 11, color: "#64748B" }}>
+                        {[venue.neighborhood, venue.cuisine].filter(Boolean).join(" · ")}
+                      </div>
+                    </div>
+                    {/* Match score badge */}
+                    <div style={{
+                      flexShrink: 0, width: 42, height: 42, borderRadius: 10,
+                      background: `conic-gradient(#3B82F6 ${venue.match_score * 3.6}deg, rgba(255,255,255,0.08) 0deg)`,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      position: "relative",
+                    }}>
+                      <div style={{
+                        width: 34, height: 34, borderRadius: 8,
+                        background: "#1a2236",
+                        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                      }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: "#60A5FA", lineHeight: 1 }}>
+                          {Math.round(venue.match_score)}
+                        </span>
+                        <span style={{ fontSize: 8, color: "#475569" }}>%</span>
+                      </div>
+                    </div>
+                  </div>
+                  {/* Venue tags */}
+                  <div style={{ display: "flex", gap: 4, marginTop: 8, flexWrap: "wrap" }}>
+                    {venue.has_private_room && (
+                      <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(16,185,129,0.12)", color: "#34D399", border: "1px solid rgba(16,185,129,0.2)" }}>
+                        🚪 Private room
+                      </span>
+                    )}
+                    {venue.price_per_head > 0 && (
+                      <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(255,255,255,0.06)", color: "#94A3B8", border: "1px solid rgba(255,255,255,0.08)" }}>
+                        ~${venue.price_per_head}/head
+                      </span>
+                    )}
+                    {venue.intelligence?.why_card && (
+                      <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(139,92,246,0.12)", color: "#A78BFA", border: "1px solid rgba(139,92,246,0.2)" }}>
+                        ✨ AI analysed
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* ── AI follow-up suggestions ── */}
+          {aiSuggestions.length > 0 && state.status === "done" && (
+            <div style={{ padding: "0 12px 16px", flexShrink: 0, borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", padding: "10px 8px 8px" }}>
+                Refine with AI
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                {aiSuggestions.slice(0, 3).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => { setInputValue(s); handleSearch(s); }}
+                    style={{
+                      padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(59,130,246,0.25)",
+                      background: "rgba(59,130,246,0.08)", fontSize: 12, cursor: "pointer",
+                      color: "#93C5FD", textAlign: "left", transition: "all 0.15s",
+                    }}
+                  >
+                    ↩ {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Cancel button */}
+          {state.status === "searching" && (
+            <div style={{ padding: "0 12px 16px", flexShrink: 0 }}>
+              <button onClick={cancel} style={{
+                width: "100%", padding: "9px", borderRadius: 8,
+                background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)",
+                color: "#F87171", fontSize: 13, cursor: "pointer", fontWeight: 600,
+              }}>
+                ✕ Cancel search
+              </button>
+            </div>
+          )}
+
+          <style>{`
+            @keyframes dotBounce {
+              0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+              40%            { transform: scale(1);   opacity: 1;   }
+            }
+            @keyframes agentPulse {
+              0%, 100% { box-shadow: 0 0 0 0 rgba(59,130,246,0.4); }
+              50%       { box-shadow: 0 0 0 5px rgba(59,130,246,0); }
+            }
+            @keyframes chipIn {
+              from { opacity: 0; transform: scale(0.78) translateY(10px); }
+              to   { opacity: 1; transform: scale(1)    translateY(0);    }
+            }
+          `}</style>
+        </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════
+          HEADER — Full-width AI search + intent chips
+          ════════════════════════════════════════════════════════ */}
       <div style={{
-        position: "absolute", top: 16, left: "50%", transform: "translateX(-50%)",
-        width: "min(640px, calc(100% - 32px))",
+        position: "absolute",
+        top: 0,
+        left: showLeftPanel ? leftPanelW : 0,
+        right: 0,
         zIndex: 10,
+        transition: "left 0.3s ease",
+        background: "rgba(7,11,24,0.96)",
+        backdropFilter: "blur(22px)",
+        WebkitBackdropFilter: "blur(22px)",
+        borderBottom: "1px solid rgba(255,255,255,0.07)",
+        boxShadow: "0 6px 32px rgba(0,0,0,0.5)",
+        padding: state.intent ? "14px 20px 18px" : "14px 20px 14px",
       }}>
-        <form onSubmit={handleSubmit} style={{ display: "flex", gap: 8 }}>
-          <div style={{ flex: 1, position: "relative" }}>
+
+        {/* Row 1 — logo + agent status */}
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: 7,
+            padding: "5px 14px", borderRadius: 24,
+            background: "linear-gradient(135deg, rgba(37,99,235,0.2), rgba(124,58,237,0.2))",
+            border: "1px solid rgba(99,179,237,0.2)",
+            fontSize: 12, fontWeight: 800, color: "#93C5FD",
+            letterSpacing: "0.07em",
+          }}>
+            ✦ THE RIGHT SPOT
+          </div>
+
+          <div style={{
+            marginLeft: "auto",
+            display: "inline-flex", alignItems: "center", gap: 6,
+            padding: "5px 12px", borderRadius: 20,
+            background: state.status === "searching"
+              ? "rgba(59,130,246,0.12)"
+              : "rgba(255,255,255,0.04)",
+            border: `1px solid ${state.status === "searching" ? "rgba(59,130,246,0.3)" : "rgba(255,255,255,0.07)"}`,
+            fontSize: 11, fontWeight: 600,
+            color: state.status === "searching" ? "#60A5FA" : "#475569",
+            transition: "all 0.3s",
+          }}>
+            {state.status === "searching" ? (
+              <>
+                {[0, 1, 2].map(i => (
+                  <span key={i} style={{
+                    display: "inline-block", width: 4, height: 4, borderRadius: "50%",
+                    background: "#3B82F6",
+                    animation: `dotBounce 1.2s ease-in-out ${i * 0.15}s infinite`,
+                  }} />
+                ))}
+                <span style={{ marginLeft: 4 }}>5 agents running</span>
+              </>
+            ) : (
+              <span>5 AI agents</span>
+            )}
+          </div>
+        </div>
+
+        {/* Row 2 — search form */}
+        <form onSubmit={handleSubmit} style={{ display: "flex", gap: 10 }}>
+          <div style={{
+            flex: 1, display: "flex", alignItems: "center",
+            background: "rgba(255,255,255,0.06)",
+            borderRadius: 14,
+            border: "1.5px solid rgba(255,255,255,0.11)",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.06)",
+          }}>
+            <span style={{ padding: "0 14px", fontSize: 17, flexShrink: 0, opacity: 0.55 }}>🔍</span>
             <input
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
-              placeholder={`Ask anything — "cozy reading café near Central Park" or "hiking trails under 2 hours"`}
+              placeholder='Try "birthday dinner for 8, quiet Italian NYC" or "cosy café to work from"'
               style={{
-                width: "100%", padding: "14px 48px 14px 16px",
-                borderRadius: 12, border: "none",
-                boxShadow: "0 4px 24px rgba(0,0,0,0.18)",
-                fontSize: 15, background: "#fff",
-                outline: "none", boxSizing: "border-box",
+                flex: 1, padding: "14px 0",
+                border: "none", background: "transparent",
+                fontSize: 14, color: "#E2E8F0", outline: "none",
+                caretColor: "#3B82F6",
               }}
             />
-            <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 20 }}>
-              🔍
-            </span>
+            {inputValue && (
+              <button
+                type="button"
+                onClick={() => setInputValue("")}
+                style={{
+                  background: "none", border: "none", color: "#475569",
+                  cursor: "pointer", padding: "0 12px", fontSize: 18, lineHeight: 1,
+                }}
+              >×</button>
+            )}
           </div>
           <button
             type="submit"
             disabled={state.status === "searching"}
             style={{
-              padding: "0 20px", borderRadius: 12, border: "none",
-              background: "#4F46E5", color: "#fff", fontWeight: 600,
-              fontSize: 14, cursor: "pointer", whiteSpace: "nowrap",
-              boxShadow: "0 4px 12px rgba(79,70,229,0.35)",
+              padding: "0 26px", borderRadius: 14, border: "none",
+              background: state.status === "searching"
+                ? "rgba(59,130,246,0.22)"
+                : "linear-gradient(135deg, #2563EB 0%, #7C3AED 100%)",
+              color: state.status === "searching" ? "#60A5FA" : "#fff",
+              fontWeight: 700, fontSize: 14,
+              cursor: state.status === "searching" ? "not-allowed" : "pointer",
+              whiteSpace: "nowrap",
+              boxShadow: state.status === "searching"
+                ? "none"
+                : "0 4px 18px rgba(37,99,235,0.5), inset 0 1px 0 rgba(255,255,255,0.15)",
+              transition: "all 0.2s",
+              letterSpacing: "0.02em",
             }}
           >
-            {state.status === "searching" ? "Searching…" : "Search"}
+            {state.status === "searching" ? "Searching…" : "Ask AI →"}
           </button>
-          {state.status === "searching" && (
-            <button
-              type="button"
-              onClick={cancel}
-              style={{
-                padding: "0 16px", borderRadius: 12, border: "none",
-                background: "#EF4444", color: "#fff", cursor: "pointer",
-              }}
-            >
-              ✕
-            </button>
-          )}
         </form>
 
-        {/* Status message */}
-        {state.statusMessage && state.status === "searching" && (
-          <div style={{
-            marginTop: 8, padding: "8px 14px", background: "rgba(255,255,255,0.95)",
-            borderRadius: 8, fontSize: 13, color: "#6B7280",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-          }}>
-            <span style={{ animation: "pulse 1.5s infinite" }}>⟳</span> {state.statusMessage}
-          </div>
-        )}
-
-        {/* AI follow-up suggestions */}
-        {aiSuggestions.length > 0 && state.status === "done" && (
-          <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap" }}>
-            {aiSuggestions.map((s) => (
-              <button
-                key={s}
-                onClick={() => { setInputValue(s); handleSearch(s); }}
-                style={{
-                  padding: "6px 12px", borderRadius: 20, border: "1px solid #E5E7EB",
-                  background: "rgba(255,255,255,0.95)", fontSize: 12, cursor: "pointer",
-                  color: "#374151", boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
-                }}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        )}
+        {/* Row 3 — intent chips: BIG, colorful, animated */}
+        {state.intent && (() => {
+          const chips = [
+            { val: state.intent!.city,                icon: "📍", label: state.intent!.city,                        color: "#60A5FA", bg: "rgba(59,130,246,0.13)",  border: "rgba(59,130,246,0.38)"  },
+            { val: state.intent!.occasion,            icon: "🎉", label: state.intent!.occasion?.replace(/_/g, " "), color: "#A78BFA", bg: "rgba(139,92,246,0.13)", border: "rgba(139,92,246,0.38)" },
+            { val: state.intent!.cuisine,             icon: "🍽️", label: state.intent!.cuisine,                    color: "#FBBF24", bg: "rgba(245,158,11,0.13)", border: "rgba(245,158,11,0.38)" },
+            { val: state.intent!.group_size > 1,      icon: "👥", label: `${state.intent!.group_size} people`,     color: "#34D399", bg: "rgba(16,185,129,0.13)", border: "rgba(16,185,129,0.38)" },
+            { val: state.intent!.needs_private_room,  icon: "🚪", label: "private room",                           color: "#22D3EE", bg: "rgba(6,182,212,0.13)",  border: "rgba(6,182,212,0.38)"  },
+            { val: state.intent!.noise_preference,    icon: "🔊", label: state.intent!.noise_preference,           color: "#F472B6", bg: "rgba(236,72,153,0.13)", border: "rgba(236,72,153,0.38)" },
+            { val: state.intent!.price_band,          icon: "💎", label: state.intent!.price_band,                 color: "#A3E635", bg: "rgba(132,204,22,0.13)", border: "rgba(132,204,22,0.38)" },
+          ].filter(c => c.val);
+          return chips.length === 0 ? null : (
+            <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+              {chips.map((chip, idx) => (
+                <div
+                  key={String(chip.label)}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 7,
+                    padding: "8px 16px", borderRadius: 100,
+                    background: chip.bg,
+                    border: `1.5px solid ${chip.border}`,
+                    color: chip.color,
+                    fontSize: 13, fontWeight: 600,
+                    backdropFilter: "blur(8px)",
+                    whiteSpace: "nowrap",
+                    letterSpacing: "0.01em",
+                    animation: `chipIn 0.4s cubic-bezier(0.34,1.56,0.64,1) ${idx * 0.055}s both`,
+                    userSelect: "none",
+                  }}
+                >
+                  <span style={{ fontSize: 15 }}>{chip.icon}</span>
+                  <span style={{ textTransform: "capitalize" }}>{chip.label}</span>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── Category pills ── */}
       <div style={{
-        position: "absolute", bottom: sidebarOpen ? "calc(40% + 16px)" : 16,
-        left: "50%", transform: "translateX(-50%)",
-        display: "flex", gap: 8, overflowX: "auto", maxWidth: "calc(100% - 32px)",
-        paddingBottom: 4, zIndex: 10,
-        transition: "bottom 0.3s ease",
+        position: "absolute",
+        bottom: sidebarOpen ? "calc(40% + 16px)" : 18,
+        left: showLeftPanel ? leftPanelW + 16 : 16,
+        right: 16,
+        display: "flex", gap: 8, overflowX: "auto",
+        zIndex: 10,
+        transition: "all 0.3s ease",
+        paddingBottom: 2,
+        /* hide scrollbar across browsers */
+        msOverflowStyle: "none" as React.CSSProperties["msOverflowStyle"],
+        scrollbarWidth: "none" as React.CSSProperties["scrollbarWidth"],
       }}>
         {(Object.entries(CATEGORIES) as [PlaceCategory, CategoryConfig][]).map(([key, cfg]) => (
           <button
@@ -546,33 +923,28 @@ export function VenueMap({
             onClick={() => handleCategorySwitch(key)}
             title={cfg.description}
             style={{
-              padding: "8px 14px", borderRadius: 24, border: "2px solid",
-              borderColor: activeCategory === key ? "#4F46E5" : "transparent",
-              background: activeCategory === key ? "#4F46E5" : "rgba(255,255,255,0.95)",
-              color: activeCategory === key ? "#fff" : "#374151",
-              fontWeight: activeCategory === key ? 600 : 400,
+              padding: "9px 16px", borderRadius: 100,
+              border: `1.5px solid ${activeCategory === key ? "rgba(59,130,246,0.65)" : "rgba(255,255,255,0.11)"}`,
+              background: activeCategory === key
+                ? "linear-gradient(135deg, #1D4ED8 0%, #6D28D9 100%)"
+                : "rgba(7,11,24,0.84)",
+              color: activeCategory === key ? "#fff" : "#94A3B8",
+              fontWeight: activeCategory === key ? 700 : 500,
               fontSize: 13, cursor: "pointer", whiteSpace: "nowrap",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-              transition: "all 0.15s ease",
+              flexShrink: 0,
+              boxShadow: activeCategory === key
+                ? "0 4px 16px rgba(37,99,235,0.45), inset 0 1px 0 rgba(255,255,255,0.12)"
+                : "0 2px 8px rgba(0,0,0,0.3)",
+              backdropFilter: "blur(14px)",
+              WebkitBackdropFilter: "blur(14px)",
+              transition: "all 0.18s ease",
+              letterSpacing: "0.01em",
             }}
           >
             {cfg.icon} {cfg.label}
           </button>
         ))}
       </div>
-
-      {/* ── Result count badge ── */}
-      {state.status === "done" && state.venues.length > 0 && (
-        <div style={{
-          position: "absolute", top: 80, left: "50%", transform: "translateX(-50%)",
-          padding: "6px 16px", borderRadius: 20,
-          background: "rgba(79,70,229,0.9)", color: "#fff",
-          fontSize: 13, fontWeight: 600, zIndex: 10,
-          boxShadow: "0 2px 8px rgba(79,70,229,0.4)",
-        }}>
-          {state.venues.length} {CATEGORIES[activeCategory].label.toLowerCase()} found
-        </div>
-      )}
 
       {/* ── Venue detail sidebar ── */}
       {sidebarOpen && state.selectedVenueId && (
@@ -634,39 +1006,47 @@ export function VenueMap({
             </div>
           ) : (
             /* ── Loading state ── */
-            <div style={{ position: "relative", textAlign: "center" }}>
-              {/* Pulsing map pin */}
-              <div style={{ position: "relative", display: "inline-block", marginBottom: 32 }}>
-                <div style={{
-                  width: 72, height: 72, borderRadius: "50%",
-                  background: "linear-gradient(135deg, #3B82F6, #8B5CF6)",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 32, boxShadow: "0 0 0 0 rgba(59,130,246,0.5)",
-                  animation: "mapPing 1.5s ease-out infinite",
-                }}>
-                  📍
+            (() => {
+              const PCT   = [0, 12, 45, 75, 95][loadStep] ?? 0;
+              const STEPS = ["Starting up…", "Connecting to Google Maps…", "Loading map tiles…", "Initialising AI layer…", "Almost ready…"];
+              const MSG   = STEPS[loadStep] ?? "Loading…";
+              return (
+                <div style={{ position: "relative", textAlign: "center", padding: "0 24px", minWidth: 260 }}>
+                  {/* Pulsing map pin */}
+                  <div style={{ display: "inline-block", marginBottom: 28 }}>
+                    <div style={{
+                      width: 68, height: 68, borderRadius: "50%",
+                      background: "linear-gradient(135deg, #3B82F6, #8B5CF6)",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 30, animation: "mapPing 1.5s ease-out infinite",
+                    }}>📍</div>
+                  </div>
+
+                  <div style={{ color: "#F1F5F9", fontSize: 22, fontWeight: 700, marginBottom: 6, letterSpacing: "-0.3px" }}>
+                    The Right Spot
+                  </div>
+                  <div style={{ color: "#64748B", fontSize: 13, marginBottom: 24, minHeight: 18 }}>
+                    {MSG}
+                  </div>
+
+                  {/* Real progress bar */}
+                  <div style={{
+                    width: 220, height: 4, background: "rgba(255,255,255,0.08)",
+                    borderRadius: 99, overflow: "hidden", margin: "0 auto 10px",
+                  }}>
+                    <div style={{
+                      height: "100%", borderRadius: 99,
+                      background: "linear-gradient(90deg, #3B82F6, #8B5CF6)",
+                      width: `${PCT}%`,
+                      transition: "width 0.45s cubic-bezier(0.4,0,0.2,1)",
+                    }} />
+                  </div>
+                  <div style={{ fontSize: 11, color: "#475569", letterSpacing: "0.04em" }}>
+                    {PCT}%
+                  </div>
                 </div>
-              </div>
-
-              <div style={{ color: "#F1F5F9", fontSize: 22, fontWeight: 700, marginBottom: 8, letterSpacing: "-0.3px" }}>
-                The Right Spot
-              </div>
-              <div style={{ color: "#64748B", fontSize: 14, marginBottom: 32 }}>
-                {loadStep === 0 ? "Starting up…" : "Loading map tiles & AI layer…"}
-              </div>
-
-              {/* Progress bar */}
-              <div style={{
-                width: 200, height: 3, background: "rgba(255,255,255,0.1)",
-                borderRadius: 99, overflow: "hidden", margin: "0 auto",
-              }}>
-                <div style={{
-                  height: "100%", borderRadius: 99,
-                  background: "linear-gradient(90deg, #3B82F6, #8B5CF6)",
-                  animation: "loadBar 2.5s ease-in-out infinite",
-                }} />
-              </div>
-            </div>
+              );
+            })()
           )}
 
           <style>{`
