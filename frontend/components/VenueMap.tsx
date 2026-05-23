@@ -215,6 +215,8 @@ export function VenueMap({
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
 
   const [mapsReady, setMapsReady] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadStep, setLoadStep] = useState(0);
   const [activeCategory, setActiveCategory] = useState<PlaceCategory>("restaurants");
   const [query, setQuery] = useState(initialQuery);
   const [inputValue, setInputValue] = useState(initialQuery);
@@ -227,9 +229,26 @@ export function VenueMap({
   // ── Load Google Maps API ────────────────────────────────────────────────
 
   useEffect(() => {
+    if (!config.apiKey) {
+      setLoadError("Google Maps API key is missing. Add NEXT_PUBLIC_GOOGLE_MAPS_KEY to frontend/.env.local and restart.");
+      return;
+    }
+    // If already loaded from a previous render, skip straight to ready
+    if (window.googleMapsLoaded) { setMapsReady(true); return; }
+
+    setLoadStep(1);
+    const timeout = setTimeout(() => {
+      setLoadError("Map timed out. Check your API key restrictions allow localhost:3000 and that billing is enabled.");
+    }, 12000);
+
     loadGoogleMaps(config.apiKey, config.mapId)
-      .then(() => setMapsReady(true))
-      .catch(console.error);
+      .then(() => { clearTimeout(timeout); setLoadStep(2); setMapsReady(true); })
+      .catch((err) => {
+        clearTimeout(timeout);
+        setLoadError(`Failed to load Google Maps: ${err?.message ?? "check your API key and billing in Google Cloud Console."}`);
+      });
+
+    return () => clearTimeout(timeout);
   }, [config.apiKey, config.mapId]);
 
   // ── Initialise map instance ─────────────────────────────────────────────
@@ -569,17 +588,103 @@ export function VenueMap({
         />
       )}
 
-      {/* ── Loading skeleton ── */}
-      {!mapsReady && (
+      {/* ── Loading / error overlay ── */}
+      {(!mapsReady || loadError) && (
         <div style={{
-          position: "absolute", inset: 0, background: "#F3F4F6",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          zIndex: 20,
+          position: "absolute", inset: 0, zIndex: 20,
+          background: "linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%)",
+          display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center",
+          overflow: "hidden",
         }}>
-          <div style={{ textAlign: "center", color: "#6B7280" }}>
-            <div style={{ fontSize: 32, marginBottom: 12 }}>🗺️</div>
-            <div>Loading intelligent map…</div>
-          </div>
+          {/* Animated grid background */}
+          <div style={{
+            position: "absolute", inset: 0, opacity: 0.08,
+            backgroundImage: "linear-gradient(rgba(99,179,237,0.4) 1px, transparent 1px), linear-gradient(90deg, rgba(99,179,237,0.4) 1px, transparent 1px)",
+            backgroundSize: "48px 48px",
+            animation: "gridScroll 8s linear infinite",
+          }} />
+
+          {loadError ? (
+            /* ── Error state ── */
+            <div style={{
+              position: "relative", textAlign: "center", maxWidth: 420, padding: "0 24px",
+            }}>
+              <div style={{ fontSize: 40, marginBottom: 16 }}>⚠️</div>
+              <div style={{ color: "#F1F5F9", fontSize: 18, fontWeight: 600, marginBottom: 12 }}>
+                Map failed to load
+              </div>
+              <div style={{
+                color: "#94A3B8", fontSize: 13, lineHeight: 1.6, marginBottom: 24,
+                background: "rgba(255,255,255,0.05)", borderRadius: 10,
+                padding: "12px 16px", border: "1px solid rgba(255,255,255,0.1)",
+              }}>
+                {loadError}
+              </div>
+              <button
+                onClick={() => { setLoadError(null); setLoadStep(0); setMapsReady(false); window.googleMapsLoaded = false; }}
+                style={{
+                  background: "#3B82F6", color: "#fff", border: "none",
+                  borderRadius: 8, padding: "10px 24px", fontSize: 14,
+                  fontWeight: 600, cursor: "pointer",
+                }}
+              >
+                Retry
+              </button>
+            </div>
+          ) : (
+            /* ── Loading state ── */
+            <div style={{ position: "relative", textAlign: "center" }}>
+              {/* Pulsing map pin */}
+              <div style={{ position: "relative", display: "inline-block", marginBottom: 32 }}>
+                <div style={{
+                  width: 72, height: 72, borderRadius: "50%",
+                  background: "linear-gradient(135deg, #3B82F6, #8B5CF6)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 32, boxShadow: "0 0 0 0 rgba(59,130,246,0.5)",
+                  animation: "mapPing 1.5s ease-out infinite",
+                }}>
+                  📍
+                </div>
+              </div>
+
+              <div style={{ color: "#F1F5F9", fontSize: 22, fontWeight: 700, marginBottom: 8, letterSpacing: "-0.3px" }}>
+                The Right Spot
+              </div>
+              <div style={{ color: "#64748B", fontSize: 14, marginBottom: 32 }}>
+                {loadStep === 0 ? "Starting up…" : "Loading map tiles & AI layer…"}
+              </div>
+
+              {/* Progress bar */}
+              <div style={{
+                width: 200, height: 3, background: "rgba(255,255,255,0.1)",
+                borderRadius: 99, overflow: "hidden", margin: "0 auto",
+              }}>
+                <div style={{
+                  height: "100%", borderRadius: 99,
+                  background: "linear-gradient(90deg, #3B82F6, #8B5CF6)",
+                  animation: "loadBar 2.5s ease-in-out infinite",
+                }} />
+              </div>
+            </div>
+          )}
+
+          <style>{`
+            @keyframes mapPing {
+              0%   { box-shadow: 0 0 0 0 rgba(59,130,246,0.6); }
+              70%  { box-shadow: 0 0 0 20px rgba(59,130,246,0); }
+              100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); }
+            }
+            @keyframes loadBar {
+              0%   { width: 0%; margin-left: 0; }
+              50%  { width: 70%; margin-left: 0; }
+              100% { width: 0%; margin-left: 100%; }
+            }
+            @keyframes gridScroll {
+              0%   { transform: translate(0, 0); }
+              100% { transform: translate(48px, 48px); }
+            }
+          `}</style>
         </div>
       )}
 
