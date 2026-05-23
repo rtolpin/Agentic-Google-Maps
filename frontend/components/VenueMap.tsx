@@ -273,56 +273,52 @@ export function VenueMap({
       const zoom = mapInstanceRef.current?.getZoom();
       traceMapInteraction({ action: "zoom", zoomLevel: zoom }).finish();
     });
-  }, [mapsReady, config, selectVenue]);
 
-  // ── User location dot ───────────────────────────────────────────────────
+    // ── User location dot — started here so mapInstanceRef is guaranteed set ──
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const mapInstance = mapInstanceRef.current;
+          if (!mapInstance) return;
+          const userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          userLocationRef.current = userPos;
 
-  useEffect(() => {
-    if (!mapsReady || !mapInstanceRef.current || !("geolocation" in navigator)) return;
+          const wrapper = document.createElement("div");
+          wrapper.style.cssText = `
+            width: 20px; height: 20px; border-radius: 50%;
+            background: #3B82F6; border: 3px solid #fff;
+            box-sizing: border-box;
+            box-shadow: 0 2px 8px rgba(37,99,235,0.55);
+            animation: locationPulse 2s ease-out infinite;
+          `;
+          new google.maps.marker.AdvancedMarkerElement({
+            map: mapInstance,
+            position: userPos,
+            content: wrapper,
+            title: "Your location",
+            zIndex: 9999,
+          });
 
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        userLocationRef.current = userPos;
-
-        const wrapper = document.createElement("div");
-        wrapper.style.cssText = `
-          width: 20px; height: 20px; border-radius: 50%;
-          background: #3B82F6; border: 3px solid #fff;
-          box-sizing: border-box;
-          box-shadow: 0 2px 8px rgba(37,99,235,0.55);
-          animation: locationPulse 2s ease-out infinite;
-        `;
-
-        new google.maps.marker.AdvancedMarkerElement({
-          map: mapInstanceRef.current!,
-          position: userPos,
-          content: wrapper,
-          title: "Your location",
-          zIndex: 9999,
-        });
-
-        // Center map on user only on initial load (no search results yet)
-        if (enrichedMarkers.length === 0) {
-          mapInstanceRef.current?.setCenter(userPos);
-          mapInstanceRef.current?.setZoom(14);
-        }
-
-        // Reverse geocode → city for backend fallback
-        const geocoder = new google.maps.Geocoder();
-        geocoder.geocode({ location: userPos }, (results, status) => {
-          if (status === "OK" && results?.[0]) {
-            const locality = results[0].address_components.find((c) => c.types.includes("locality"));
-            const area = results[0].address_components.find((c) => c.types.includes("administrative_area_level_1"));
-            const city = locality?.long_name || area?.long_name || "";
-            if (city) setDetectedCity(city);
+          if (enrichedMarkers.length === 0) {
+            mapInstance.setCenter(userPos);
+            mapInstance.setZoom(14);
           }
-        });
-      },
-      () => { /* permission denied or unavailable */ },
-      { enableHighAccuracy: false, timeout: 8000, maximumAge: 120000 },
-    );
-  }, [mapsReady]); // eslint-disable-line react-hooks/exhaustive-deps
+
+          const geocoder = new google.maps.Geocoder();
+          geocoder.geocode({ location: userPos }, (results, status) => {
+            if (status === "OK" && results?.[0]) {
+              const locality = results[0].address_components.find((c) => c.types.includes("locality"));
+              const area = results[0].address_components.find((c) => c.types.includes("administrative_area_level_1"));
+              const city = locality?.long_name || area?.long_name || "";
+              if (city) setDetectedCity(city);
+            }
+          });
+        },
+        () => { /* permission denied or unavailable */ },
+        { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 },
+      );
+    }
+  }, [mapsReady, config, selectVenue]);
 
   // ── Sync markers when venues arrive ────────────────────────────────────
 
