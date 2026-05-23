@@ -132,50 +132,58 @@ SELECT
     birthday_score,
     key_quotes,
     scraped_at,
-    (
-        -- Private room requirement
-        multiIf({needs_private_room:Bool}, has_private_room * 30, 0)
+    LEAST(100, GREATEST(0,
+        -- Base: any venue passing city+cuisine+freshness filters is a real candidate
+        40
 
-        -- Group capacity (full points if fits, partial if close)
-        + multiIf(max_group_size >= {group_size:UInt8},
-                  25,
-                  greatest(0, max_group_size * 2))
+        -- Group capacity (0-20 pts): partial credit when size unknown (stored as 0)
+        + multiIf(
+            max_group_size = 0,        10,
+            max_group_size >= {group_size:UInt8}, 20,
+            greatest(0, toInt32(20) * max_group_size / greatest(1, toInt32({group_size:UInt8})))
+          )
 
-        -- Noise match: quiet seekers rewarded for quiet venues; lively seekers the reverse
+        -- Noise match (0-15 pts)
         + multiIf(
             {noise_pref:String} = 'quiet',
                 CASE noise_level
-                    WHEN 'very_quiet' THEN 25
-                    WHEN 'quiet'      THEN 20
-                    WHEN 'moderate'   THEN 8
+                    WHEN 'very_quiet' THEN 15
+                    WHEN 'quiet'      THEN 12
+                    WHEN 'moderate'   THEN 5
                     ELSE 0 END,
             {noise_pref:String} = 'lively',
                 CASE noise_level
-                    WHEN 'loud'       THEN 25
-                    WHEN 'very_loud'  THEN 20
-                    WHEN 'moderate'   THEN 10
-                    ELSE 5 END,
-            -- moderate / default
+                    WHEN 'loud'       THEN 15
+                    WHEN 'very_loud'  THEN 12
+                    WHEN 'moderate'   THEN 7
+                    ELSE 3 END,
             CASE noise_level
-                WHEN 'moderate' THEN 20
-                WHEN 'quiet'    THEN 15
-                WHEN 'loud'     THEN 15
-                ELSE 10 END
+                WHEN 'moderate' THEN 12
+                WHEN 'quiet'    THEN 9
+                WHEN 'loud'     THEN 9
+                ELSE 6 END
           )
 
-        -- Occasion fit: birthday bonus or generic special-occasion score
+        -- Occasion fit (0-20 pts): higher weights + partial credit when score is 0
         + multiIf(
             {occasion:String} IN ('birthday_dinner', 'birthday_party'),
-                birthday_score * 0.35,
-            special_occasion_score * 0.20
+                multiIf(birthday_score > 0, birthday_score * 0.20, 8),
+            multiIf(special_occasion_score > 0, special_occasion_score * 0.20, 8)
           )
 
-        -- Price band match
-        + multiIf(price_per_head BETWEEN {price_min:UInt16} AND {price_max:UInt16}, 10, 0)
+        -- Price band match (0-10 pts): partial credit when price unknown
+        + multiIf(
+            price_per_head = 0, 5,
+            price_per_head BETWEEN {price_min:UInt16} AND {price_max:UInt16}, 10,
+            0
+          )
 
-        -- Freshness decay: -1 point per 6 hours of signal age
-        - (dateDiff('hour', scraped_at, now()) / 6)
-    ) AS match_score
+        -- Private room bonus (0-5 pts)
+        + multiIf({needs_private_room:Bool}, has_private_room * 5, 0)
+
+        -- Freshness penalty: capped at -5 pts (1 pt per day, max 5 days)
+        - LEAST(5, dateDiff('hour', scraped_at, now()) / 24)
+    )) AS match_score
 FROM rightspot.venue_signals
 FINAL
 WHERE (city = {city:String} OR {city:String} = 'Unknown')
