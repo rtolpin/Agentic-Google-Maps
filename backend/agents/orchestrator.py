@@ -257,6 +257,9 @@ def _apply_personalization(
 ) -> list[ScoredVenue]:
     """Boost scores based on user's historical preferences, then re-sort."""
     for venue in venues:
+        # If noise is a dealbreaker, skip all positive boosts for this venue
+        if prefs.prefers_quiet and venue.noise_level in ("loud", "very_loud"):
+            continue
         boost = 0.0
         if prefs.prefers_quiet and venue.noise_level in ("very_quiet", "quiet"):
             boost += 12

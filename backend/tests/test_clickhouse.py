@@ -36,19 +36,23 @@ def ch_client(mock_ch):
 def scored_row():
     """A tuple matching ScoredVenue.from_ch_row() expectations."""
     return (
-        "venue_id_1",        # venue_id
-        "Locanda Verde",     # name
-        "New York City",     # city
-        "Tribeca",           # neighborhood
-        "italian",           # cuisine
-        95,                  # price_per_head
-        1,                   # has_private_room
-        20,                  # max_group_size
-        "quiet",             # noise_level
-        82,                  # birthday_score
-        ["Great birthday"],  # key_quotes
-        datetime(2026, 5, 23),  # scraped_at
-        91.5,                # match_score
+        "venue_id_1",           # 0  venue_id
+        "Locanda Verde",        # 1  name
+        "New York City",        # 2  city
+        "Tribeca",              # 3  neighborhood
+        "italian",              # 4  cuisine
+        "ChIJLOCANDA",          # 5  place_id
+        "377 Greenwich St",     # 6  address
+        40.72,                  # 7  latitude
+        -74.01,                 # 8  longitude
+        95,                     # 9  price_per_head
+        1,                      # 10 has_private_room
+        20,                     # 11 max_group_size
+        "quiet",                # 12 noise_level
+        82,                     # 13 birthday_score
+        ["Great birthday"],     # 14 key_quotes
+        datetime(2026, 5, 23),  # 15 scraped_at
+        91.5,                   # 16 match_score
     )
 
 

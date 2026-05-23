@@ -37,7 +37,7 @@ from ..models.models import (
     VenueIntent,
 )
 
-NIMBLE_API_KEY = os.environ["NIMBLE_API_KEY"]
+NIMBLE_API_KEY = os.environ.get("NIMBLE_API_KEY", "")
 _NIMBLE_URL = "https://api.webit.live/api/v1/realtime/serp"
 
 _client = anthropic.AsyncAnthropic()
@@ -340,7 +340,9 @@ def _norm(name: str) -> str:
     return name.lower().replace("'", "").replace(" ", "")
 
 
-def _extract_place_id_from_url(url: str) -> str:
+def _extract_place_id_from_url(url: str | None) -> str:
     """Try to extract a Google Place ID from a Google Maps URL."""
+    if not url:
+        return ""
     m = _PLACE_ID_RE.search(url)
     return m.group(1) if m else ""

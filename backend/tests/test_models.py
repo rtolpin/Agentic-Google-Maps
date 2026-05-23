@@ -166,16 +166,18 @@ class TestScoredVenue:
         now = datetime(2026, 5, 23, 10, 0, 0)
         row = (
             "venue_id_1", "Test Venue", "NYC", "Tribeca", "italian",
-            85, 1, 12, "quiet", 75, ["Great food"], now, 91.5
+            "ChIJTEST", "123 Test St", 40.72, -74.01,
+            85, 1, 12, "quiet", 75, ["Great food"], now, 91.5,
         )
         venue = ScoredVenue.from_ch_row(row)
         assert venue.venue_id == "venue_id_1"
         assert venue.has_private_room is True
         assert venue.match_score == 91.5
         assert venue.noise_level == "quiet"
+        assert venue.place_id == "ChIJTEST"
 
     def test_from_ch_row_null_scraped_at(self):
-        row = ("v1", "Venue", "NYC", "", "", 50, 0, 6, "moderate", 0, [], None, 55.0)
+        row = ("v1", "Venue", "NYC", "", "", "", "", None, None, 50, 0, 6, "moderate", 0, [], None, 55.0)
         venue = ScoredVenue.from_ch_row(row)
         assert venue.scraped_at is None
 

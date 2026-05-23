@@ -19,23 +19,12 @@ Span hierarchy produced by a single search request:
 """
 from __future__ import annotations
 
-import contextlib
 from contextlib import contextmanager
 from typing import Any, Generator, Iterator
 
-try:
-    from ddtrace import Span
-    from ddtrace import tracer as _dd_tracer
-    from ddtrace.ext import SpanTypes
-    _DDTRACE_AVAILABLE = True
-except (ImportError, AttributeError):
-    _DDTRACE_AVAILABLE = False
-    Span = Any  # type: ignore[assignment,misc]
-
-    class SpanTypes:  # type: ignore[no-redef]
-        LLM = "llm"
-        SQL = "sql"
-        HTTP = "http"
+from ddtrace._trace.span import Span
+from ddtrace import tracer as _dd_tracer
+from ddtrace.ext import SpanTypes
 
 # ─── Service constants ────────────────────────────────────────────────────────
 
@@ -46,9 +35,7 @@ SERVICE_MAPS = "therightspot-maps"
 SERVICE_SENSO = "therightspot-senso"
 VERSION = "2.0.0"
 
-# Replaceable in tests — see SpanRecorder below
-# Falls back to SpanRecorder when ddtrace is not installed
-tracer: Any = _dd_tracer if _DDTRACE_AVAILABLE else None  # set after SpanRecorder defined
+tracer = _dd_tracer
 
 
 # ─── Span context managers ────────────────────────────────────────────────────
@@ -156,7 +143,6 @@ class RecordedSpan:
         self.tags: dict[str, Any] = {}
         self.error: int = 0
         self.finished = False
-        self._children: list["RecordedSpan"] = []
 
     def set_tag(self, key: str, value: Any) -> None:
         self.tags[key] = value
@@ -176,7 +162,7 @@ class RecordedSpan:
             self.set_tag("error.type", exc_type.__name__)
             self.set_tag("error.message", str(exc_val))
         self.finish()
-        return False  # don't suppress exceptions
+        return False
 
     def __repr__(self) -> str:
         return f"RecordedSpan({self.name!r}, tags={self.tags})"
@@ -190,7 +176,7 @@ class SpanRecorder:
 
     Usage::
 
-        import therightspot.tracing as tracing_module
+        import backend.tracing as tracing_module
 
         recorder = SpanRecorder()
         monkeypatch.setattr(tracing_module, "tracer", recorder)
@@ -226,8 +212,6 @@ class SpanRecorder:
         finally:
             span.finish()
 
-    # ── Query helpers ─────────────────────────────────────────────────────────
-
     def by_name(self, name: str) -> list[RecordedSpan]:
         return [s for s in self.spans if s.name == name]
 
@@ -246,8 +230,3 @@ class SpanRecorder:
 
     def __len__(self) -> int:
         return len(self.spans)
-
-
-# Use SpanRecorder as the default tracer when ddtrace is not installed
-if not _DDTRACE_AVAILABLE:
-    tracer = SpanRecorder()

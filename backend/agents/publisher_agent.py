@@ -194,7 +194,7 @@ def _format_live_signals(venues: list[ScoredVenue]) -> str:
 
 def _build_slug(intent: VenueIntent) -> str:
     city = intent.city.lower().replace(" ", "-")
-    occasion = intent.occasion.replace("_", "-")
+    occasion = intent.occasion.replace("_", "-").lower()
     cuisine = (intent.cuisine or "restaurant").lower()
     month = date.today().strftime("%Y-%m")
     return f"{city}-{cuisine}-{occasion}-{month}"

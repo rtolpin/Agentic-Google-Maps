@@ -79,7 +79,7 @@ class TestCallWithRetry:
             content=[MagicMock(text=signals.model_dump_json())]
         )
 
-        with patch("files.scraper_agent._client", async_anthropic_client):
+        with patch("backend.agents.scraper_agent._client", async_anthropic_client):
             result = await _call_with_retry(raw_venue)
 
         assert isinstance(result, ExtractedSignals)
@@ -109,7 +109,7 @@ class TestCallWithRetry:
         async_anthropic_client.messages.create = flaky_create
 
         with (
-            patch("files.scraper_agent._client", async_anthropic_client),
+            patch("backend.agents.scraper_agent._client", async_anthropic_client),
             patch("asyncio.sleep", AsyncMock()),
         ):
             result = await _call_with_retry(raw_venue, max_attempts=3)
@@ -133,7 +133,7 @@ class TestCallWithRetry:
         async_anthropic_client.messages.create = always_rate_limited
 
         with (
-            patch("files.scraper_agent._client", async_anthropic_client),
+            patch("backend.agents.scraper_agent._client", async_anthropic_client),
             patch("asyncio.sleep", AsyncMock()),
         ):
             result = await _call_with_retry(raw_venue, max_attempts=2)
@@ -148,7 +148,7 @@ class TestCallWithRetry:
             content=[MagicMock(text="not valid json {{{")]
         )
 
-        with patch("files.scraper_agent._client", async_anthropic_client):
+        with patch("backend.agents.scraper_agent._client", async_anthropic_client):
             result = await _call_with_retry(raw_venue)
 
         assert result is None
@@ -162,7 +162,7 @@ class TestCallWithRetry:
             content=[MagicMock(text=signals.model_dump_json())]
         )
 
-        with patch("files.scraper_agent._client", async_anthropic_client):
+        with patch("backend.agents.scraper_agent._client", async_anthropic_client):
             await _call_with_retry(raw_venue)
 
         call_kwargs = async_anthropic_client.messages.create.call_args[1]
@@ -202,7 +202,7 @@ class TestScraperAgentRun:
         )
 
         with (
-            patch("files.scraper_agent._client", async_anthropic_client),
+            patch("backend.agents.scraper_agent._client", async_anthropic_client),
             patch("httpx.AsyncClient", return_value=mock_http),
         ):
             agent = ScraperAgent()
@@ -244,7 +244,7 @@ class TestScraperAgentRun:
         )
 
         with (
-            patch("files.scraper_agent._client", async_anthropic_client),
+            patch("backend.agents.scraper_agent._client", async_anthropic_client),
             patch("httpx.AsyncClient", return_value=mock_http),
         ):
             agent = ScraperAgent()

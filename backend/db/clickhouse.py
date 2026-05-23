@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 from datetime import datetime
+from typing import Any
 
 import clickhouse_connect
 
@@ -187,7 +188,10 @@ LIMIT 20
 
 class ClickHouseClient:
     def __init__(self) -> None:
-        # Connect to the default database first so we can create rightspot if needed.
+        self._conn: Any = None  # lazy — connect on first use
+
+    def _connect(self) -> None:
+        """Bootstrap: create the rightspot database if it doesn't exist, then connect."""
         bootstrap = clickhouse_connect.get_client(
             host=_CH_HOST,
             port=_CH_PORT,
@@ -196,13 +200,23 @@ class ClickHouseClient:
         )
         bootstrap.command(f"CREATE DATABASE IF NOT EXISTS {_CH_DATABASE}")
         bootstrap.close()
-        self.client = clickhouse_connect.get_client(
+        self._conn = clickhouse_connect.get_client(
             host=_CH_HOST,
             port=_CH_PORT,
             username=_CH_USER,
             password=_CH_PASSWORD,
             database=_CH_DATABASE,
         )
+
+    @property
+    def client(self) -> Any:
+        if getattr(self, "_conn", None) is None:
+            self._connect()
+        return self._conn
+
+    @client.setter
+    def client(self, value: Any) -> None:
+        self._conn = value
 
     # ── Schema ────────────────────────────────────────────────────────────────
 

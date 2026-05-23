@@ -49,8 +49,8 @@ class TestSearchStream:
         ]
 
         with (
-            patch("files.server._ch", mock_ch),
-            patch("files.server.orchestrate", _make_orch_events(events)),
+            patch("backend.api.server._ch", mock_ch),
+            patch("backend.api.server.orchestrate", _make_orch_events(events)),
         ):
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
@@ -74,8 +74,8 @@ class TestSearchStream:
         received: list[dict] = []
 
         with (
-            patch("files.server._ch", mock_ch),
-            patch("files.server.orchestrate", _make_orch_events(events)),
+            patch("backend.api.server._ch", mock_ch),
+            patch("backend.api.server.orchestrate", _make_orch_events(events)),
         ):
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
@@ -103,8 +103,8 @@ class TestSearchStream:
         received: list[dict] = []
 
         with (
-            patch("files.server._ch", mock_ch),
-            patch("files.server.orchestrate", failing_orch),
+            patch("backend.api.server._ch", mock_ch),
+            patch("backend.api.server.orchestrate", failing_orch),
         ):
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
@@ -134,8 +134,8 @@ class TestSearchStream:
                 yield e
 
         with (
-            patch("files.server._ch", mock_ch),
-            patch("files.server.orchestrate", capture_user_id),
+            patch("backend.api.server._ch", mock_ch),
+            patch("backend.api.server.orchestrate", capture_user_id),
         ):
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
@@ -157,7 +157,7 @@ class TestSearchStream:
 class TestFeedback:
     @pytest.mark.asyncio
     async def test_records_feedback_and_returns_status(self, mock_ch):
-        with patch("files.server._ch", mock_ch):
+        with patch("backend.api.server._ch", mock_ch):
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
@@ -175,7 +175,7 @@ class TestFeedback:
 
     @pytest.mark.asyncio
     async def test_invalid_feedback_value_returns_422(self, mock_ch):
-        with patch("files.server._ch", mock_ch):
+        with patch("backend.api.server._ch", mock_ch):
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
@@ -202,7 +202,7 @@ class TestGlobalBenchmarks:
             )
         }
 
-        with patch("files.server._ch", mock_ch):
+        with patch("backend.api.server._ch", mock_ch):
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
@@ -220,7 +220,7 @@ class TestVenueSignals:
     async def test_returns_venue_data(self, mock_ch):
         mock_ch.get_venue_by_id.return_value = {"venue_id": "v1", "name": "Test"}
 
-        with patch("files.server._ch", mock_ch):
+        with patch("backend.api.server._ch", mock_ch):
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:
@@ -232,7 +232,7 @@ class TestVenueSignals:
     async def test_returns_404_when_not_found(self, mock_ch):
         mock_ch.get_venue_by_id.return_value = None
 
-        with patch("files.server._ch", mock_ch):
+        with patch("backend.api.server._ch", mock_ch):
             async with AsyncClient(
                 transport=ASGITransport(app=app), base_url="http://test"
             ) as client:

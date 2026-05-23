@@ -409,7 +409,7 @@ class TestNimbleMapsSearch:
 
         with (
             patch("httpx.AsyncClient", return_value=mock_http),
-            patch("files.scraper_agent._client", mock_claude),
+            patch("backend.agents.scraper_agent._client", mock_claude),
         ):
             agent = ScraperAgent()
             results = await agent.run(birthday_intent)
@@ -458,7 +458,7 @@ class TestNimbleMapsSearch:
 
         with (
             patch("httpx.AsyncClient", return_value=mock_http),
-            patch("files.scraper_agent._client", mock_claude),
+            patch("backend.agents.scraper_agent._client", mock_claude),
         ):
             results = await ScraperAgent().run(birthday_intent)
 

@@ -8,7 +8,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from ..models.models import VenueIntent, ScoredVenue, VenueIntelligence, PublishedGuide
+from ..models.models import (
+    GovernanceScore,
+    PublishedGuide,
+    ScoredVenue,
+    SensoKBResult,
+    VenueIntelligence,
+    VenueIntent,
+)
 from ..agents.publisher_agent import PublisherAgent, _build_slug
 
 
@@ -42,7 +49,7 @@ class TestBuildSlug:
         assert slug == slug.lower()
 
 
-# ─── PublisherAgent._generate_guide ──────────────────────────────────────────
+# ─── PublisherAgent._generate_grounded_guide ─────────────────────────────────
 
 class TestGenerateGuide:
     @pytest.mark.asyncio
@@ -53,9 +60,14 @@ class TestGenerateGuide:
             content=[MagicMock(text="# Guide\n\nSample content.")]
         )
 
-        with patch("files.publisher_agent._client", async_anthropic_client):
+        with (
+            patch("backend.agents.publisher_agent._client", async_anthropic_client),
+            patch("backend.agents.publisher_agent.SensoClient"),
+        ):
             agent = PublisherAgent()
-            result = await agent._generate_guide(birthday_intent, [sample_scored_venue])
+            result = await agent._generate_grounded_guide(
+                birthday_intent, [sample_scored_venue], SensoKBResult()
+            )
 
         assert isinstance(result, str)
         assert len(result) > 0
@@ -68,9 +80,14 @@ class TestGenerateGuide:
             content=[MagicMock(text="# Guide")]
         )
 
-        with patch("files.publisher_agent._client", async_anthropic_client):
+        with (
+            patch("backend.agents.publisher_agent._client", async_anthropic_client),
+            patch("backend.agents.publisher_agent.SensoClient"),
+        ):
             agent = PublisherAgent()
-            await agent._generate_guide(birthday_intent, [sample_scored_venue])
+            await agent._generate_grounded_guide(
+                birthday_intent, [sample_scored_venue], SensoKBResult()
+            )
 
         call_kwargs = async_anthropic_client.messages.create.call_args[1]
         assert call_kwargs["system"][0]["cache_control"] == {"type": "ephemeral"}
@@ -88,9 +105,14 @@ class TestGenerateGuide:
 
         async_anthropic_client.messages.create = capture
 
-        with patch("files.publisher_agent._client", async_anthropic_client):
+        with (
+            patch("backend.agents.publisher_agent._client", async_anthropic_client),
+            patch("backend.agents.publisher_agent.SensoClient"),
+        ):
             agent = PublisherAgent()
-            await agent._generate_guide(birthday_intent, [sample_scored_venue])
+            await agent._generate_grounded_guide(
+                birthday_intent, [sample_scored_venue], SensoKBResult()
+            )
 
         assert sample_scored_venue.name in captured_prompt
 
@@ -108,53 +130,80 @@ class TestGenerateGuide:
 
         async_anthropic_client.messages.create = capture
 
-        with patch("files.publisher_agent._client", async_anthropic_client):
+        with (
+            patch("backend.agents.publisher_agent._client", async_anthropic_client),
+            patch("backend.agents.publisher_agent.SensoClient"),
+        ):
             agent = PublisherAgent()
-            await agent._generate_guide(birthday_intent, [sample_scored_venue])
+            await agent._generate_grounded_guide(
+                birthday_intent, [sample_scored_venue], SensoKBResult()
+            )
 
         assert sample_intelligence.why_card[:30] in captured_prompt
 
 
-# ─── PublisherAgent._publish_to_senso ────────────────────────────────────────
+# ─── PublisherAgent.publish_guide — Senso integration ────────────────────────
 
 class TestPublishToSenso:
-    @pytest.mark.asyncio
-    async def test_posts_to_correct_url(self, birthday_intent):
-        mock_resp = MagicMock()
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = {"status": "published", "url": "https://cited.md/slug"}
-
-        mock_http = AsyncMock()
-        mock_http.post = AsyncMock(return_value=mock_resp)
-        mock_http.aclose = AsyncMock()
-
-        with patch("httpx.AsyncClient", return_value=mock_http):
-            agent = PublisherAgent()
-            result = await agent._publish_to_senso("test-slug", "# Guide", birthday_intent)
-
-        assert result["status"] == "published"
-        call_args = mock_http.post.call_args
-        assert "senso.ai" in call_args[0][0]
+    def _mock_senso(self) -> AsyncMock:
+        senso = AsyncMock()
+        senso.query_knowledge_base = AsyncMock(return_value=SensoKBResult())
+        senso.publish_content = AsyncMock(
+            return_value=MagicMock(url="https://cited.md/slug", status="published")
+        )
+        senso.score_content = AsyncMock(
+            return_value=GovernanceScore(overall_score=85, hallucination_risk=0.1)
+        )
+        senso.report_content_gaps = AsyncMock(return_value=0)
+        senso.close = AsyncMock()
+        return senso
 
     @pytest.mark.asyncio
-    async def test_payload_contains_required_fields(self, birthday_intent):
-        mock_resp = MagicMock()
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = {"status": "ok"}
+    async def test_publish_content_called_with_correct_slug(
+        self, birthday_intent, async_anthropic_client
+    ):
+        mock_senso = self._mock_senso()
+        async_anthropic_client.messages.create.return_value = MagicMock(
+            content=[MagicMock(text="# Guide")]
+        )
 
-        mock_http = AsyncMock()
-        mock_http.post = AsyncMock(return_value=mock_resp)
-        mock_http.aclose = AsyncMock()
-
-        with patch("httpx.AsyncClient", return_value=mock_http):
+        with (
+            patch("backend.agents.publisher_agent._client", async_anthropic_client),
+            patch("backend.agents.publisher_agent.SensoClient", return_value=mock_senso),
+        ):
             agent = PublisherAgent()
-            await agent._publish_to_senso("test-slug", "# Guide content", birthday_intent)
+            await agent.publish_guide(birthday_intent, [])
 
-        payload = mock_http.post.call_args[1]["json"]
-        assert payload["slug"] == "test-slug"
-        assert payload["content"] == "# Guide content"
-        assert payload["metadata"]["city"] == birthday_intent.city
-        assert payload["metadata"]["grounded"] is True
+        slug = mock_senso.publish_content.call_args[0][0]
+        assert "new-york-city" in slug
+        assert "birthday" in slug
+
+    @pytest.mark.asyncio
+    async def test_geo_metadata_grounded_flag_is_true(
+        self, birthday_intent, async_anthropic_client
+    ):
+        mock_senso = self._mock_senso()
+        captured_geo = None
+
+        async def capture_publish(slug, content, citations, geo):
+            nonlocal captured_geo
+            captured_geo = geo
+            return MagicMock(url="https://cited.md/x", status="published")
+
+        mock_senso.publish_content = capture_publish
+        async_anthropic_client.messages.create.return_value = MagicMock(
+            content=[MagicMock(text="# Guide")]
+        )
+
+        with (
+            patch("backend.agents.publisher_agent._client", async_anthropic_client),
+            patch("backend.agents.publisher_agent.SensoClient", return_value=mock_senso),
+        ):
+            agent = PublisherAgent()
+            await agent.publish_guide(birthday_intent, [])
+
+        assert captured_geo.city == birthday_intent.city
+        assert captured_geo.grounded is True
 
 
 # ─── PublisherAgent.publish_guide (integration) ───────────────────────────────
@@ -167,17 +216,20 @@ class TestPublishGuide:
         async_anthropic_client.messages.create.return_value = MagicMock(
             content=[MagicMock(text="# Great Guide\n\nContent.")]
         )
-        mock_resp = MagicMock()
-        mock_resp.raise_for_status = MagicMock()
-        mock_resp.json.return_value = {"status": "published", "url": "https://cited.md/x"}
-
-        mock_http = AsyncMock()
-        mock_http.post = AsyncMock(return_value=mock_resp)
-        mock_http.aclose = AsyncMock()
+        mock_senso = AsyncMock()
+        mock_senso.query_knowledge_base = AsyncMock(return_value=SensoKBResult())
+        mock_senso.publish_content = AsyncMock(
+            return_value=MagicMock(url="https://cited.md/x", status="published")
+        )
+        mock_senso.score_content = AsyncMock(
+            return_value=GovernanceScore(overall_score=85, hallucination_risk=0.1)
+        )
+        mock_senso.report_content_gaps = AsyncMock(return_value=0)
+        mock_senso.close = AsyncMock()
 
         with (
-            patch("files.publisher_agent._client", async_anthropic_client),
-            patch("httpx.AsyncClient", return_value=mock_http),
+            patch("backend.agents.publisher_agent._client", async_anthropic_client),
+            patch("backend.agents.publisher_agent.SensoClient", return_value=mock_senso),
         ):
             agent = PublisherAgent()
             result = await agent.publish_guide(birthday_intent, [sample_scored_venue])

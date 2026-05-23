@@ -5,9 +5,8 @@ All external I/O (Anthropic, ClickHouse, Redis, httpx) is mocked here.
 from __future__ import annotations
 
 import asyncio
-import json
 from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -61,6 +60,7 @@ def sample_scored_venue() -> ScoredVenue:
         city="New York City",
         neighborhood="Tribeca",
         cuisine="italian",
+        place_id="ChIJLOCANDA",
         price_per_head=95,
         has_private_room=True,
         max_group_size=20,
@@ -133,9 +133,9 @@ def user_prefs() -> UserPreferences:
 # ─── Anthropic mock helpers ───────────────────────────────────────────────────
 
 def _make_anthropic_response(text: str) -> MagicMock:
-    """Build a mock that looks like an anthropic.types.Message."""
     msg = MagicMock()
     msg.content = [MagicMock(text=text)]
+    msg.usage = MagicMock(input_tokens=100, output_tokens=50)
     return msg
 
 
@@ -159,7 +159,6 @@ def mock_guide_response(text: str = "# Guide\n\nSample guide content.") -> Magic
 
 @pytest.fixture
 def async_anthropic_client():
-    """Patched AsyncAnthropic that never hits the real API."""
     mock = AsyncMock()
     mock.messages.create = AsyncMock()
     return mock
@@ -191,6 +190,22 @@ def mock_ch(sample_scored_venue):
     return ch
 
 
+# ─── Semaphore reset ──────────────────────────────────────────────────────────
+
+@pytest.fixture(autouse=True)
+def reset_asyncio_semaphores():
+    """
+    Module-level asyncio semaphores bind to the first event loop that uses them.
+    pytest-asyncio creates a fresh loop per test function, so the semaphores must
+    be re-created before each test to avoid 'bound to a different event loop' errors.
+    """
+    import backend.agents.orchestrator as _orch
+    import backend.agents.scraper_agent as _scraper
+    _orch._SYNTHESIS_SEM = asyncio.Semaphore(3)
+    _scraper._CLAUDE_SEM = asyncio.Semaphore(5)
+    yield
+
+
 # ─── httpx mock ───────────────────────────────────────────────────────────────
 
 @pytest.fixture
@@ -199,12 +214,3 @@ def mock_http_client():
     http.__aenter__ = AsyncMock(return_value=http)
     http.__aexit__ = AsyncMock(return_value=None)
     return http
-
-
-# ─── Event loop fixture ───────────────────────────────────────────────────────
-
-@pytest.fixture(scope="session")
-def event_loop():
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()

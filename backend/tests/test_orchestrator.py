@@ -70,8 +70,8 @@ class TestParseIntent:
         mock_redis.get.return_value = None
 
         with (
-            patch("files.orchestrator._client", async_anthropic_client),
-            patch("files.orchestrator._cache", mock_redis),
+            patch("backend.agents.orchestrator._client", async_anthropic_client),
+            patch("backend.agents.orchestrator._cache", mock_redis),
         ):
             result = await parse_intent("birthday dinner Italian NYC 8 people quiet")
 
@@ -86,8 +86,8 @@ class TestParseIntent:
         mock_redis.get.return_value = birthday_intent.model_dump_json()
 
         with (
-            patch("files.orchestrator._client", async_anthropic_client),
-            patch("files.orchestrator._cache", mock_redis),
+            patch("backend.agents.orchestrator._client", async_anthropic_client),
+            patch("backend.agents.orchestrator._cache", mock_redis),
         ):
             result = await parse_intent("birthday dinner Italian NYC 8 people quiet")
 
@@ -104,8 +104,8 @@ class TestParseIntent:
         mock_redis.get.return_value = None
 
         with (
-            patch("files.orchestrator._client", async_anthropic_client),
-            patch("files.orchestrator._cache", mock_redis),
+            patch("backend.agents.orchestrator._client", async_anthropic_client),
+            patch("backend.agents.orchestrator._cache", mock_redis),
         ):
             await parse_intent("birthday dinner")
 
@@ -124,8 +124,8 @@ class TestParseIntent:
         mock_redis.get.return_value = None
 
         with (
-            patch("files.orchestrator._client", async_anthropic_client),
-            patch("files.orchestrator._cache", mock_redis),
+            patch("backend.agents.orchestrator._client", async_anthropic_client),
+            patch("backend.agents.orchestrator._cache", mock_redis),
         ):
             await parse_intent("test query")
 
@@ -146,7 +146,7 @@ class TestSynthesizeVenueIntelligence:
             content=[MagicMock(text=sample_intelligence.model_dump_json())]
         )
 
-        with patch("files.orchestrator._client", async_anthropic_client):
+        with patch("backend.agents.orchestrator._client", async_anthropic_client):
             result = await synthesize_venue_intelligence(sample_scored_venue, birthday_intent)
 
         assert isinstance(result, VenueIntelligence)
@@ -174,7 +174,7 @@ class TestSynthesizeVenueIntelligence:
 
         async_anthropic_client.messages.create = fake_create
 
-        with patch("files.orchestrator._client", async_anthropic_client):
+        with patch("backend.agents.orchestrator._client", async_anthropic_client):
             await asyncio.gather(
                 *[
                     synthesize_venue_intelligence(sample_scored_venue, birthday_intent)
@@ -193,7 +193,7 @@ class TestSynthesizeVenueIntelligence:
             content=[MagicMock(text=sample_intelligence.model_dump_json())]
         )
 
-        with patch("files.orchestrator._client", async_anthropic_client):
+        with patch("backend.agents.orchestrator._client", async_anthropic_client):
             await synthesize_venue_intelligence(sample_scored_venue, birthday_intent)
 
         call_kwargs = async_anthropic_client.messages.create.call_args[1]

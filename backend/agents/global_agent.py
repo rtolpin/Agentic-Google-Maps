@@ -14,6 +14,8 @@ from ..models.models import VenueIntent
 
 _COMPARISON_CITIES = ["New York City", "Rome", "Tokyo", "Paris", "London"]
 
+_ch = ClickHouseClient()
+
 
 class GlobalIntelligenceAgent:
     """Fetches global city benchmarks so the frontend can show comparative context."""
@@ -21,26 +23,19 @@ class GlobalIntelligenceAgent:
     async def run(self, intent: VenueIntent) -> dict:
         cities = list({*_COMPARISON_CITIES, intent.city})
         try:
-            ch = ClickHouseClient()
             benchmarks = await asyncio.to_thread(
-                ch.get_city_benchmarks, cities, intent.occasion
+                _ch.get_city_benchmarks, cities, intent.occasion
             )
         except Exception:
             benchmarks = {}
 
-        city_data = {
-            city: bm.model_dump() for city, bm in benchmarks.items()
-        }
-
+        city_data = {city: bm.model_dump() for city, bm in benchmarks.items()}
         current = city_data.get(intent.city)
-        avg_price = (
-            current["avg_price"] if current else None
-        )
 
         return {
             "city": intent.city,
             "occasion": intent.occasion,
             "benchmarks": city_data,
-            "avg_price_in_city": avg_price,
+            "avg_price_in_city": current["avg_price"] if current else None,
             "comparison_cities": [c for c in cities if c != intent.city],
         }

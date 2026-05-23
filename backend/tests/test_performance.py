@@ -110,15 +110,15 @@ class TestParseIntentLatency:
         hit_redis = AsyncMock()
         hit_redis.get = AsyncMock(return_value=birthday_intent.model_dump_json())
 
-        with patch("files.orchestrator._client", mock_client):
+        with patch("backend.agents.orchestrator._client", mock_client):
             # Cache miss
-            with patch("files.orchestrator._cache", miss_redis):
+            with patch("backend.agents.orchestrator._cache", miss_redis):
                 t0 = time.perf_counter()
                 await parse_intent("birthday dinner Italian NYC 8 people quiet")
                 miss_time = time.perf_counter() - t0
 
             # Cache hit
-            with patch("files.orchestrator._cache", hit_redis):
+            with patch("backend.agents.orchestrator._cache", hit_redis):
                 t0 = time.perf_counter()
                 await parse_intent("birthday dinner Italian NYC 8 people quiet")
                 hit_time = time.perf_counter() - t0
@@ -160,7 +160,7 @@ class TestSynthesisConcurrency:
 
         venues = [_make_scored_venue(i) for i in range(6)]
 
-        with patch("files.orchestrator._client", mock_client):
+        with patch("backend.agents.orchestrator._client", mock_client):
             t_start = time.perf_counter()
             await asyncio.gather(
                 *[synthesize_venue_intelligence(v, birthday_intent) for v in venues]
@@ -195,7 +195,7 @@ class TestSynthesisConcurrency:
 
         venues = [_make_scored_venue(i) for i in range(9)]
 
-        with patch("files.orchestrator._client", mock_client):
+        with patch("backend.agents.orchestrator._client", mock_client):
             await asyncio.gather(
                 *[synthesize_venue_intelligence(v, birthday_intent) for v in venues]
             )
@@ -226,14 +226,14 @@ class TestScraperParallelism:
 
         # Sequential baseline
         t0 = time.perf_counter()
-        with patch("files.scraper_agent._client", mock_client):
+        with patch("backend.agents.scraper_agent._client", mock_client):
             for v in raw_venues:
                 await _call_with_retry(v)
         sequential_time = time.perf_counter() - t0
 
         # Parallel (as ScraperAgent does it)
         t0 = time.perf_counter()
-        with patch("files.scraper_agent._client", mock_client):
+        with patch("backend.agents.scraper_agent._client", mock_client):
             await asyncio.gather(*[_call_with_retry(v) for v in raw_venues])
         parallel_time = time.perf_counter() - t0
 
@@ -261,7 +261,7 @@ class TestScraperParallelism:
 
         raw_venues = [_make_raw_venue(i) for i in range(12)]
 
-        with patch("files.scraper_agent._client", mock_client):
+        with patch("backend.agents.scraper_agent._client", mock_client):
             await asyncio.gather(*[_call_with_retry(v) for v in raw_venues])
 
         assert peak <= 5, f"Scraper semaphore is 5, but peak was {peak}"

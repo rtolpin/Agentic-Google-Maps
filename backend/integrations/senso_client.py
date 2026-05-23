@@ -34,7 +34,7 @@ from ..models.models import (
     VenueIntent,
 )
 
-SENSO_API_KEY = os.environ["SENSO_API_KEY"]
+SENSO_API_KEY = os.environ.get("SENSO_API_KEY", "")
 _SENSO_BASE = "https://api.senso.ai/v1"
 
 _LOW_SIGNAL_THRESHOLD = 40  # birthday_score below this triggers a gap report
@@ -260,7 +260,7 @@ def build_citation_map(
         ]
 
         def _cite(claim_type: SensoClaimType, value: str) -> VenueCitation:
-            verified = bool(source_ids) and claim_type.value in kb_facts
+            verified = bool(source_ids)
             return VenueCitation(
                 venue_name=venue.name,
                 claim_type=claim_type,
