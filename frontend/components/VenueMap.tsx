@@ -842,19 +842,30 @@ export function VenueMap({
           {state.status === "done" && state.venues.length > 0 && (
             <div style={{ flex: 1, overflowY: "auto", padding: "0 10px 8px", minHeight: 0 }}>
               {/* Header row */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 4px 10px" }}>
-                <span style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                  {state.venues.length} Matches
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 4px 10px" }}>
+                <span style={{
+                  fontSize: 15, fontWeight: 800, color: "#F1F5F9",
+                  letterSpacing: "-0.01em",
+                }}>
+                  <span style={{
+                    background: "linear-gradient(135deg, #38BDF8, #818CF8)",
+                    WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+                  }}>
+                    {state.venues.length}
+                  </span>
+                  {" "}
+                  <span style={{ color: "#CBD5E1" }}>Matches</span>
                 </span>
                 <button
                   onClick={() => { setModalQuery(""); setShowAllMatches(true); }}
                   style={{
-                    padding: "5px 13px", borderRadius: 20,
-                    border: "1px solid rgba(99,179,237,0.6)",
+                    padding: "7px 16px", borderRadius: 20,
+                    border: "1.5px solid rgba(167,139,250,0.7)",
                     background: "linear-gradient(135deg, #1D4ED8, #7C3AED)",
-                    color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                    color: "#fff", fontSize: 12, fontWeight: 800, cursor: "pointer",
                     letterSpacing: "0.04em",
-                    boxShadow: "0 0 10px rgba(124,58,237,0.45)",
+                    boxShadow: "0 0 16px rgba(124,58,237,0.6), 0 2px 8px rgba(0,0,0,0.4)",
+                    textShadow: "0 1px 2px rgba(0,0,0,0.3)",
                   }}
                 >
                   View All ↗
