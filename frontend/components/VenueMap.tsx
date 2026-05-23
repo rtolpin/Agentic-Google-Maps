@@ -639,7 +639,7 @@ export function VenueMap({
               fontWeight: 500,
               letterSpacing: "0.02em",
             }}>
-              View Progress in Side Panel
+              View AI Agent Progress in Side Panel
             </span>
           </div>
         </div>
