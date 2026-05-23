@@ -202,6 +202,7 @@ export function VenueMap({
   const markersRef = useRef<Map<string, google.maps.marker.AdvancedMarkerElement>>(new Map());
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const userLocationRef = useRef<{ lat: number; lng: number } | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const [mapsReady, setMapsReady] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -658,19 +659,28 @@ export function VenueMap({
                 title="Close AI panel"
                 style={{
                   marginLeft: "auto",
-                  display: "inline-flex", alignItems: "center", gap: 5,
-                  padding: "5px 10px", borderRadius: 16,
-                  background: "rgba(255,255,255,0.06)",
-                  border: "1px solid rgba(255,255,255,0.1)",
-                  color: "#64748B",
-                  fontSize: 11, fontWeight: 600, cursor: "pointer",
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                  padding: "7px 13px", borderRadius: 10,
+                  background: "linear-gradient(135deg, rgba(239,68,68,0.2), rgba(220,38,38,0.15))",
+                  border: "1.5px solid rgba(239,68,68,0.4)",
+                  color: "#FCA5A5",
+                  fontSize: 12, fontWeight: 700, cursor: "pointer",
                   whiteSpace: "nowrap",
                   flexShrink: 0,
+                  boxShadow: "0 2px 8px rgba(239,68,68,0.2)",
                   transition: "all 0.15s",
                 }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.background = "linear-gradient(135deg, rgba(239,68,68,0.35), rgba(220,38,38,0.3))";
+                  (e.currentTarget as HTMLButtonElement).style.color = "#fff";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.background = "linear-gradient(135deg, rgba(239,68,68,0.2), rgba(220,38,38,0.15))";
+                  (e.currentTarget as HTMLButtonElement).style.color = "#FCA5A5";
+                }}
               >
-                <span style={{ fontSize: 11 }}>◀</span>
-                <span>Close</span>
+                <span style={{ fontSize: 12 }}>◀</span>
+                <span>Close Panel</span>
               </button>
               {state.status === "searching" && (
                 <div style={{ marginLeft: "auto", display: "flex", gap: 3 }}>
@@ -1051,6 +1061,7 @@ export function VenueMap({
           }}>
             <span style={{ padding: "0 14px", fontSize: 17, flexShrink: 0, opacity: 0.55 }}>🔍</span>
             <input
+              ref={searchInputRef}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               placeholder='Try "birthday dinner for 8, quiet Italian NYC" or "cosy café to work from"'
@@ -1147,29 +1158,74 @@ export function VenueMap({
           INTENT CHIPS — float on the map directly below search bar
           ════════════════════════════════════════════════════════ */}
       {state.intent && (() => {
+        const intent = state.intent!;
+        const city = intent.city;
+        const occasion = intent.occasion?.replace(/_/g, " ") || "dining";
+        const cuisine = intent.cuisine || "restaurant";
+        const n = intent.group_size;
+
         const chips = [
-          { val: state.intent!.city,               icon: "📍", label: state.intent!.city,                        bg: "#2563EB", shadow: "rgba(37,99,235,0.5)"   },
-          { val: state.intent!.occasion,           icon: "🎉", label: state.intent!.occasion?.replace(/_/g, " "), bg: "#7C3AED", shadow: "rgba(124,58,237,0.5)"  },
-          { val: state.intent!.cuisine,            icon: "🍽️", label: state.intent!.cuisine,                    bg: "#B45309", shadow: "rgba(180,83,9,0.5)"     },
-          { val: state.intent!.group_size > 1,     icon: "👥", label: `${state.intent!.group_size} people`,     bg: "#047857", shadow: "rgba(4,120,87,0.5)"     },
-          { val: state.intent!.needs_private_room, icon: "🚪", label: "private room",                           bg: "#0E7490", shadow: "rgba(14,116,144,0.5)"   },
-          { val: state.intent!.noise_preference,   icon: "🔊", label: state.intent!.noise_preference,           bg: "#BE185D", shadow: "rgba(190,24,93,0.5)"    },
-          { val: state.intent!.price_band,         icon: "💎", label: state.intent!.price_band,                 bg: "#4D7C0F", shadow: "rgba(77,124,15,0.5)"    },
+          {
+            val: city, icon: "📍", label: city, bg: "#2563EB", shadow: "rgba(37,99,235,0.5)",
+            hint: "Click to search a different city",
+            refinement: `${occasion} ${cuisine} in `,
+          },
+          {
+            val: intent.occasion, icon: "🎉", label: occasion, bg: "#7C3AED", shadow: "rgba(124,58,237,0.5)",
+            hint: "Click to change occasion",
+            refinement: `${cuisine} restaurant in ${city} for ${n} people`,
+          },
+          {
+            val: intent.cuisine, icon: "🍽️", label: cuisine, bg: "#B45309", shadow: "rgba(180,83,9,0.5)",
+            hint: "Click to change cuisine",
+            refinement: `${occasion} restaurant in ${city} for ${n} people`,
+          },
+          {
+            val: intent.group_size > 1, icon: "👥", label: `${n} people`, bg: "#047857", shadow: "rgba(4,120,87,0.5)",
+            hint: "Click to change group size",
+            refinement: `${occasion} ${cuisine} in ${city} for `,
+          },
+          {
+            val: intent.needs_private_room, icon: "🚪", label: "private room", bg: "#0E7490", shadow: "rgba(14,116,144,0.5)",
+            hint: "Click to search without private room requirement",
+            refinement: `${occasion} ${cuisine} in ${city} for ${n} people`,
+          },
+          {
+            val: intent.noise_preference, icon: "🔊", label: intent.noise_preference, bg: "#BE185D", shadow: "rgba(190,24,93,0.5)",
+            hint: "Click to change noise preference",
+            refinement: `${occasion} ${cuisine} in ${city} for ${n} people`,
+          },
+          {
+            val: intent.price_band, icon: "💎", label: intent.price_band, bg: "#4D7C0F", shadow: "rgba(77,124,15,0.5)",
+            hint: "Click to change price range",
+            refinement: `${occasion} ${cuisine} in ${city} for ${n} people`,
+          },
         ].filter(c => c.val);
+
         return chips.length === 0 ? null : (
           <div style={{
             position: "absolute",
-            top: 188, // header: 14px padding + 36px logo + 12px gap + 50px search + 12px gap + 38px pills + 14px padding + 2px border
+            top: 188,
             left: showLeftPanel ? leftPanelW + 16 : 16,
             right: 16,
             zIndex: 10,
             display: "flex", gap: 8, flexWrap: "wrap",
             transition: "left 0.3s ease",
-            pointerEvents: "none", // let map events pass through the gaps
+            pointerEvents: "none",
           }}>
             {chips.map((chip, idx) => (
-              <div
+              <button
                 key={String(chip.label)}
+                title={chip.hint}
+                onClick={() => {
+                  setInputValue(chip.refinement);
+                  searchInputRef.current?.focus();
+                  // Place cursor at end
+                  setTimeout(() => {
+                    const el = searchInputRef.current;
+                    if (el) el.setSelectionRange(el.value.length, el.value.length);
+                  }, 0);
+                }}
                 style={{
                   pointerEvents: "auto",
                   display: "inline-flex", alignItems: "center", gap: 6,
@@ -1182,11 +1238,24 @@ export function VenueMap({
                   letterSpacing: "0.01em",
                   animation: `chipIn 0.4s cubic-bezier(0.34,1.56,0.64,1) ${idx * 0.06}s both`,
                   userSelect: "none",
+                  cursor: "pointer",
+                  border: "none",
+                  outline: "none",
+                  transition: "filter 0.15s, transform 0.15s",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.filter = "brightness(1.2)";
+                  (e.currentTarget as HTMLButtonElement).style.transform = "scale(1.05)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLButtonElement).style.filter = "brightness(1)";
+                  (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)";
                 }}
               >
                 <span style={{ fontSize: 14 }}>{chip.icon}</span>
                 <span style={{ textTransform: "capitalize" }}>{chip.label}</span>
-              </div>
+                <span style={{ fontSize: 10, opacity: 0.75, marginLeft: 1 }}>✎</span>
+              </button>
             ))}
           </div>
         );
@@ -1700,7 +1769,15 @@ function VenueDetailSidebar({ venue, placeDetails, onClose }: VenueDetailSidebar
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
-            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "#F1F5F9", lineHeight: 1.3 }}>
+            <h2 style={{
+              margin: 0, fontSize: 22, fontWeight: 800, color: "#F1F5F9", lineHeight: 1.25, letterSpacing: "-0.3px",
+              display: "inline-block",
+              background: "rgba(16,185,129,0.15)",
+              padding: "2px 10px 4px",
+              borderRadius: 8,
+              border: "1px solid rgba(16,185,129,0.3)",
+              boxShadow: "0 0 12px rgba(16,185,129,0.2)",
+            }}>
               {venue.name}
             </h2>
             {(venue.neighborhood || venue.cuisine) && (
@@ -1710,35 +1787,57 @@ function VenueDetailSidebar({ venue, placeDetails, onClose }: VenueDetailSidebar
               </div>
             )}
           </div>
-          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
             {/* Fullscreen toggle */}
             <button
               onClick={() => setIsFullScreen((f) => !f)}
-              title={isFullScreen ? "Exit full screen" : "Full screen"}
+              title={isFullScreen ? "Exit full screen" : "Expand to full screen"}
               style={{
-                width: 30, height: 30, borderRadius: 8,
-                background: "rgba(99,179,237,0.1)", border: "1px solid rgba(99,179,237,0.2)",
-                color: "#60A5FA", cursor: "pointer", fontSize: 13, lineHeight: 1,
-                display: "flex", alignItems: "center", justifyContent: "center",
+                display: "inline-flex", alignItems: "center", gap: 5,
+                padding: "6px 12px", borderRadius: 10, height: 34,
+                background: isFullScreen
+                  ? "linear-gradient(135deg, #7C3AED, #4F46E5)"
+                  : "linear-gradient(135deg, #1D4ED8, #2563EB)",
+                border: `1.5px solid ${isFullScreen ? "rgba(139,92,246,0.6)" : "rgba(59,130,246,0.5)"}`,
+                color: "#fff", cursor: "pointer",
+                fontSize: 12, fontWeight: 700,
+                boxShadow: isFullScreen
+                  ? "0 2px 12px rgba(124,58,237,0.5)"
+                  : "0 2px 12px rgba(37,99,235,0.45)",
+                letterSpacing: "0.01em",
+                whiteSpace: "nowrap",
+                transition: "all 0.18s",
               }}
-            >{isFullScreen ? "⊠" : "⛶"}</button>
+            >
+              <span style={{ fontSize: 14, lineHeight: 1 }}>{isFullScreen ? "⤡" : "⤢"}</span>
+              <span>{isFullScreen ? "Exit" : "Full screen"}</span>
+            </button>
             {/* Close */}
             <button
               onClick={onClose}
-              title="Close"
+              title="Close panel"
               style={{
-                width: 30, height: 30, borderRadius: 8,
-                background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)",
-                color: "#94A3B8", cursor: "pointer", fontSize: 16, lineHeight: 1,
-                display: "flex", alignItems: "center", justifyContent: "center",
+                display: "inline-flex", alignItems: "center", gap: 5,
+                padding: "6px 12px", borderRadius: 10, height: 34,
+                background: "linear-gradient(135deg, #991B1B, #DC2626)",
+                border: "1.5px solid rgba(239,68,68,0.5)",
+                color: "#fff", cursor: "pointer",
+                fontSize: 12, fontWeight: 700,
+                boxShadow: "0 2px 12px rgba(220,38,38,0.4)",
+                letterSpacing: "0.01em",
+                whiteSpace: "nowrap",
+                transition: "all 0.18s",
               }}
-            >✕</button>
+            >
+              <span style={{ fontSize: 14, lineHeight: 1 }}>✕</span>
+              <span>Close</span>
+            </button>
           </div>
         </div>
 
         {/* Pills row */}
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
-          <DarkPill color="#6366F1" label={`${Math.round(venue.match_score)}% match`} />
+          <DarkPill color="#818CF8" label={`${Math.round(venue.match_score)}% match`} large />
           {openLabel && <DarkPill color={openLabel.color} label={openLabel.label} />}
           {venue.has_private_room && <DarkPill color="#10B981" label="Private room" />}
           {venue.price_per_head > 0 && <DarkPill color="#F59E0B" label={`~$${venue.price_per_head}/head`} />}
@@ -1860,13 +1959,15 @@ function Pill({ label, color }: { label: string; color: string }) {
   );
 }
 
-function DarkPill({ label, color }: { label: string; color: string }) {
+function DarkPill({ label, color, large }: { label: string; color: string; large?: boolean }) {
   return (
     <span style={{
-      padding: "3px 9px", borderRadius: 20,
+      padding: large ? "5px 12px" : "3px 9px",
+      borderRadius: 20,
       background: `${color}20`,
       color, border: `1px solid ${color}45`,
-      fontSize: 11, fontWeight: 600,
+      fontSize: large ? 14 : 11,
+      fontWeight: large ? 700 : 600,
       whiteSpace: "nowrap",
     }}>
       {label}
