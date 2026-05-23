@@ -1,0 +1,9 @@
+<clickhouse>
+    <logger>
+        <level>warning</level>
+    </logger>
+    <max_connections>100</max_connections>
+    <keep_alive_timeout>3</keep_alive_timeout>
+    <max_concurrent_queries>50</max_concurrent_queries>
+    <listen_host>0.0.0.0</listen_host>
+</clickhouse>

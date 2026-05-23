@@ -1,0 +1,366 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://therightspot.vercel.app/schemas/atmospheric.schema.json",
+  "title": "Atmospheric Attributes Schema",
+  "description": "Qualitative, nuanced contextual tags representing how people actually describe places. Separate from POI Core to prevent fact/opinion blending. Powers semantic LLM search for qualitative queries like 'quiet spot for deep work' or 'dimly lit date night bar'.",
+  "type": "object",
+  "required": ["place_id", "attributes", "confidence"],
+  "properties": {
+    "place_id": {
+      "type": "string",
+      "description": "Foreign key to poi-core-schema. Links qualitative signals to the canonical POI identity."
+    },
+    "attributes": {
+      "type": "object",
+      "description": "All qualitative attribute clusters. Each cluster maps to a distinct semantic query dimension.",
+      "properties": {
+
+        "work_suitability": {
+          "type": "object",
+          "description": "How well the venue supports productivity, focused work, and professional activities.",
+          "properties": {
+            "good_for_deep_work": {
+              "type": "boolean",
+              "description": "Low distraction, suitable for sustained concentration tasks."
+            },
+            "good_for_calls": {
+              "type": "boolean",
+              "description": "Acoustics and privacy allow voice/video calls without disruption."
+            },
+            "good_for_meetings": {
+              "type": "boolean",
+              "description": "Tables, seating arrangement, and noise level accommodate 2–4 person meetings."
+            },
+            "wifi_quality": {
+              "type": "string",
+              "enum": ["none", "poor", "moderate", "fast", "excellent"],
+              "description": "Crowd-sourced consensus on Wi-Fi reliability and speed."
+            },
+            "wifi_password_required": { "type": "boolean" },
+            "power_outlets": {
+              "type": "string",
+              "enum": ["none", "scarce", "moderate", "abundant"],
+              "description": "Availability of accessible power outlets for devices."
+            },
+            "laptop_friendly": {
+              "type": "boolean",
+              "description": "Tables at appropriate height, sufficient space for laptop use."
+            },
+            "quiet_zones_available": {
+              "type": "boolean",
+              "description": "Dedicated quiet sections separate from main social area."
+            },
+            "time_limit_enforced": {
+              "type": "boolean",
+              "description": "Venue enforces seating time limits (e.g., 2-hour rule during peak hours)."
+            },
+            "minimum_spend_required": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+
+        "ambiance": {
+          "type": "object",
+          "description": "Sensory and aesthetic qualities that define the feel of the space.",
+          "properties": {
+            "noise_level": {
+              "type": "string",
+              "enum": ["silent", "quiet", "moderate", "lively", "loud"],
+              "description": "Typical ambient noise level during normal operating hours."
+            },
+            "noise_variance": {
+              "type": "string",
+              "enum": ["consistent", "time_variable", "day_variable"],
+              "description": "Whether noise level changes significantly by hour or day."
+            },
+            "lighting": {
+              "type": "string",
+              "enum": ["dim", "soft", "moderate", "bright", "natural_dominant"],
+              "description": "Overall lighting quality and intensity."
+            },
+            "seating_comfort": {
+              "type": "string",
+              "enum": ["poor", "adequate", "comfortable", "very_comfortable"],
+              "description": "Physical comfort of available seating."
+            },
+            "seating_types": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["bar_stools", "lounge_chairs", "booth", "standard_table", "standing", "communal_table", "window_seats", "sofa", "floor_seating"]
+              },
+              "uniqueItems": true
+            },
+            "crowding_typical": {
+              "type": "string",
+              "enum": ["rarely_crowded", "moderately_crowded", "often_crowded", "always_crowded"],
+              "description": "Typical occupancy during standard operating hours."
+            },
+            "interior_style": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["cozy", "industrial", "minimalist", "maximalist", "trendy", "classic", "bohemian", "upscale", "casual", "academic", "creative", "rustic", "modern", "vintage", "zen"]
+              },
+              "uniqueItems": true,
+              "maxItems": 3
+            },
+            "music_played": {
+              "type": "string",
+              "enum": ["none", "background_instrumental", "background_vocal", "prominent", "live_music"]
+            },
+            "scent_profile": {
+              "type": "string",
+              "enum": ["neutral", "coffee", "food", "floral", "woody", "sea_air", "fresh_air"],
+              "description": "Dominant ambient scent — relevant for sensory-sensitive users."
+            }
+          },
+          "additionalProperties": false
+        },
+
+        "accessibility": {
+          "type": "object",
+          "description": "Physical and logistical accessibility attributes.",
+          "properties": {
+            "wheelchair_accessible_entrance": { "type": "boolean" },
+            "wheelchair_accessible_seating": { "type": "boolean" },
+            "accessible_restroom": { "type": "boolean" },
+            "parking_available": {
+              "type": "string",
+              "enum": ["none", "street", "paid_lot", "free_lot", "valet"]
+            },
+            "transit_proximity_minutes": {
+              "type": "number",
+              "minimum": 0,
+              "description": "Walk time in minutes to nearest transit stop."
+            },
+            "bike_parking": { "type": "boolean" },
+            "bike_share_nearby": { "type": "boolean" },
+            "dog_friendly": {
+              "type": "string",
+              "enum": ["no", "outdoor_only", "indoor_allowed"],
+              "description": "Dog policy — important for outdoor venue queries."
+            },
+            "kid_friendly": { "type": "boolean" },
+            "stroller_accessible": { "type": "boolean" },
+            "gender_neutral_restroom": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+
+        "outdoor": {
+          "type": "object",
+          "description": "Outdoor and natural environment qualities. Critical for hiking, parks, and nature queries.",
+          "properties": {
+            "has_outdoor_seating": { "type": "boolean" },
+            "outdoor_heaters": { "type": "boolean" },
+            "scenic_view": {
+              "type": "string",
+              "enum": ["none", "street", "courtyard", "waterfront", "skyline", "nature", "mountain"]
+            },
+            "trail_access_direct": {
+              "type": "boolean",
+              "description": "Trail accessible directly from the venue without road crossing."
+            },
+            "trail_difficulty": {
+              "type": "string",
+              "enum": ["none", "easy", "moderate", "hard", "expert"]
+            },
+            "shade_available": { "type": "boolean" },
+            "green_space_nearby": { "type": "boolean" },
+            "sunrise_sunset_viewpoint": { "type": "boolean" },
+            "indoor_outdoor_flow": {
+              "type": "boolean",
+              "description": "Open layout that blends interior and exterior space."
+            }
+          },
+          "additionalProperties": false
+        },
+
+        "food_and_drink": {
+          "type": "object",
+          "description": "Beverage and food offering specifics relevant to extended stays.",
+          "properties": {
+            "specialty_coffee": { "type": "boolean" },
+            "pour_over_available": { "type": "boolean" },
+            "tea_selection": {
+              "type": "string",
+              "enum": ["none", "basic", "curated", "extensive"]
+            },
+            "alcohol_served": { "type": "boolean" },
+            "food_menu": {
+              "type": "string",
+              "enum": ["none", "snacks_only", "light_meals", "full_menu"]
+            },
+            "vegan_options": { "type": "boolean" },
+            "gluten_free_options": { "type": "boolean" },
+            "bring_your_own_food_allowed": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+
+        "time_sensitivity": {
+          "type": "object",
+          "description": "When the venue is best — key for situational queries like 'quiet spot right now'.",
+          "properties": {
+            "best_time_of_day": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["early_morning", "morning", "midday", "afternoon", "evening", "late_night"]
+              },
+              "uniqueItems": true
+            },
+            "best_days": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+              },
+              "uniqueItems": true
+            },
+            "avoid_during": {
+              "type": "string",
+              "description": "Free-text note on when to avoid (e.g., 'Friday evenings — packed with after-work crowd')."
+            },
+            "seasonal_quality": {
+              "type": "string",
+              "enum": ["year_round", "spring_summer", "fall_winter", "summer_only", "weather_dependent"]
+            }
+          },
+          "additionalProperties": false
+        },
+
+        "scenario_tags": {
+          "type": "array",
+          "description": "Curated scenario tags for semantic vector search. Each tag represents a complete use-case intent an LLM might match to user queries.",
+          "items": {
+            "type": "string",
+            "enum": [
+              "first_date",
+              "anniversary_dinner",
+              "solo_work_session",
+              "team_offsite",
+              "job_interview_prep",
+              "reading_marathon",
+              "post_hike_recovery",
+              "client_meeting",
+              "focus_sprint",
+              "creative_brainstorm",
+              "networking_event",
+              "study_group",
+              "podcast_recording",
+              "journaling",
+              "people_watching",
+              "weekend_brunch",
+              "late_night_writing",
+              "catch_up_with_friend",
+              "remote_work_tuesday",
+              "quick_laptop_session",
+              "long_stay_nomad",
+              "city_exploration_break",
+              "rainy_day_retreat",
+              "sunrise_session",
+              "sunset_drinks",
+              "post_gym_refuel",
+              "family_outing",
+              "dog_walk_destination",
+              "nature_immersion",
+              "urban_hiking",
+              "photography_spot"
+            ]
+          },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "confidence": {
+      "type": "object",
+      "description": "Data quality metadata — how much to trust each signal.",
+      "required": ["signal_count", "last_updated"],
+      "properties": {
+        "signal_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of distinct review/source signals used to populate attributes."
+        },
+        "last_updated": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 UTC timestamp of last attribute refresh."
+        },
+        "source_diversity": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Fraction of attributes sourced from 2+ independent signals (0–1). Higher = more reliable."
+        },
+        "human_verified": {
+          "type": "boolean",
+          "description": "Whether a human editor has reviewed these attributes.",
+          "default": false
+        },
+        "ai_extracted": {
+          "type": "boolean",
+          "description": "Whether attributes were extracted by AI from review text.",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "place_id": "ChIJrTLr-GyuEmsRBfy61i59si0",
+      "attributes": {
+        "work_suitability": {
+          "good_for_deep_work": true,
+          "good_for_calls": false,
+          "wifi_quality": "excellent",
+          "power_outlets": "abundant",
+          "laptop_friendly": true,
+          "quiet_zones_available": true,
+          "time_limit_enforced": false
+        },
+        "ambiance": {
+          "noise_level": "quiet",
+          "noise_variance": "time_variable",
+          "lighting": "natural_dominant",
+          "seating_comfort": "comfortable",
+          "seating_types": ["window_seats", "standard_table", "lounge_chairs"],
+          "crowding_typical": "moderately_crowded",
+          "interior_style": ["academic", "cozy"],
+          "music_played": "background_instrumental"
+        },
+        "outdoor": {
+          "has_outdoor_seating": true,
+          "scenic_view": "courtyard",
+          "shade_available": true
+        },
+        "time_sensitivity": {
+          "best_time_of_day": ["morning", "afternoon"],
+          "best_days": ["monday", "tuesday", "wednesday", "thursday"],
+          "avoid_during": "Weekend afternoons — standing room only after noon",
+          "seasonal_quality": "year_round"
+        },
+        "scenario_tags": [
+          "reading_marathon",
+          "solo_work_session",
+          "focus_sprint",
+          "journaling",
+          "late_night_writing"
+        ]
+      },
+      "confidence": {
+        "signal_count": 247,
+        "last_updated": "2025-05-23T10:00:00Z",
+        "source_diversity": 0.82,
+        "human_verified": false,
+        "ai_extracted": true
+      }
+    }
+  ]
+}

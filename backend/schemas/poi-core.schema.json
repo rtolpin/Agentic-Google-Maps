@@ -1,0 +1,267 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://therightspot.vercel.app/schemas/poi-core.schema.json",
+  "title": "POI Core Schema",
+  "description": "Foundational taxonomy and metadata for every Point of Interest in The Right Spot. Maps directly to Google Places API Primary Types. Never store GooglePlaceDetails beyond display — place_id is the only persistent Google identifier.",
+  "type": "object",
+  "required": ["place_id", "name", "coordinates", "primary_type", "address"],
+  "properties": {
+    "place_id": {
+      "type": "string",
+      "description": "Google Places API place_id — globally unique neutral identifier. Safe to store. Never colocate with PII.",
+      "examples": ["ChIJN1t_tDeuEmsRUsoyG83frY4"]
+    },
+    "name": {
+      "type": "string",
+      "description": "Display name of the venue as returned by Google Places."
+    },
+    "coordinates": {
+      "type": "object",
+      "required": ["lat", "lng"],
+      "properties": {
+        "lat": { "type": "number", "minimum": -90, "maximum": 90 },
+        "lng": { "type": "number", "minimum": -180, "maximum": 180 }
+      },
+      "additionalProperties": false
+    },
+    "primary_type": {
+      "type": "string",
+      "description": "Google Places API primary type — single authoritative classification for identity resolution.",
+      "enum": [
+        "cafe",
+        "coffee_shop",
+        "restaurant",
+        "bar",
+        "bakery",
+        "food_court",
+        "park",
+        "national_park",
+        "hiking_area",
+        "campground",
+        "nature_reserve",
+        "beach",
+        "library",
+        "book_store",
+        "coworking_space",
+        "office",
+        "business_center",
+        "convention_center",
+        "gym",
+        "yoga_studio",
+        "wellness_center",
+        "spa",
+        "museum",
+        "art_gallery",
+        "cultural_center",
+        "performing_arts_theater",
+        "hotel",
+        "hostel",
+        "lodging",
+        "shopping_mall",
+        "market",
+        "grocery_store",
+        "transit_station",
+        "subway_station",
+        "bus_station",
+        "train_station",
+        "airport",
+        "university",
+        "school",
+        "hospital",
+        "pharmacy",
+        "place_of_worship",
+        "tourist_attraction",
+        "landmark",
+        "rooftop_bar",
+        "sports_club",
+        "bowling_alley",
+        "movie_theater"
+      ]
+    },
+    "secondary_types": {
+      "type": "array",
+      "description": "Additional Google Places API types providing supplementary classification.",
+      "items": { "type": "string" },
+      "uniqueItems": true
+    },
+    "address": {
+      "type": "object",
+      "required": ["formatted", "city", "country"],
+      "properties": {
+        "formatted": {
+          "type": "string",
+          "description": "Full human-readable address."
+        },
+        "street_number": { "type": "string" },
+        "street": { "type": "string" },
+        "neighborhood": {
+          "type": "string",
+          "description": "Sub-city neighborhood or district (e.g., 'SoHo', 'Mission District')."
+        },
+        "city": { "type": "string" },
+        "state": { "type": "string" },
+        "country": { "type": "string" },
+        "postal_code": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "contact": {
+      "type": "object",
+      "description": "Contact details — displayed on map only, never persisted to ClickHouse per Google TOS.",
+      "properties": {
+        "phone": { "type": "string" },
+        "website": { "type": "string", "format": "uri" },
+        "google_maps_uri": { "type": "string", "format": "uri" }
+      },
+      "additionalProperties": false
+    },
+    "hours": {
+      "type": "object",
+      "properties": {
+        "open_now": { "type": "boolean" },
+        "periods": {
+          "type": "array",
+          "description": "Structured open/close periods. day 0 = Sunday.",
+          "items": {
+            "type": "object",
+            "required": ["day", "open_time"],
+            "properties": {
+              "day": { "type": "integer", "minimum": 0, "maximum": 6 },
+              "open_time": {
+                "type": "string",
+                "pattern": "^[0-9]{4}$",
+                "description": "24-hour HHMM format (e.g., '0800')."
+              },
+              "close_time": {
+                "type": "string",
+                "pattern": "^[0-9]{4}$",
+                "description": "24-hour HHMM format. Omit for 24-hour venues."
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "weekday_text": {
+          "type": "array",
+          "description": "Human-readable hours strings from Google (e.g., 'Monday: 8:00 AM – 9:00 PM').",
+          "items": { "type": "string" },
+          "minItems": 7,
+          "maxItems": 7
+        },
+        "holiday_closures": {
+          "type": "array",
+          "items": { "type": "string", "format": "date" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ratings": {
+      "type": "object",
+      "properties": {
+        "google_rating": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 5,
+          "description": "Google Places star rating (1 decimal place)."
+        },
+        "total_ratings": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Total number of Google reviews."
+        },
+        "price_level": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4,
+          "description": "Google price level: 0=Free, 1=$, 2=$$, 3=$$$, 4=$$$$."
+        }
+      },
+      "additionalProperties": false
+    },
+    "spatial": {
+      "type": "object",
+      "description": "Geospatial enrichment for proximity and boundary queries.",
+      "properties": {
+        "geohash": {
+          "type": "string",
+          "description": "Geohash at precision 7 (~150m accuracy) for spatial indexing."
+        },
+        "neighborhood_polygon_id": {
+          "type": "string",
+          "description": "Reference to /basemap-geometry polygon containing this POI."
+        },
+        "transit_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Walk/transit accessibility score (0–100)."
+        },
+        "walk_time_to_transit_minutes": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "data_source": {
+          "type": "string",
+          "enum": ["nimble_maps", "nimble_serp", "google_places_api", "manual"],
+          "description": "Origin of this record."
+        },
+        "ingested_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 UTC timestamp of first ingestion."
+        },
+        "last_verified": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 UTC timestamp of last data freshness check."
+        },
+        "schema_version": {
+          "type": "string",
+          "description": "Schema version for forward-compatibility.",
+          "default": "1.0.0"
+        },
+        "is_permanently_closed": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "examples": [
+    {
+      "place_id": "ChIJrTLr-GyuEmsRBfy61i59si0",
+      "name": "The Reading Room Cafe",
+      "coordinates": { "lat": 40.7128, "lng": -74.0060 },
+      "primary_type": "cafe",
+      "secondary_types": ["book_store", "wifi_cafe"],
+      "address": {
+        "formatted": "142 Prince St, New York, NY 10012, USA",
+        "street_number": "142",
+        "street": "Prince St",
+        "neighborhood": "SoHo",
+        "city": "New York",
+        "state": "NY",
+        "country": "US",
+        "postal_code": "10012"
+      },
+      "ratings": {
+        "google_rating": 4.6,
+        "total_ratings": 892,
+        "price_level": 2
+      },
+      "metadata": {
+        "data_source": "nimble_maps",
+        "ingested_at": "2025-05-23T10:00:00Z",
+        "schema_version": "1.0.0"
+      }
+    }
+  ]
+}
