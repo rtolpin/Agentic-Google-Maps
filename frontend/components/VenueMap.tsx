@@ -533,10 +533,14 @@ export function VenueMap({
     },
   ], [state.intent, state.venues.length, state.status, state.globalIntel]);
 
-  const canShowLeftPanel = state.status === "searching" || state.status === "done" || state.status === "error";
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
-  const showLeftPanel = canShowLeftPanel && leftPanelOpen;
+  const showLeftPanel = leftPanelOpen;
   const leftPanelW = 320;
+
+  // Auto-open panel whenever a new search starts
+  useEffect(() => {
+    if (state.status === "searching") setLeftPanelOpen(true);
+  }, [state.status]);
 
   // ─── Render ─────────────────────────────────────────────────────────────
 
@@ -601,15 +605,6 @@ export function VenueMap({
                   {state.status === "searching" ? "Agents working…" : state.status === "done" ? `${state.venues.length} venues found` : "Search error"}
                 </div>
               </div>
-              <button
-                onClick={() => setLeftPanelOpen(false)}
-                title="Collapse panel"
-                style={{
-                  marginLeft: "auto", background: "none", border: "none",
-                  color: "#475569", cursor: "pointer", fontSize: 18, lineHeight: 1,
-                  padding: "2px 4px", borderRadius: 6,
-                }}
-              >‹</button>
               {state.status === "searching" && (
                 <div style={{ marginLeft: "auto", display: "flex", gap: 3 }}>
                   {[0,1,2].map(i => (
@@ -633,7 +628,36 @@ export function VenueMap({
             )}
           </div>
 
-          {/* Agent steps */}
+          {/* ── Idle state ── */}
+          {state.status === "idle" && (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "32px 24px", gap: 16 }}>
+              <div style={{ fontSize: 40 }}>✦</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "#CBD5E1", textAlign: "center" }}>
+                Ask AI to discover the perfect venue
+              </div>
+              <div style={{ fontSize: 12, color: "#475569", textAlign: "center", lineHeight: 1.6 }}>
+                Try <em style={{ color: "#93C5FD" }}>"birthday dinner for 8, quiet Italian"</em> or <em style={{ color: "#93C5FD" }}>"cosy café to work from"</em>
+              </div>
+              {[
+                "birthday dinner for 8 in NYC",
+                "quiet café with fast wifi",
+                "rooftop bar for a group",
+              ].map((ex) => (
+                <button key={ex} onClick={() => { setInputValue(ex); handleSearch(ex); }}
+                  style={{
+                    width: "100%", padding: "9px 14px", borderRadius: 10, cursor: "pointer",
+                    background: "rgba(59,130,246,0.07)", border: "1px solid rgba(59,130,246,0.2)",
+                    color: "#93C5FD", fontSize: 12, textAlign: "left", fontStyle: "italic",
+                    transition: "all 0.15s",
+                  }}>
+                  ↩ {ex}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Agent steps — only during / after search */}
+          {state.status !== "idle" && (
           <div style={{ padding: "14px 20px 10px", flexShrink: 0 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
               AI Agents
@@ -670,6 +694,7 @@ export function VenueMap({
               );
             })}
           </div>
+          )} {/* end status !== idle */}
 
           {/* Status message bar */}
           {state.statusMessage && state.status === "searching" && (
@@ -889,8 +914,30 @@ export function VenueMap({
         boxShadow: "0 4px 24px rgba(0,0,0,0.45)",
         padding: "14px 20px",
       }}>
-        {/* Logo + agent status */}
-        <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
+        {/* Logo + panel toggle + agent status */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          {/* Panel toggle — always visible */}
+          <button
+            onClick={() => setLeftPanelOpen((o) => !o)}
+            title={leftPanelOpen ? "Hide AI panel" : "Show AI panel"}
+            style={{
+              flexShrink: 0,
+              display: "inline-flex", alignItems: "center", gap: 5,
+              padding: "5px 11px", borderRadius: 20,
+              background: leftPanelOpen
+                ? "linear-gradient(135deg, rgba(37,99,235,0.3), rgba(124,58,237,0.3))"
+                : "rgba(255,255,255,0.06)",
+              border: `1.5px solid ${leftPanelOpen ? "rgba(99,179,237,0.4)" : "rgba(255,255,255,0.12)"}`,
+              color: leftPanelOpen ? "#93C5FD" : "#64748B",
+              fontSize: 12, fontWeight: 700, cursor: "pointer",
+              transition: "all 0.2s",
+              letterSpacing: "0.02em",
+            }}
+          >
+            <span style={{ fontSize: 13 }}>{leftPanelOpen ? "◀" : "▶"}</span>
+            <span>AI Panel</span>
+          </button>
+
           <div style={{
             display: "inline-flex", alignItems: "center", gap: 7,
             padding: "5px 14px", borderRadius: 24,
@@ -1077,27 +1124,6 @@ export function VenueMap({
           </div>
         );
       })()}
-
-      {/* ── Re-open left panel tab ── */}
-      {canShowLeftPanel && !leftPanelOpen && (
-        <button
-          onClick={() => setLeftPanelOpen(true)}
-          title="Show results panel"
-          style={{
-            position: "absolute",
-            top: "50%", left: 0,
-            transform: "translateY(-50%)",
-            zIndex: 12,
-            width: 28, height: 72, borderRadius: "0 10px 10px 0",
-            background: "linear-gradient(180deg, #2563EB, #7C3AED)",
-            border: "none",
-            boxShadow: "4px 0 16px rgba(37,99,235,0.45)",
-            cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            color: "#fff", fontSize: 14, fontWeight: 700,
-          }}
-        >›</button>
-      )}
 
       {/* ── Locate-me button ── */}
       {mapsReady && (
