@@ -213,6 +213,8 @@ export function VenueMap({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
   const [detectedCity, setDetectedCity] = useState<string>(""); // from reverse geocoding
+  const [showAllMatches, setShowAllMatches] = useState(false);
+  const [modalQuery, setModalQuery] = useState("");
 
   const { state, search, fetchPlaceDetails, selectVenue, cancel } = useVenueSearch(userId);
 
@@ -285,30 +287,14 @@ export function VenueMap({
         const userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         userLocationRef.current = userPos;
 
-        // Outer ring (accuracy halo)
-        const halo = document.createElement("div");
-        halo.style.cssText = `
-          position: absolute; width: 48px; height: 48px; border-radius: 50%;
-          background: rgba(59,130,246,0.15); border: 1.5px solid rgba(59,130,246,0.35);
-          top: 50%; left: 50%; transform: translate(-50%,-50%);
-          pointer-events: none;
-        `;
-        // Inner dot
-        const dot = document.createElement("div");
-        dot.style.cssText = `
-          width: 16px; height: 16px; border-radius: 50%;
-          background: #3B82F6; border: 2.5px solid #fff;
-          box-shadow: 0 2px 8px rgba(37,99,235,0.55);
-          animation: locationPulse 2.2s ease-out infinite;
-          position: relative; z-index: 1;
-        `;
         const wrapper = document.createElement("div");
         wrapper.style.cssText = `
-          width: 16px; height: 16px; position: relative;
-          display: flex; align-items: center; justify-content: center;
+          width: 20px; height: 20px; border-radius: 50%;
+          background: #3B82F6; border: 3px solid #fff;
+          box-sizing: border-box;
+          box-shadow: 0 2px 8px rgba(37,99,235,0.55);
+          animation: locationPulse 2s ease-out infinite;
         `;
-        wrapper.appendChild(halo);
-        wrapper.appendChild(dot);
 
         new google.maps.marker.AdvancedMarkerElement({
           map: mapInstanceRef.current!,
@@ -547,7 +533,9 @@ export function VenueMap({
     },
   ], [state.intent, state.venues.length, state.status, state.globalIntel]);
 
-  const showLeftPanel = state.status === "searching" || state.status === "done" || state.status === "error";
+  const canShowLeftPanel = state.status === "searching" || state.status === "done" || state.status === "error";
+  const [leftPanelOpen, setLeftPanelOpen] = useState(true);
+  const showLeftPanel = canShowLeftPanel && leftPanelOpen;
   const leftPanelW = 320;
 
   // ─── Render ─────────────────────────────────────────────────────────────
@@ -564,9 +552,9 @@ export function VenueMap({
           to   { opacity: 1; transform: scale(1)    translateY(0);    }
         }
         @keyframes locationPulse {
-          0%   { box-shadow: 0 0 0 0 rgba(59,130,246,0.6); }
-          70%  { box-shadow: 0 0 0 14px rgba(59,130,246,0); }
-          100% { box-shadow: 0 0 0 0 rgba(59,130,246,0); }
+          0%   { box-shadow: 0 0 0 0   rgba(59,130,246,0.55), 0 2px 8px rgba(37,99,235,0.45); }
+          70%  { box-shadow: 0 0 0 18px rgba(59,130,246,0),   0 2px 8px rgba(37,99,235,0.45); }
+          100% { box-shadow: 0 0 0 0   rgba(59,130,246,0),    0 2px 8px rgba(37,99,235,0.45); }
         }
         @keyframes gridScroll {
           from { background-position: 0 0; }
@@ -613,6 +601,15 @@ export function VenueMap({
                   {state.status === "searching" ? "Agents working…" : state.status === "done" ? `${state.venues.length} venues found` : "Search error"}
                 </div>
               </div>
+              <button
+                onClick={() => setLeftPanelOpen(false)}
+                title="Collapse panel"
+                style={{
+                  marginLeft: "auto", background: "none", border: "none",
+                  color: "#475569", cursor: "pointer", fontSize: 18, lineHeight: 1,
+                  padding: "2px 4px", borderRadius: 6,
+                }}
+              >‹</button>
               {state.status === "searching" && (
                 <div style={{ marginLeft: "auto", display: "flex", gap: 3 }}>
                   {[0,1,2].map(i => (
@@ -690,83 +687,134 @@ export function VenueMap({
 
           {/* ── Results list (status === done) ── */}
           {state.status === "done" && state.venues.length > 0 && (
-            <div style={{ flex: 1, overflowY: "auto", padding: "0 12px 20px" }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", padding: "4px 8px 10px" }}>
-                Top Matches
-              </div>
-              {state.venues.map((venue, idx) => (
-                <div
-                  key={venue.venue_id}
-                  onClick={() => {
-                    selectVenue(venue.venue_id);
-                    setSidebarOpen(true);
-                    fetchPlaceDetails(venue.venue_id).then(setSelectedPlaceDetails);
-                    onVenueSelect?.(venue);
-                  }}
+            <div style={{ flex: 1, overflowY: "auto", padding: "0 10px 8px", minHeight: 0 }}>
+              {/* Header row */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 4px 10px" }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                  {state.venues.length} Matches
+                </span>
+                <button
+                  onClick={() => { setModalQuery(""); setShowAllMatches(true); }}
                   style={{
-                    padding: "12px", borderRadius: 12, marginBottom: 8, cursor: "pointer",
-                    background: state.selectedVenueId === venue.venue_id
-                      ? "linear-gradient(135deg, rgba(59,130,246,0.2), rgba(139,92,246,0.15))"
-                      : "rgba(255,255,255,0.04)",
-                    border: `1px solid ${state.selectedVenueId === venue.venue_id ? "rgba(59,130,246,0.5)" : "rgba(255,255,255,0.07)"}`,
-                    transition: "all 0.15s ease",
+                    padding: "4px 11px", borderRadius: 20, border: "1px solid rgba(99,179,237,0.35)",
+                    background: "linear-gradient(135deg, rgba(37,99,235,0.18), rgba(124,58,237,0.18))",
+                    color: "#93C5FD", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                    letterSpacing: "0.02em",
                   }}
                 >
-                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                        <span style={{
-                          fontSize: 10, fontWeight: 700, color: "#64748B",
-                          background: "rgba(255,255,255,0.06)", borderRadius: 4,
-                          padding: "1px 5px",
-                        }}>#{idx + 1}</span>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: "#F1F5F9", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {venue.name}
-                        </span>
-                      </div>
-                      <div style={{ fontSize: 11, color: "#64748B" }}>
-                        {[venue.neighborhood, venue.cuisine].filter(Boolean).join(" · ")}
-                      </div>
-                    </div>
-                    {/* Match score badge */}
+                  View All ↗
+                </button>
+              </div>
+
+              {state.venues.slice(0, 5).map((venue, idx) => {
+                const score = Math.round(venue.match_score);
+                const isSelected = state.selectedVenueId === venue.venue_id;
+                // Rank-based accent gradient
+                const accents = [
+                  { from: "#F59E0B", to: "#EF4444", glow: "rgba(245,158,11,0.4)" },  // #1 gold-red
+                  { from: "#3B82F6", to: "#8B5CF6", glow: "rgba(59,130,246,0.4)" },  // #2 blue-purple
+                  { from: "#10B981", to: "#06B6D4", glow: "rgba(16,185,129,0.4)" },  // #3 green-cyan
+                  { from: "#EC4899", to: "#F43F5E", glow: "rgba(236,72,153,0.35)" }, // #4 pink-rose
+                  { from: "#8B5CF6", to: "#6366F1", glow: "rgba(139,92,246,0.35)" }, // #5 purple
+                ];
+                const accent = accents[idx] ?? accents[4];
+                // Score color
+                const scoreColor = score >= 70 ? "#34D399" : score >= 50 ? "#FBBF24" : "#94A3B8";
+
+                return (
+                  <div
+                    key={venue.venue_id}
+                    onClick={() => {
+                      selectVenue(venue.venue_id);
+                      setSidebarOpen(true);
+                      fetchPlaceDetails(venue.venue_id).then(setSelectedPlaceDetails);
+                      onVenueSelect?.(venue);
+                    }}
+                    style={{
+                      borderRadius: 14, marginBottom: 8, cursor: "pointer", overflow: "hidden",
+                      border: `1.5px solid ${isSelected ? accent.from : "rgba(255,255,255,0.07)"}`,
+                      boxShadow: isSelected ? `0 0 18px ${accent.glow}` : "0 2px 8px rgba(0,0,0,0.25)",
+                      transition: "all 0.18s ease",
+                      background: isSelected
+                        ? `linear-gradient(135deg, ${accent.from}22, ${accent.to}18)`
+                        : "rgba(255,255,255,0.04)",
+                    }}
+                  >
+                    {/* Colored top stripe */}
                     <div style={{
-                      flexShrink: 0, width: 42, height: 42, borderRadius: 10,
-                      background: `conic-gradient(#3B82F6 ${venue.match_score * 3.6}deg, rgba(255,255,255,0.08) 0deg)`,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      position: "relative",
-                    }}>
-                      <div style={{
-                        width: 34, height: 34, borderRadius: 8,
-                        background: "#1a2236",
-                        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-                      }}>
-                        <span style={{ fontSize: 11, fontWeight: 800, color: "#60A5FA", lineHeight: 1 }}>
-                          {Math.round(venue.match_score)}
-                        </span>
-                        <span style={{ fontSize: 8, color: "#475569" }}>%</span>
+                      height: 3,
+                      background: `linear-gradient(90deg, ${accent.from}, ${accent.to})`,
+                    }} />
+
+                    <div style={{ padding: "10px 12px" }}>
+                      <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                        {/* Rank badge */}
+                        <div style={{
+                          flexShrink: 0, width: 28, height: 28, borderRadius: 8,
+                          background: `linear-gradient(135deg, ${accent.from}, ${accent.to})`,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: 12, fontWeight: 900, color: "#fff",
+                          boxShadow: `0 2px 8px ${accent.glow}`,
+                        }}>
+                          {idx + 1}
+                        </div>
+
+                        {/* Name + address */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: "#F1F5F9", lineHeight: 1.3, marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {venue.name}
+                          </div>
+                          {venue.address && (
+                            <div style={{ fontSize: 10, color: "#64748B", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                              📍 {venue.address.split(",").slice(0, 2).join(",")}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Score pill */}
+                        <div style={{
+                          flexShrink: 0,
+                          padding: "3px 8px", borderRadius: 20,
+                          background: `${scoreColor}22`,
+                          border: `1px solid ${scoreColor}55`,
+                          fontSize: 12, fontWeight: 900, color: scoreColor,
+                          lineHeight: 1.6,
+                        }}>
+                          {score}
+                        </div>
+                      </div>
+
+                      {/* Tags row */}
+                      <div style={{ display: "flex", gap: 4, marginTop: 8, flexWrap: "wrap" }}>
+                        {venue.has_private_room && (
+                          <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(16,185,129,0.15)", color: "#34D399", border: "1px solid rgba(16,185,129,0.25)" }}>🚪 Private</span>
+                        )}
+                        {venue.price_per_head > 0 && (
+                          <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(251,191,36,0.12)", color: "#FCD34D", border: "1px solid rgba(251,191,36,0.2)" }}>${venue.price_per_head}/head</span>
+                        )}
+                        {venue.intelligence?.why_card && (
+                          <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(139,92,246,0.15)", color: "#C4B5FD", border: "1px solid rgba(139,92,246,0.25)" }}>✨ AI</span>
+                        )}
                       </div>
                     </div>
                   </div>
-                  {/* Venue tags */}
-                  <div style={{ display: "flex", gap: 4, marginTop: 8, flexWrap: "wrap" }}>
-                    {venue.has_private_room && (
-                      <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(16,185,129,0.12)", color: "#34D399", border: "1px solid rgba(16,185,129,0.2)" }}>
-                        🚪 Private room
-                      </span>
-                    )}
-                    {venue.price_per_head > 0 && (
-                      <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(255,255,255,0.06)", color: "#94A3B8", border: "1px solid rgba(255,255,255,0.08)" }}>
-                        ~${venue.price_per_head}/head
-                      </span>
-                    )}
-                    {venue.intelligence?.why_card && (
-                      <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(139,92,246,0.12)", color: "#A78BFA", border: "1px solid rgba(139,92,246,0.2)" }}>
-                        ✨ AI analysed
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
+
+              {state.venues.length > 5 && (
+                <button
+                  onClick={() => { setModalQuery(""); setShowAllMatches(true); }}
+                  style={{
+                    width: "100%", padding: "10px", borderRadius: 12, marginTop: 2,
+                    border: "1.5px dashed rgba(99,179,237,0.3)",
+                    background: "rgba(59,130,246,0.06)",
+                    color: "#60A5FA", fontSize: 12, fontWeight: 700, cursor: "pointer",
+                    letterSpacing: "0.02em",
+                  }}
+                >
+                  + {state.venues.length - 5} more matches — View All
+                </button>
+              )}
             </div>
           )}
 
@@ -1030,6 +1078,27 @@ export function VenueMap({
         );
       })()}
 
+      {/* ── Re-open left panel tab ── */}
+      {canShowLeftPanel && !leftPanelOpen && (
+        <button
+          onClick={() => setLeftPanelOpen(true)}
+          title="Show results panel"
+          style={{
+            position: "absolute",
+            top: "50%", left: 0,
+            transform: "translateY(-50%)",
+            zIndex: 12,
+            width: 28, height: 72, borderRadius: "0 10px 10px 0",
+            background: "linear-gradient(180deg, #2563EB, #7C3AED)",
+            border: "none",
+            boxShadow: "4px 0 16px rgba(37,99,235,0.45)",
+            cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            color: "#fff", fontSize: 14, fontWeight: 700,
+          }}
+        >›</button>
+      )}
+
       {/* ── Locate-me button ── */}
       {mapsReady && (
         <button
@@ -1064,6 +1133,219 @@ export function VenueMap({
         >
           📍
         </button>
+      )}
+
+      {/* ════════════════════════════════════════════════════════
+          ALL MATCHES MODAL
+          ════════════════════════════════════════════════════════ */}
+      {showAllMatches && (
+        <div
+          style={{
+            position: "fixed", inset: 0, zIndex: 50,
+            background: "rgba(0,0,0,0.75)",
+            backdropFilter: "blur(8px)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: "20px",
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget) setShowAllMatches(false); }}
+        >
+          <div style={{
+            width: "100%", maxWidth: 860, maxHeight: "88vh",
+            background: "linear-gradient(160deg, #0f172a 0%, #1a2236 100%)",
+            borderRadius: 20,
+            border: "1.5px solid rgba(255,255,255,0.1)",
+            boxShadow: "0 24px 80px rgba(0,0,0,0.7)",
+            display: "flex", flexDirection: "column",
+            overflow: "hidden",
+          }}>
+            {/* Modal header */}
+            <div style={{
+              padding: "20px 24px 16px",
+              borderBottom: "1px solid rgba(255,255,255,0.07)",
+              flexShrink: 0,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+                <div style={{
+                  width: 36, height: 36, borderRadius: 10,
+                  background: "linear-gradient(135deg, #2563EB, #7C3AED)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 18, flexShrink: 0,
+                }}>🏆</div>
+                <div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: "#F1F5F9" }}>All Matches</div>
+                  <div style={{ fontSize: 12, color: "#64748B" }}>
+                    {state.venues.length} venues found for "{query}"
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowAllMatches(false)}
+                  style={{
+                    marginLeft: "auto", width: 32, height: 32, borderRadius: 8,
+                    background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)",
+                    color: "#94A3B8", cursor: "pointer", fontSize: 18, lineHeight: 1,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}
+                >×</button>
+              </div>
+
+              {/* Search bar */}
+              <div style={{
+                display: "flex", alignItems: "center", gap: 10,
+                background: "rgba(255,255,255,0.06)", borderRadius: 12,
+                border: "1.5px solid rgba(255,255,255,0.1)",
+                padding: "0 14px",
+              }}>
+                <span style={{ color: "#475569", fontSize: 16 }}>🔍</span>
+                <input
+                  autoFocus
+                  value={modalQuery}
+                  onChange={(e) => setModalQuery(e.target.value)}
+                  placeholder="Filter venues by name or address…"
+                  style={{
+                    flex: 1, padding: "11px 0",
+                    background: "transparent", border: "none", outline: "none",
+                    fontSize: 14, color: "#E2E8F0", caretColor: "#3B82F6",
+                  }}
+                />
+                {modalQuery && (
+                  <button onClick={() => setModalQuery("")}
+                    style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 18 }}>×</button>
+                )}
+              </div>
+            </div>
+
+            {/* Venue grid */}
+            <div style={{
+              flex: 1, overflowY: "auto", padding: "16px 20px 20px",
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
+              gap: 12,
+              alignContent: "start",
+            }}>
+              {state.venues
+                .filter((v) => {
+                  if (!modalQuery.trim()) return true;
+                  const q = modalQuery.toLowerCase();
+                  return v.name.toLowerCase().includes(q) || v.address?.toLowerCase().includes(q);
+                })
+                .map((venue, idx) => {
+                  const score = Math.round(venue.match_score);
+                  const isSelected = state.selectedVenueId === venue.venue_id;
+                  const cardColors = [
+                    { from: "#F59E0B", to: "#EF4444", glow: "rgba(245,158,11,0.35)" },
+                    { from: "#3B82F6", to: "#8B5CF6", glow: "rgba(59,130,246,0.35)" },
+                    { from: "#10B981", to: "#06B6D4", glow: "rgba(16,185,129,0.35)" },
+                    { from: "#EC4899", to: "#F43F5E", glow: "rgba(236,72,153,0.3)" },
+                    { from: "#8B5CF6", to: "#6366F1", glow: "rgba(139,92,246,0.3)" },
+                    { from: "#F97316", to: "#EAB308", glow: "rgba(249,115,22,0.3)" },
+                    { from: "#14B8A6", to: "#3B82F6", glow: "rgba(20,184,166,0.3)" },
+                  ];
+                  const c = cardColors[idx % cardColors.length];
+                  const scoreColor = score >= 70 ? "#34D399" : score >= 50 ? "#FBBF24" : "#94A3B8";
+
+                  return (
+                    <div
+                      key={venue.venue_id}
+                      onClick={() => {
+                        selectVenue(venue.venue_id);
+                        setSidebarOpen(true);
+                        fetchPlaceDetails(venue.venue_id).then(setSelectedPlaceDetails);
+                        onVenueSelect?.(venue);
+                        setShowAllMatches(false);
+                      }}
+                      style={{
+                        borderRadius: 14, cursor: "pointer", overflow: "hidden",
+                        border: `1.5px solid ${isSelected ? c.from : "rgba(255,255,255,0.08)"}`,
+                        boxShadow: isSelected ? `0 0 20px ${c.glow}` : "0 2px 10px rgba(0,0,0,0.3)",
+                        background: isSelected
+                          ? `linear-gradient(160deg, ${c.from}28, ${c.to}20)`
+                          : "rgba(255,255,255,0.04)",
+                        transition: "all 0.15s",
+                      }}
+                    >
+                      {/* Top gradient bar */}
+                      <div style={{
+                        height: 4,
+                        background: `linear-gradient(90deg, ${c.from}, ${c.to})`,
+                      }} />
+
+                      <div style={{ padding: "12px 14px 14px" }}>
+                        {/* Rank + score row */}
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                          <div style={{
+                            width: 26, height: 26, borderRadius: 7,
+                            background: `linear-gradient(135deg, ${c.from}, ${c.to})`,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 11, fontWeight: 900, color: "#fff",
+                            boxShadow: `0 2px 6px ${c.glow}`,
+                          }}>#{idx + 1}</div>
+
+                          <div style={{
+                            padding: "3px 10px", borderRadius: 20,
+                            background: `${scoreColor}22`,
+                            border: `1px solid ${scoreColor}55`,
+                            fontSize: 13, fontWeight: 900, color: scoreColor,
+                          }}>
+                            {score} pts
+                          </div>
+                        </div>
+
+                        {/* Name */}
+                        <div style={{ fontSize: 14, fontWeight: 700, color: "#F1F5F9", marginBottom: 4, lineHeight: 1.3 }}>
+                          {venue.name}
+                        </div>
+
+                        {/* Address */}
+                        {venue.address && (
+                          <div style={{ fontSize: 11, color: "#64748B", marginBottom: 8, lineHeight: 1.4 }}>
+                            {venue.address.split(",").slice(0, 2).join(",")}
+                          </div>
+                        )}
+
+                        {/* AI snippet */}
+                        {venue.intelligence?.why_card && (
+                          <div style={{
+                            fontSize: 11, color: "#94A3B8", lineHeight: 1.5,
+                            padding: "8px 10px", borderRadius: 8,
+                            background: "rgba(255,255,255,0.04)",
+                            border: "1px solid rgba(255,255,255,0.06)",
+                            display: "-webkit-box",
+                            WebkitLineClamp: 3,
+                            WebkitBoxOrient: "vertical" as React.CSSProperties["WebkitBoxOrient"],
+                            overflow: "hidden",
+                          }}>
+                            {venue.intelligence.why_card}
+                          </div>
+                        )}
+
+                        {/* Tags */}
+                        <div style={{ display: "flex", gap: 4, marginTop: 8, flexWrap: "wrap" }}>
+                          {venue.has_private_room && (
+                            <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(16,185,129,0.15)", color: "#34D399", border: "1px solid rgba(16,185,129,0.25)" }}>🚪 Private</span>
+                          )}
+                          {venue.price_per_head > 0 && (
+                            <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(251,191,36,0.12)", color: "#FCD34D", border: "1px solid rgba(251,191,36,0.2)" }}>${venue.price_per_head}/head</span>
+                          )}
+                          {venue.noise_level && (
+                            <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(99,179,237,0.1)", color: "#93C5FD", border: "1px solid rgba(99,179,237,0.2)" }}>
+                              {venue.noise_level.replace("_", " ")}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+              {/* Empty state */}
+              {state.venues.filter((v) => !modalQuery.trim() || v.name.toLowerCase().includes(modalQuery.toLowerCase()) || v.address?.toLowerCase().includes(modalQuery.toLowerCase())).length === 0 && (
+                <div style={{ gridColumn: "1/-1", textAlign: "center", padding: "40px 20px", color: "#475569" }}>
+                  No venues match "{modalQuery}"
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── Venue detail sidebar ── */}

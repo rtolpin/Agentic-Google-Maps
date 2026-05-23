@@ -94,12 +94,25 @@ class VenueIntent(BaseModel):
     dietary_restrictions: list[str] = Field(default_factory=list)
     other_signals: list[str] = Field(default_factory=list)
 
+    @field_validator("occasion", mode="before")
+    @classmethod
+    def coerce_occasion(cls, v: object) -> object:
+        return "dining" if v is None else v
+
     @field_validator("group_size", mode="before")
     @classmethod
     def coerce_group_size(cls, v: object) -> object:
-        # Coerce null (from LLM output) to the default; let all other values
-        # pass through so the int type and ge/le constraints still fire.
         return 2 if v is None else v
+
+    @field_validator("needs_private_room", mode="before")
+    @classmethod
+    def coerce_private_room(cls, v: object) -> object:
+        return False if v is None else v
+
+    @field_validator("dietary_restrictions", "other_signals", mode="before")
+    @classmethod
+    def coerce_list(cls, v: object) -> object:
+        return [] if v is None else v
 
     @field_validator("city", mode="before")
     @classmethod
@@ -107,7 +120,7 @@ class VenueIntent(BaseModel):
         if v is None:
             return "Unknown"
         if isinstance(v, str) and not v.strip():
-            raise ValueError("city must not be empty")
+            return "Unknown"
         return str(v).strip()
 
     @property
