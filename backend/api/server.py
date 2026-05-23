@@ -7,7 +7,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from pathlib import Path
+
+# Ensure backend/ is on sys.path so absolute imports work regardless of cwd
+_backend_dir = Path(__file__).parents[1]
+if str(_backend_dir) not in sys.path:
+    sys.path.insert(0, str(_backend_dir))
 
 # Load .env from project root (two levels up from backend/api/)
 try:
