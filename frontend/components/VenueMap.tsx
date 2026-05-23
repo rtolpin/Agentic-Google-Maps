@@ -844,17 +844,22 @@ export function VenueMap({
               {/* Header row */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "2px 4px 10px" }}>
                 <span style={{
+                  display: "inline-flex", alignItems: "center", gap: 8,
                   fontSize: 15, fontWeight: 800, color: "#F1F5F9",
                   letterSpacing: "-0.01em",
                 }}>
                   <span style={{
-                    background: "linear-gradient(135deg, #38BDF8, #818CF8)",
-                    WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+                    display: "inline-flex", alignItems: "center", justifyContent: "center",
+                    minWidth: 30, height: 30, borderRadius: "50%",
+                    background: "rgba(52,211,153,0.22)",
+                    border: "1.5px solid rgba(52,211,153,0.55)",
+                    boxShadow: "0 0 10px rgba(52,211,153,0.3)",
+                    color: "#fff", fontSize: 14, fontWeight: 900,
+                    padding: "0 6px",
                   }}>
                     {state.venues.length}
                   </span>
-                  {" "}
-                  <span style={{ color: "#CBD5E1" }}>Matches</span>
+                  <span style={{ color: "#F1F5F9" }}>Matches</span>
                 </span>
                 <button
                   onClick={() => { setModalQuery(""); setShowAllMatches(true); }}
