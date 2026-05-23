@@ -784,8 +784,8 @@ export function VenueMap({
             </div>
           )}
 
-          {/* Agent steps — only during / after search */}
-          {state.status !== "idle" && (
+          {/* Agent steps — only while searching */}
+          {state.status === "searching" && (
           <div style={{ padding: "14px 20px 10px", flexShrink: 0 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
               AI Agents
@@ -842,7 +842,7 @@ export function VenueMap({
           {state.status === "done" && state.venues.length > 0 && (
             <div style={{ flex: 1, overflowY: "auto", padding: "0 10px 8px", minHeight: 0 }}>
               {/* Header row */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 4px 10px" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "2px 4px 10px" }}>
                 <span style={{
                   fontSize: 15, fontWeight: 800, color: "#F1F5F9",
                   letterSpacing: "-0.01em",
