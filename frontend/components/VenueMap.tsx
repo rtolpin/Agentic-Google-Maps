@@ -99,78 +99,60 @@ interface CategoryConfig {
   description: string;
   placeTypes: string[];
   defaultQuery: string;
+  color: string;   // solid background for the pill
+  glow: string;    // box-shadow colour when active
 }
 
 const CATEGORIES: Record<PlaceCategory, CategoryConfig> = {
   restaurants: {
-    label: "Restaurants",
-    icon: "🍽️",
-    description: "Dining & special occasions",
-    placeTypes: ["restaurant"],
-    defaultQuery: "best restaurant near me",
+    label: "Restaurants", icon: "🍽️", description: "Dining & special occasions",
+    placeTypes: ["restaurant"], defaultQuery: "best restaurant near me",
+    color: "#C2136B", glow: "rgba(194,19,107,0.55)",
   },
   cafes: {
-    label: "Cafés",
-    icon: "☕",
-    description: "Coffee, work, and reading",
-    placeTypes: ["cafe", "coffee_shop"],
-    defaultQuery: "quiet cafe with fast wifi",
+    label: "Cafés", icon: "☕", description: "Coffee, work, and reading",
+    placeTypes: ["cafe", "coffee_shop"], defaultQuery: "quiet cafe with fast wifi",
+    color: "#92400E", glow: "rgba(146,64,14,0.55)",
   },
   hiking: {
-    label: "Hiking",
-    icon: "🥾",
-    description: "Trails, parks, nature walks",
-    placeTypes: ["park", "natural_feature", "hiking_area"],
-    defaultQuery: "hiking trails near the city",
+    label: "Hiking", icon: "🥾", description: "Trails, parks, nature walks",
+    placeTypes: ["park", "natural_feature", "hiking_area"], defaultQuery: "hiking trails near the city",
+    color: "#166534", glow: "rgba(22,101,52,0.55)",
   },
   parks: {
-    label: "Parks",
-    icon: "🌿",
-    description: "Outdoor relaxation spots",
-    placeTypes: ["park"],
-    defaultQuery: "peaceful parks to relax",
+    label: "Parks", icon: "🌿", description: "Outdoor relaxation spots",
+    placeTypes: ["park"], defaultQuery: "peaceful parks to relax",
+    color: "#065F46", glow: "rgba(6,95,70,0.55)",
   },
   offices: {
-    label: "Offices",
-    icon: "🏢",
-    description: "Business districts, headquarters",
-    placeTypes: ["office", "corporate_office"],
-    defaultQuery: "company offices and business district",
+    label: "Offices", icon: "🏢", description: "Business districts, headquarters",
+    placeTypes: ["office", "corporate_office"], defaultQuery: "company offices and business district",
+    color: "#1E3A8A", glow: "rgba(30,58,138,0.55)",
   },
   bookstores: {
-    label: "Bookstores",
-    icon: "📚",
-    description: "Independent & chain bookshops",
-    placeTypes: ["book_store"],
-    defaultQuery: "bookstores with reading areas",
+    label: "Bookstores", icon: "📚", description: "Independent & chain bookshops",
+    placeTypes: ["book_store"], defaultQuery: "bookstores with reading areas",
+    color: "#5B21B6", glow: "rgba(91,33,182,0.55)",
   },
   libraries: {
-    label: "Libraries",
-    icon: "🏛️",
-    description: "Public libraries and archives",
-    placeTypes: ["library"],
-    defaultQuery: "public libraries near me",
+    label: "Libraries", icon: "🏛️", description: "Public libraries and archives",
+    placeTypes: ["library"], defaultQuery: "public libraries near me",
+    color: "#312E81", glow: "rgba(49,46,129,0.55)",
   },
   coworking: {
-    label: "Coworking",
-    icon: "💻",
-    description: "Shared workspaces and hotdesks",
-    placeTypes: ["coworking_space"],
-    defaultQuery: "coworking spaces day pass",
+    label: "Coworking", icon: "💻", description: "Shared workspaces and hotdesks",
+    placeTypes: ["coworking_space"], defaultQuery: "coworking spaces day pass",
+    color: "#0C4A6E", glow: "rgba(12,74,110,0.55)",
   },
   museums: {
-    label: "Museums",
-    icon: "🎨",
-    description: "Art, science, history",
-    placeTypes: ["museum", "art_gallery"],
-    defaultQuery: "museums and galleries open today",
+    label: "Museums", icon: "🎨", description: "Art, science, history",
+    placeTypes: ["museum", "art_gallery"], defaultQuery: "museums and galleries open today",
+    color: "#9A3412", glow: "rgba(154,52,18,0.55)",
   },
   all: {
-    label: "All",
-    icon: "🔍",
-    description: "Search everything",
-    placeTypes: [],
-    defaultQuery: "",
+    label: "All", icon: "🔍", description: "Search everything",
+    placeTypes: [], defaultQuery: "",
+    color: "#334155", glow: "rgba(51,65,85,0.55)",
   },
 };
 
@@ -448,6 +430,19 @@ export function VenueMap({
     e.preventDefault();
     handleSearch(inputValue);
   }, [inputValue, handleSearch]);
+
+  const handleReset = useCallback(() => {
+    cancel();
+    setInputValue("");
+    setQuery("");
+    setAiSuggestions([]);
+    setSidebarOpen(false);
+    selectVenue(null);
+    infoWindowRef.current?.close();
+    markersRef.current.forEach((m) => { m.map = null; });
+    markersRef.current.clear();
+    rumAction("search_reset");
+  }, [cancel, selectVenue]);
 
   // ── Derived agent step statuses ────────────────────────────────────────
   const agentSteps = useMemo(() => [
@@ -749,7 +744,7 @@ export function VenueMap({
       )}
 
       {/* ════════════════════════════════════════════════════════
-          HEADER — Full-width AI search + intent chips
+          HEADER — opaque bar: logo + search only
           ════════════════════════════════════════════════════════ */}
       <div style={{
         position: "absolute",
@@ -762,11 +757,10 @@ export function VenueMap({
         backdropFilter: "blur(22px)",
         WebkitBackdropFilter: "blur(22px)",
         borderBottom: "1px solid rgba(255,255,255,0.07)",
-        boxShadow: "0 6px 32px rgba(0,0,0,0.5)",
-        padding: state.intent ? "14px 20px 18px" : "14px 20px 14px",
+        boxShadow: "0 4px 24px rgba(0,0,0,0.45)",
+        padding: "14px 20px",
       }}>
-
-        {/* Row 1 — logo + agent status */}
+        {/* Logo + agent status */}
         <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
           <div style={{
             display: "inline-flex", alignItems: "center", gap: 7,
@@ -783,9 +777,7 @@ export function VenueMap({
             marginLeft: "auto",
             display: "inline-flex", alignItems: "center", gap: 6,
             padding: "5px 12px", borderRadius: 20,
-            background: state.status === "searching"
-              ? "rgba(59,130,246,0.12)"
-              : "rgba(255,255,255,0.04)",
+            background: state.status === "searching" ? "rgba(59,130,246,0.12)" : "rgba(255,255,255,0.04)",
             border: `1px solid ${state.status === "searching" ? "rgba(59,130,246,0.3)" : "rgba(255,255,255,0.07)"}`,
             fontSize: 11, fontWeight: 600,
             color: state.status === "searching" ? "#60A5FA" : "#475569",
@@ -802,18 +794,15 @@ export function VenueMap({
                 ))}
                 <span style={{ marginLeft: 4 }}>5 agents running</span>
               </>
-            ) : (
-              <span>5 AI agents</span>
-            )}
+            ) : <span>5 AI agents</span>}
           </div>
         </div>
 
-        {/* Row 2 — search form */}
+        {/* Search form */}
         <form onSubmit={handleSubmit} style={{ display: "flex", gap: 10 }}>
           <div style={{
             flex: 1, display: "flex", alignItems: "center",
-            background: "rgba(255,255,255,0.06)",
-            borderRadius: 14,
+            background: "rgba(255,255,255,0.06)", borderRadius: 14,
             border: "1.5px solid rgba(255,255,255,0.11)",
             boxShadow: "inset 0 1px 0 rgba(255,255,255,0.06)",
           }}>
@@ -830,14 +819,10 @@ export function VenueMap({
               }}
             />
             {inputValue && (
-              <button
-                type="button"
-                onClick={() => setInputValue("")}
-                style={{
-                  background: "none", border: "none", color: "#475569",
-                  cursor: "pointer", padding: "0 12px", fontSize: 18, lineHeight: 1,
-                }}
-              >×</button>
+              <button type="button" onClick={() => setInputValue("")}
+                style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", padding: "0 12px", fontSize: 18, lineHeight: 1 }}>
+                ×
+              </button>
             )}
           </div>
           <button
@@ -852,98 +837,118 @@ export function VenueMap({
               fontWeight: 700, fontSize: 14,
               cursor: state.status === "searching" ? "not-allowed" : "pointer",
               whiteSpace: "nowrap",
-              boxShadow: state.status === "searching"
-                ? "none"
-                : "0 4px 18px rgba(37,99,235,0.5), inset 0 1px 0 rgba(255,255,255,0.15)",
-              transition: "all 0.2s",
-              letterSpacing: "0.02em",
+              boxShadow: state.status === "searching" ? "none" : "0 4px 18px rgba(37,99,235,0.5), inset 0 1px 0 rgba(255,255,255,0.15)",
+              transition: "all 0.2s", letterSpacing: "0.02em",
             }}
           >
             {state.status === "searching" ? "Searching…" : "Ask AI →"}
           </button>
+          {(state.status === "done" || state.status === "error" || query) && (
+            <button
+              type="button"
+              onClick={handleReset}
+              title="Clear search and start over"
+              style={{
+                padding: "0 16px", borderRadius: 14, border: "1.5px solid rgba(255,255,255,0.12)",
+                background: "rgba(255,255,255,0.06)",
+                color: "#94A3B8", fontWeight: 600, fontSize: 13,
+                cursor: "pointer", whiteSpace: "nowrap",
+                transition: "all 0.18s",
+                flexShrink: 0,
+              }}
+            >
+              ↺ Reset
+            </button>
+          )}
         </form>
 
-        {/* Row 3 — intent chips: BIG, colorful, animated */}
-        {state.intent && (() => {
-          const chips = [
-            { val: state.intent!.city,                icon: "📍", label: state.intent!.city,                        color: "#60A5FA", bg: "rgba(59,130,246,0.13)",  border: "rgba(59,130,246,0.38)"  },
-            { val: state.intent!.occasion,            icon: "🎉", label: state.intent!.occasion?.replace(/_/g, " "), color: "#A78BFA", bg: "rgba(139,92,246,0.13)", border: "rgba(139,92,246,0.38)" },
-            { val: state.intent!.cuisine,             icon: "🍽️", label: state.intent!.cuisine,                    color: "#FBBF24", bg: "rgba(245,158,11,0.13)", border: "rgba(245,158,11,0.38)" },
-            { val: state.intent!.group_size > 1,      icon: "👥", label: `${state.intent!.group_size} people`,     color: "#34D399", bg: "rgba(16,185,129,0.13)", border: "rgba(16,185,129,0.38)" },
-            { val: state.intent!.needs_private_room,  icon: "🚪", label: "private room",                           color: "#22D3EE", bg: "rgba(6,182,212,0.13)",  border: "rgba(6,182,212,0.38)"  },
-            { val: state.intent!.noise_preference,    icon: "🔊", label: state.intent!.noise_preference,           color: "#F472B6", bg: "rgba(236,72,153,0.13)", border: "rgba(236,72,153,0.38)" },
-            { val: state.intent!.price_band,          icon: "💎", label: state.intent!.price_band,                 color: "#A3E635", bg: "rgba(132,204,22,0.13)", border: "rgba(132,204,22,0.38)" },
-          ].filter(c => c.val);
-          return chips.length === 0 ? null : (
-            <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
-              {chips.map((chip, idx) => (
-                <div
-                  key={String(chip.label)}
-                  style={{
-                    display: "inline-flex", alignItems: "center", gap: 7,
-                    padding: "8px 16px", borderRadius: 100,
-                    background: chip.bg,
-                    border: `1.5px solid ${chip.border}`,
-                    color: chip.color,
-                    fontSize: 13, fontWeight: 600,
-                    backdropFilter: "blur(8px)",
-                    whiteSpace: "nowrap",
-                    letterSpacing: "0.01em",
-                    animation: `chipIn 0.4s cubic-bezier(0.34,1.56,0.64,1) ${idx * 0.055}s both`,
-                    userSelect: "none",
-                  }}
-                >
-                  <span style={{ fontSize: 15 }}>{chip.icon}</span>
-                  <span style={{ textTransform: "capitalize" }}>{chip.label}</span>
-                </div>
-              ))}
-            </div>
-          );
-        })()}
+        {/* Category pills — row 3, scrollable */}
+        <div style={{
+          display: "flex", gap: 7, marginTop: 12,
+          overflowX: "auto", paddingBottom: 2,
+          msOverflowStyle: "none" as React.CSSProperties["msOverflowStyle"],
+          scrollbarWidth: "none" as React.CSSProperties["scrollbarWidth"],
+        }}>
+          {(Object.entries(CATEGORIES) as [PlaceCategory, CategoryConfig][]).map(([key, cfg]) => {
+            const isActive = activeCategory === key;
+            return (
+              <button
+                key={key}
+                onClick={() => handleCategorySwitch(key)}
+                title={cfg.description}
+                style={{
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                  padding: "7px 14px", borderRadius: 100,
+                  border: "none", cursor: "pointer", whiteSpace: "nowrap",
+                  flexShrink: 0, fontSize: 13,
+                  fontWeight: isActive ? 700 : 500,
+                  background: isActive ? cfg.color : `${cfg.color}99`,
+                  color: "#fff",
+                  boxShadow: isActive
+                    ? `0 4px 16px ${cfg.glow}, inset 0 1px 0 rgba(255,255,255,0.15)`
+                    : "0 2px 6px rgba(0,0,0,0.25)",
+                  transform: isActive ? "scale(1.05)" : "scale(1)",
+                  transition: "all 0.18s ease",
+                  letterSpacing: "0.01em",
+                }}
+              >
+                <span>{cfg.icon}</span>
+                <span>{cfg.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      {/* ── Category pills ── */}
-      <div style={{
-        position: "absolute",
-        bottom: sidebarOpen ? "calc(40% + 16px)" : 18,
-        left: showLeftPanel ? leftPanelW + 16 : 16,
-        right: 16,
-        display: "flex", gap: 8, overflowX: "auto",
-        zIndex: 10,
-        transition: "all 0.3s ease",
-        paddingBottom: 2,
-        /* hide scrollbar across browsers */
-        msOverflowStyle: "none" as React.CSSProperties["msOverflowStyle"],
-        scrollbarWidth: "none" as React.CSSProperties["scrollbarWidth"],
-      }}>
-        {(Object.entries(CATEGORIES) as [PlaceCategory, CategoryConfig][]).map(([key, cfg]) => (
-          <button
-            key={key}
-            onClick={() => handleCategorySwitch(key)}
-            title={cfg.description}
-            style={{
-              padding: "9px 16px", borderRadius: 100,
-              border: `1.5px solid ${activeCategory === key ? "rgba(59,130,246,0.65)" : "rgba(255,255,255,0.11)"}`,
-              background: activeCategory === key
-                ? "linear-gradient(135deg, #1D4ED8 0%, #6D28D9 100%)"
-                : "rgba(7,11,24,0.84)",
-              color: activeCategory === key ? "#fff" : "#94A3B8",
-              fontWeight: activeCategory === key ? 700 : 500,
-              fontSize: 13, cursor: "pointer", whiteSpace: "nowrap",
-              flexShrink: 0,
-              boxShadow: activeCategory === key
-                ? "0 4px 16px rgba(37,99,235,0.45), inset 0 1px 0 rgba(255,255,255,0.12)"
-                : "0 2px 8px rgba(0,0,0,0.3)",
-              backdropFilter: "blur(14px)",
-              WebkitBackdropFilter: "blur(14px)",
-              transition: "all 0.18s ease",
-              letterSpacing: "0.01em",
-            }}
-          >
-            {cfg.icon} {cfg.label}
-          </button>
-        ))}
-      </div>
+      {/* ════════════════════════════════════════════════════════
+          INTENT CHIPS — float on the map directly below search bar
+          ════════════════════════════════════════════════════════ */}
+      {state.intent && (() => {
+        const chips = [
+          { val: state.intent!.city,               icon: "📍", label: state.intent!.city,                        bg: "#2563EB", shadow: "rgba(37,99,235,0.5)"   },
+          { val: state.intent!.occasion,           icon: "🎉", label: state.intent!.occasion?.replace(/_/g, " "), bg: "#7C3AED", shadow: "rgba(124,58,237,0.5)"  },
+          { val: state.intent!.cuisine,            icon: "🍽️", label: state.intent!.cuisine,                    bg: "#B45309", shadow: "rgba(180,83,9,0.5)"     },
+          { val: state.intent!.group_size > 1,     icon: "👥", label: `${state.intent!.group_size} people`,     bg: "#047857", shadow: "rgba(4,120,87,0.5)"     },
+          { val: state.intent!.needs_private_room, icon: "🚪", label: "private room",                           bg: "#0E7490", shadow: "rgba(14,116,144,0.5)"   },
+          { val: state.intent!.noise_preference,   icon: "🔊", label: state.intent!.noise_preference,           bg: "#BE185D", shadow: "rgba(190,24,93,0.5)"    },
+          { val: state.intent!.price_band,         icon: "💎", label: state.intent!.price_band,                 bg: "#4D7C0F", shadow: "rgba(77,124,15,0.5)"    },
+        ].filter(c => c.val);
+        return chips.length === 0 ? null : (
+          <div style={{
+            position: "absolute",
+            top: 170, // sits flush below the header (logo 46px + search 52px + pills 44px + gaps)
+            left: showLeftPanel ? leftPanelW + 16 : 16,
+            right: 16,
+            zIndex: 10,
+            display: "flex", gap: 8, flexWrap: "wrap",
+            transition: "left 0.3s ease",
+            pointerEvents: "none", // let map events pass through the gaps
+          }}>
+            {chips.map((chip, idx) => (
+              <div
+                key={String(chip.label)}
+                style={{
+                  pointerEvents: "auto",
+                  display: "inline-flex", alignItems: "center", gap: 6,
+                  padding: "7px 14px", borderRadius: 100,
+                  background: chip.bg,
+                  color: "#fff",
+                  fontSize: 13, fontWeight: 700,
+                  boxShadow: `0 4px 14px ${chip.shadow}, 0 1px 3px rgba(0,0,0,0.3)`,
+                  whiteSpace: "nowrap",
+                  letterSpacing: "0.01em",
+                  animation: `chipIn 0.4s cubic-bezier(0.34,1.56,0.64,1) ${idx * 0.06}s both`,
+                  userSelect: "none",
+                }}
+              >
+                <span style={{ fontSize: 14 }}>{chip.icon}</span>
+                <span style={{ textTransform: "capitalize" }}>{chip.label}</span>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
 
       {/* ── Venue detail sidebar ── */}
       {sidebarOpen && state.selectedVenueId && (
