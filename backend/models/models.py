@@ -89,6 +89,7 @@ class VenueIntent(BaseModel):
     noise_preference: Optional[NoisePreference] = None
     needs_private_room: bool = False
     city: str = "Unknown"
+    neighborhood: Optional[str] = None
     date: Optional[str] = None
     price_band: Optional[PriceBand] = None
     dietary_restrictions: list[str] = Field(default_factory=list)
