@@ -234,10 +234,25 @@ class ClickHouseClient:
 
     def initialize_schema(self) -> None:
         """Create all tables if they don't exist. Idempotent."""
+        import time
         for stmt in _DDL.strip().split(";"):
             stmt = stmt.strip()
-            if stmt:
-                self.client.command(stmt)
+            if not stmt:
+                continue
+            for attempt in range(3):
+                try:
+                    self.client.command(stmt)
+                    break
+                except Exception as e:
+                    # CANNOT_ASSIGN_ALTER (code 517): ClickHouse Cloud replica lag —
+                    # retry up to 3 times with backoff, then skip (non-fatal for ALTER).
+                    err = str(e)
+                    if "517" in err or "CANNOT_ASSIGN_ALTER" in err:
+                        if attempt < 2:
+                            time.sleep(2 ** attempt)
+                        # If it's an ALTER and still failing, skip — columns exist already
+                    else:
+                        raise
 
     # ── Write path ────────────────────────────────────────────────────────────
 
