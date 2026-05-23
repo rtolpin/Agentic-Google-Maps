@@ -1846,13 +1846,18 @@ function VenueDetailSidebar({ venue, placeDetails, onClose }: VenueDetailSidebar
 
       {/* Scrollable body */}
       <div style={{ flex: 1, overflowY: "auto", padding: "16px 18px 28px" }}>
-        {/* Why card — always shown first, fully visible */}
-        {intel?.why_card && (
+        {/* Why card — falls back to key quotes when intelligence is unavailable */}
+        {(intel?.why_card || venue.key_quotes.length > 0) && (
           <div style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>
               Why this spot
             </div>
-            <p style={{ margin: 0, fontSize: 13, color: "#CBD5E1", lineHeight: 1.65 }}>{intel.why_card}</p>
+            <p style={{ margin: 0, fontSize: 13, color: "#CBD5E1", lineHeight: 1.65 }}>
+              {intel?.why_card || (
+                `${venue.name} is a ${venue.cuisine || "venue"} in ${venue.neighborhood || venue.city}. ` +
+                venue.key_quotes.slice(0, 2).join(" ")
+              )}
+            </p>
           </div>
         )}
 

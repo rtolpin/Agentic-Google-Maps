@@ -183,6 +183,48 @@ async def synthesize_venue_intelligence(
             return VenueIntelligence.model_validate(_extract_json(response.content[0].text))
 
 
+def _fallback_intelligence(venue: ScoredVenue, intent: VenueIntent) -> VenueIntelligence:
+    """Build a basic intelligence card from key_quotes when Claude synthesis is unavailable."""
+    occasion = intent.occasion or "your outing"
+    cuisine = venue.cuisine or "venue"
+    location = venue.neighborhood or venue.city or "the area"
+    quotes = venue.key_quotes or []
+
+    if quotes:
+        why = f"{venue.name} is a {cuisine} spot in {location}. " + quotes[0]
+    else:
+        noise_desc = {"very_quiet": "very quiet", "quiet": "quiet", "moderate": "lively but comfortable",
+                      "loud": "energetic", "very_loud": "very lively"}.get(venue.noise_level, "welcoming")
+        why = (
+            f"{venue.name} is a {noise_desc} {cuisine} in {location} that fits your criteria for {occasion}."
+        )
+
+    scenario = (
+        f"Picture arriving at {venue.name} for {occasion} — "
+        + (quotes[1] if len(quotes) > 1 else f"a great {cuisine} experience in {location}.")
+    )
+
+    score = int(min(100, max(0, venue.match_score)))
+    return VenueIntelligence(
+        why_card=why,
+        scenario=scenario,
+        sensitivity_bars={
+            "ambiance": score,
+            "privacy": 70 if venue.has_private_room else 40,
+            "service": 65,
+            "value": 60,
+            "occasion_fit": score,
+        },
+        live_signal=None,
+        suggestions=[
+            f"What's the vibe like at {venue.name} on weekends?",
+            f"Is {venue.name} good for {occasion}?",
+            f"What should I order at {venue.name}?",
+            f"How far is {venue.name} from the center of {venue.city}?",
+        ],
+    )
+
+
 # ─── Orchestration ────────────────────────────────────────────────────────────
 
 async def orchestrate(query: str, user_id: str, *, user_city: str | None = None) -> AsyncIterator[dict]:
@@ -243,14 +285,16 @@ async def orchestrate(query: str, user_id: str, *, user_city: str | None = None)
 
         root.set_tag("search.venues_scored", len(scored_venues))
 
-        # Step 6 — synthesize intelligence for top 3 (bounded by semaphore)
+        # Step 6 — synthesize intelligence for top 5 (bounded by semaphore)
         intel_results = await asyncio.gather(
-            *[synthesize_venue_intelligence(v, intent) for v in scored_venues[:3]],
+            *[synthesize_venue_intelligence(v, intent) for v in scored_venues[:5]],
             return_exceptions=True,
         )
-        for venue, intel in zip(scored_venues[:3], intel_results):
+        for venue, intel in zip(scored_venues[:5], intel_results):
             if isinstance(intel, VenueIntelligence):
                 venue.intelligence = intel
+            else:
+                venue.intelligence = _fallback_intelligence(venue, intent)
 
         # Step 7 — personalization re-rank
         raw_prefs = await _cache.get_user_prefs(user_id)
@@ -278,30 +322,36 @@ def _score_enriched_fallback(enriched: list[dict], intent: VenueIntent) -> list[
         if not name:
             continue
         city = ev.get("city") or intent.city
-        score = 0.0
+        score = 40.0  # base: passed all filters
         if intent.needs_private_room:
-            score += 30 if ev.get("has_private_room") else 0
+            score += 5 if ev.get("has_private_room") else 0
         max_group = ev.get("max_group_size") or 0
-        if max_group >= intent.group_size:
-            score += 25
-        elif max_group > 0:
-            score += max(0, float(max_group) * 2)
+        if max_group == 0:
+            score += 10  # unknown — partial credit
+        elif max_group >= intent.group_size:
+            score += 20
+        else:
+            score += max(0, 20.0 * max_group / max(1, intent.group_size))
         noise_raw = ev.get("noise_level") or "moderate"
         noise = noise_raw.value if hasattr(noise_raw, "value") else str(noise_raw)
         if noise_pref == "quiet":
-            score += {"very_quiet": 25, "quiet": 20, "moderate": 8}.get(noise, 0)
+            score += {"very_quiet": 15, "quiet": 12, "moderate": 5}.get(noise, 0)
         elif noise_pref == "lively":
-            score += {"loud": 25, "very_loud": 20, "moderate": 10}.get(noise, 5)
+            score += {"loud": 15, "very_loud": 12, "moderate": 7}.get(noise, 3)
         else:
-            score += {"moderate": 20, "quiet": 15, "loud": 15}.get(noise, 10)
+            score += {"moderate": 12, "quiet": 9, "loud": 9}.get(noise, 6)
         birthday_score = min(100, (ev.get("birthday_mentions") or 0) * 10 + (50 if ev.get("birthday_friendly") else 0))
+        occ_score = ev.get("special_occasion_score") or 0
         if occasion in ("birthday_dinner", "birthday_party"):
-            score += birthday_score * 0.35
+            score += (birthday_score * 0.20) if birthday_score > 0 else 8
         else:
-            score += (ev.get("special_occasion_score") or 0) * 0.20
+            score += (occ_score * 0.20) if occ_score > 0 else 8
         price = ev.get("price_per_head_usd") or 0
-        if price_min <= price <= price_max:
+        if price == 0:
+            score += 5  # unknown price — partial credit
+        elif price_min <= price <= price_max:
             score += 10
+        score = min(100.0, max(0.0, score))
         venue_id = (name + city).lower().replace(" ", "_").replace("'", "")
         results.append(ScoredVenue(
             venue_id=venue_id,
