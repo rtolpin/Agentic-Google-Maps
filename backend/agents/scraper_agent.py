@@ -101,21 +101,43 @@ async def _call_with_retry(
         return None
 
 
+_OFFICE_OCCASIONS = {"offices", "office", "scouting offices", "work", "corporate", "business"}
+
 def _build_queries(intent: VenueIntent) -> list[str]:
     """Build 2–3 complementary search queries for maximum venue coverage."""
     cuisine = intent.cuisine or "restaurant"
     city = intent.city
     occasion = intent.occasion.replace("_", " ")
+    signals = [s.lower() for s in (intent.other_signals or [])]
 
     if city == "Unknown":
-        location = (
-            next(
-                (s for s in (intent.other_signals or []) if len(s) > 3),
-                "near me",
-            )
+        location = next(
+            (s for s in (intent.other_signals or []) if len(s) > 3),
+            "near me",
         )
     else:
         location = city
+
+    # Office / corporate HQ searches need entirely different queries
+    is_office_search = (
+        occasion.lower() in _OFFICE_OCCASIONS
+        or any(kw in signals for kw in ("office", "headquarters", "hq", "corporate", "company"))
+    )
+    if is_office_search:
+        # Look for specific named companies if mentioned
+        named_companies = [s for s in signals if s not in ("office", "offices", "headquarters", "hq", "corporate", "company", "near")]
+        if named_companies:
+            company_str = " ".join(named_companies[:2])
+            return [
+                f"{company_str} headquarters office {location}",
+                f"corporate headquarters office buildings {location}",
+                f"tech company offices business district {location}",
+            ]
+        return [
+            f"corporate headquarters major company offices {location}",
+            f"tech company office buildings {location}",
+            f"business district office towers {location}",
+        ]
 
     return [
         f"best {occasion} {cuisine} restaurant {location}",

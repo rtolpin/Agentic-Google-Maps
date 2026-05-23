@@ -125,8 +125,8 @@ const CATEGORIES: Record<PlaceCategory, CategoryConfig> = {
     color: "#065F46", glow: "rgba(6,95,70,0.55)",
   },
   offices: {
-    label: "Offices", icon: "🏢", description: "Business districts, headquarters",
-    placeTypes: ["office", "corporate_office"], defaultQuery: "company offices and business district",
+    label: "Offices", icon: "🏢", description: "Corporate HQ, company offices",
+    placeTypes: ["office", "corporate_office"], defaultQuery: "corporate headquarters and company offices to scout",
     color: "#1E3A8A", glow: "rgba(30,58,138,0.55)",
   },
   bookstores: {
