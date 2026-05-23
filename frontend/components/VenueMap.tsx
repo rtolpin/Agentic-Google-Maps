@@ -535,7 +535,22 @@ export function VenueMap({
 
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const showLeftPanel = leftPanelOpen;
-  const leftPanelW = 320;
+  const [leftPanelW, setLeftPanelW] = useState(320);
+
+  const startLeftResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = leftPanelW;
+    const onMove = (ev: MouseEvent) => {
+      setLeftPanelW(Math.max(220, Math.min(560, startW + ev.clientX - startX)));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [leftPanelW]);
 
   // Auto-open panel whenever a new search starts
   useEffect(() => {
@@ -586,6 +601,18 @@ export function VenueMap({
           display: "flex", flexDirection: "column",
           zIndex: 15, overflow: "hidden",
         }}>
+          {/* Resize handle — right edge */}
+          <div
+            onMouseDown={startLeftResize}
+            style={{
+              position: "absolute", top: 0, right: 0, bottom: 0,
+              width: 5, cursor: "col-resize", zIndex: 20,
+              background: "transparent",
+              transition: "background 0.15s",
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "rgba(99,179,237,0.25)"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+          />
           {/* Panel header */}
           <div style={{
             padding: "20px 20px 14px",
@@ -597,14 +624,54 @@ export function VenueMap({
                 width: 32, height: 32, borderRadius: 8,
                 background: "linear-gradient(135deg, #3B82F6, #8B5CF6)",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 16,
+                fontSize: 16, flexShrink: 0,
               }}>✨</div>
-              <div>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ color: "#F1F5F9", fontWeight: 700, fontSize: 15 }}>The Right Spot AI</div>
-                <div style={{ color: "#64748B", fontSize: 11 }}>
-                  {state.status === "searching" ? "Agents working…" : state.status === "done" ? `${state.venues.length} venues found` : "Search error"}
-                </div>
+                {state.status === "searching" && (
+                  <div style={{
+                    fontSize: 12, fontWeight: 700,
+                    background: "linear-gradient(90deg, #60A5FA, #A78BFA)",
+                    WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+                    letterSpacing: "0.01em",
+                  }}>
+                    Agents working…
+                  </div>
+                )}
+                {state.status === "done" && (
+                  <div style={{
+                    fontSize: 13, fontWeight: 800,
+                    background: "linear-gradient(90deg, #34D399, #60A5FA)",
+                    WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
+                    letterSpacing: "0.01em",
+                  }}>
+                    {state.venues.length} venues found
+                  </div>
+                )}
+                {state.status === "error" && (
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#F87171" }}>Search error</div>
+                )}
               </div>
+              {/* Close AI Panel button — lives inside the panel */}
+              <button
+                onClick={() => setLeftPanelOpen(false)}
+                title="Close AI panel"
+                style={{
+                  marginLeft: "auto",
+                  display: "inline-flex", alignItems: "center", gap: 5,
+                  padding: "5px 10px", borderRadius: 16,
+                  background: "rgba(255,255,255,0.06)",
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  color: "#64748B",
+                  fontSize: 11, fontWeight: 600, cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                  transition: "all 0.15s",
+                }}
+              >
+                <span style={{ fontSize: 11 }}>◀</span>
+                <span>Close</span>
+              </button>
               {state.status === "searching" && (
                 <div style={{ marginLeft: "auto", display: "flex", gap: 3 }}>
                   {[0,1,2].map(i => (
@@ -914,29 +981,29 @@ export function VenueMap({
         boxShadow: "0 4px 24px rgba(0,0,0,0.45)",
         padding: "14px 20px",
       }}>
-        {/* Logo + panel toggle + agent status */}
+        {/* Logo + agent status (panel open button only shown when panel is closed) */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-          {/* Panel toggle — always visible */}
-          <button
-            onClick={() => setLeftPanelOpen((o) => !o)}
-            title={leftPanelOpen ? "Hide AI panel" : "Show AI panel"}
-            style={{
-              flexShrink: 0,
-              display: "inline-flex", alignItems: "center", gap: 5,
-              padding: "5px 11px", borderRadius: 20,
-              background: leftPanelOpen
-                ? "linear-gradient(135deg, rgba(37,99,235,0.3), rgba(124,58,237,0.3))"
-                : "rgba(255,255,255,0.06)",
-              border: `1.5px solid ${leftPanelOpen ? "rgba(99,179,237,0.4)" : "rgba(255,255,255,0.12)"}`,
-              color: leftPanelOpen ? "#93C5FD" : "#64748B",
-              fontSize: 12, fontWeight: 700, cursor: "pointer",
-              transition: "all 0.2s",
-              letterSpacing: "0.02em",
-            }}
-          >
-            <span style={{ fontSize: 13 }}>{leftPanelOpen ? "◀" : "▶"}</span>
-            <span>AI Panel</span>
-          </button>
+          {/* Show AI Panel button — only visible when panel is closed */}
+          {!leftPanelOpen && (
+            <button
+              onClick={() => setLeftPanelOpen(true)}
+              title="Show AI panel"
+              style={{
+                flexShrink: 0,
+                display: "inline-flex", alignItems: "center", gap: 5,
+                padding: "5px 11px", borderRadius: 20,
+                background: "rgba(255,255,255,0.06)",
+                border: "1.5px solid rgba(255,255,255,0.12)",
+                color: "#64748B",
+                fontSize: 12, fontWeight: 700, cursor: "pointer",
+                transition: "all 0.2s",
+                letterSpacing: "0.02em",
+              }}
+            >
+              <span style={{ fontSize: 13 }}>▶</span>
+              <span>AI Panel</span>
+            </button>
+          )}
 
           <div style={{
             display: "inline-flex", alignItems: "center", gap: 7,
@@ -1559,6 +1626,24 @@ interface VenueDetailSidebarProps {
 }
 
 function VenueDetailSidebar({ venue, placeDetails, onClose }: VenueDetailSidebarProps) {
+  const [sidebarW, setSidebarW] = useState(380);
+  const [isFullScreen, setIsFullScreen] = useState(false);
+
+  const startRightResize = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = sidebarW;
+    const onMove = (ev: MouseEvent) => {
+      setSidebarW(Math.max(280, Math.min(800, startW - (ev.clientX - startX))));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [sidebarW]);
+
   if (!venue) return null;
 
   const intel = venue.intelligence;
@@ -1568,108 +1653,194 @@ function VenueDetailSidebar({ venue, placeDetails, onClose }: VenueDetailSidebar
       ? { label: "Closed", color: "#EF4444" }
       : null;
 
+  const panelStyle: React.CSSProperties = isFullScreen
+    ? {
+        position: "fixed",
+        inset: 0,
+        width: "100%",
+        zIndex: 100,
+        background: "linear-gradient(180deg, #0f172a 0%, #1a2236 100%)",
+        boxShadow: "none",
+        display: "flex", flexDirection: "column",
+      }
+    : {
+        position: "absolute",
+        top: 188,
+        right: 0,
+        bottom: 0,
+        width: sidebarW,
+        background: "linear-gradient(180deg, #0f172a 0%, #1a2236 100%)",
+        boxShadow: "-4px 0 32px rgba(0,0,0,0.45)",
+        zIndex: 12,
+        display: "flex", flexDirection: "column",
+        borderLeft: "1px solid rgba(255,255,255,0.08)",
+      };
+
   return (
-    <div style={{
-      position: "absolute", bottom: 0, left: 0, right: 0,
-      height: "40%", background: "#fff",
-      borderRadius: "20px 20px 0 0",
-      boxShadow: "0 -4px 24px rgba(0,0,0,0.15)",
-      overflowY: "auto", zIndex: 10,
-      padding: "20px 20px 32px",
-    }}>
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#111827" }}>
-            {venue.name}
-          </h2>
-          <div style={{ fontSize: 13, color: "#6B7280", marginTop: 2 }}>
-            {venue.neighborhood && `${venue.neighborhood} · `}
-            {venue.cuisine}
+    <div style={panelStyle}>
+      {/* Resize handle — left edge (only in non-fullscreen mode) */}
+      {!isFullScreen && (
+        <div
+          onMouseDown={startRightResize}
+          style={{
+            position: "absolute", top: 0, left: 0, bottom: 0,
+            width: 5, cursor: "col-resize", zIndex: 20,
+            background: "transparent",
+            transition: "background 0.15s",
+          }}
+          onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = "rgba(99,179,237,0.25)"; }}
+          onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+        />
+      )}
+      {/* Fixed header inside sidebar */}
+      <div style={{
+        padding: "18px 18px 14px",
+        borderBottom: "1px solid rgba(255,255,255,0.07)",
+        flexShrink: 0,
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
+            <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "#F1F5F9", lineHeight: 1.3 }}>
+              {venue.name}
+            </h2>
+            {(venue.neighborhood || venue.cuisine) && (
+              <div style={{ fontSize: 12, color: "#64748B", marginTop: 3 }}>
+                {venue.neighborhood && `${venue.neighborhood} · `}
+                {venue.cuisine}
+              </div>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+            {/* Fullscreen toggle */}
+            <button
+              onClick={() => setIsFullScreen((f) => !f)}
+              title={isFullScreen ? "Exit full screen" : "Full screen"}
+              style={{
+                width: 30, height: 30, borderRadius: 8,
+                background: "rgba(99,179,237,0.1)", border: "1px solid rgba(99,179,237,0.2)",
+                color: "#60A5FA", cursor: "pointer", fontSize: 13, lineHeight: 1,
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}
+            >{isFullScreen ? "⊠" : "⛶"}</button>
+            {/* Close */}
+            <button
+              onClick={onClose}
+              title="Close"
+              style={{
+                width: 30, height: 30, borderRadius: 8,
+                background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)",
+                color: "#94A3B8", cursor: "pointer", fontSize: 16, lineHeight: 1,
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}
+            >✕</button>
           </div>
         </div>
-        <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#9CA3AF", padding: 4 }}>✕</button>
+
+        {/* Pills row */}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+          <DarkPill color="#6366F1" label={`${Math.round(venue.match_score)}% match`} />
+          {openLabel && <DarkPill color={openLabel.color} label={openLabel.label} />}
+          {venue.has_private_room && <DarkPill color="#10B981" label="Private room" />}
+          {venue.price_per_head > 0 && <DarkPill color="#F59E0B" label={`~$${venue.price_per_head}/head`} />}
+          {placeDetails?.rating && (
+            <DarkPill color="#F59E0B" label={`⭐ ${placeDetails.rating} (${placeDetails.user_rating_count?.toLocaleString()})`} />
+          )}
+        </div>
       </div>
 
-      {/* Score + status pills */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-        <Pill color="#4F46E5" label={`${Math.round(venue.match_score)}% match`} />
-        {openLabel && <Pill color={openLabel.color} label={openLabel.label} />}
-        {venue.has_private_room && <Pill color="#059669" label="Private room" />}
-        {venue.price_per_head > 0 && <Pill color="#374151" label={`~$${venue.price_per_head}/head`} />}
-        {placeDetails?.rating && (
-          <Pill color="#F59E0B" label={`⭐ ${placeDetails.rating} (${placeDetails.user_rating_count?.toLocaleString()})`} />
+      {/* Scrollable body */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "16px 18px 28px" }}>
+        {/* Why card — always shown first, fully visible */}
+        {intel?.why_card && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>
+              Why this spot
+            </div>
+            <p style={{ margin: 0, fontSize: 13, color: "#CBD5E1", lineHeight: 1.65 }}>{intel.why_card}</p>
+          </div>
         )}
-      </div>
 
-      {/* Why card */}
-      {intel?.why_card && (
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>Why this spot</div>
-          <p style={{ margin: 0, fontSize: 14, color: "#374151", lineHeight: 1.5 }}>{intel.why_card}</p>
-        </div>
-      )}
+        {/* Scenario */}
+        {intel?.scenario && (
+          <div style={{
+            marginBottom: 16, background: "rgba(255,255,255,0.04)",
+            borderRadius: 10, padding: "10px 14px",
+            border: "1px solid rgba(255,255,255,0.07)",
+          }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 5 }}>
+              Your evening
+            </div>
+            <p style={{ margin: 0, fontSize: 12, color: "#94A3B8", lineHeight: 1.6, fontStyle: "italic" }}>{intel.scenario}</p>
+          </div>
+        )}
 
-      {/* Scenario */}
-      {intel?.scenario && (
-        <div style={{ marginBottom: 14, background: "#F9FAFB", borderRadius: 10, padding: "10px 14px" }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>Your evening</div>
-          <p style={{ margin: 0, fontSize: 13, color: "#4B5563", lineHeight: 1.5, fontStyle: "italic" }}>{intel.scenario}</p>
-        </div>
-      )}
+        {/* Sensitivity bars */}
+        {intel?.sensitivity_bars && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+              Dimensions
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 16px" }}>
+              {Object.entries(intel.sensitivity_bars).map(([dim, score]) => (
+                <SensitivityBar key={dim} label={dim.replace("_", " ")} value={score} />
+              ))}
+            </div>
+          </div>
+        )}
 
-      {/* Sensitivity bars */}
-      {intel?.sensitivity_bars && (
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Dimensions</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 16px" }}>
-            {Object.entries(intel.sensitivity_bars).map(([dim, score]) => (
-              <SensitivityBar key={dim} label={dim.replace("_", " ")} value={score} />
+        {/* Live signal */}
+        {intel?.live_signal && (
+          <div style={{
+            marginBottom: 16, padding: "8px 12px",
+            background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.2)",
+            borderRadius: 8, fontSize: 12, color: "#FCD34D",
+          }}>
+            ⚡ {intel.live_signal}
+          </div>
+        )}
+
+        {/* Key quotes */}
+        {venue.key_quotes.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+              What people say
+            </div>
+            {venue.key_quotes.slice(0, 3).map((q, i) => (
+              <div key={i} style={{
+                fontSize: 12, color: "#94A3B8", marginBottom: 6,
+                paddingLeft: 10, borderLeft: "2px solid rgba(99,179,237,0.3)",
+                lineHeight: 1.5,
+              }}>
+                "{q}"
+              </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Live signal */}
-      {intel?.live_signal && (
-        <div style={{
-          marginBottom: 14, padding: "8px 12px",
-          background: "#FFFBEB", border: "1px solid #FDE68A",
-          borderRadius: 8, fontSize: 13, color: "#92400E",
-        }}>
-          ⚡ {intel.live_signal}
-        </div>
-      )}
-
-      {/* Key quotes */}
-      {venue.key_quotes.length > 0 && (
-        <div style={{ marginBottom: 14 }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 6 }}>What people say</div>
-          {venue.key_quotes.slice(0, 3).map((q, i) => (
-            <div key={i} style={{ fontSize: 13, color: "#4B5563", marginBottom: 4, paddingLeft: 10, borderLeft: "2px solid #E5E7EB" }}>
-              "{q}"
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Contact links (displayed ON the map — TOS compliant) */}
-      {(placeDetails?.website_uri || placeDetails?.phone_number) && (
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {placeDetails.website_uri && (
-            <a href={placeDetails.website_uri} target="_blank" rel="noopener noreferrer"
-              style={{ fontSize: 13, color: "#4F46E5", textDecoration: "none" }}>
-              🌐 Website
-            </a>
-          )}
-          {placeDetails.phone_number && (
-            <a href={`tel:${placeDetails.phone_number}`}
-              style={{ fontSize: 13, color: "#4F46E5", textDecoration: "none" }}>
-              📞 {placeDetails.phone_number}
-            </a>
-          )}
-        </div>
-      )}
+        {/* Contact links */}
+        {(placeDetails?.website_uri || placeDetails?.phone_number) && (
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
+            {placeDetails.website_uri && (
+              <a href={placeDetails.website_uri} target="_blank" rel="noopener noreferrer"
+                style={{
+                  fontSize: 12, color: "#60A5FA", textDecoration: "none",
+                  display: "flex", alignItems: "center", gap: 4,
+                }}>
+                🌐 Website
+              </a>
+            )}
+            {placeDetails.phone_number && (
+              <a href={`tel:${placeDetails.phone_number}`}
+                style={{
+                  fontSize: 12, color: "#60A5FA", textDecoration: "none",
+                  display: "flex", alignItems: "center", gap: 4,
+                }}>
+                📞 {placeDetails.phone_number}
+              </a>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1689,6 +1860,20 @@ function Pill({ label, color }: { label: string; color: string }) {
   );
 }
 
+function DarkPill({ label, color }: { label: string; color: string }) {
+  return (
+    <span style={{
+      padding: "3px 9px", borderRadius: 20,
+      background: `${color}20`,
+      color, border: `1px solid ${color}45`,
+      fontSize: 11, fontWeight: 600,
+      whiteSpace: "nowrap",
+    }}>
+      {label}
+    </span>
+  );
+}
+
 function SensitivityBar({ label, value }: { label: string; value: number }) {
   const clamped = Math.max(0, Math.min(100, value));
   const hue = Math.round((clamped / 100) * 120); // red=0, green=120
@@ -1696,9 +1881,9 @@ function SensitivityBar({ label, value }: { label: string; value: number }) {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 2 }}>
         <span style={{ fontSize: 11, color: "#6B7280", textTransform: "capitalize" }}>{label}</span>
-        <span style={{ fontSize: 11, fontWeight: 600, color: "#374151" }}>{clamped}</span>
+        <span style={{ fontSize: 11, fontWeight: 600, color: "#94A3B8" }}>{clamped}%</span>
       </div>
-      <div style={{ height: 4, background: "#F3F4F6", borderRadius: 2, overflow: "hidden" }}>
+      <div style={{ height: 4, background: "rgba(255,255,255,0.08)", borderRadius: 2, overflow: "hidden" }}>
         <div style={{
           height: "100%", width: `${clamped}%`,
           background: `hsl(${hue},70%,45%)`,
