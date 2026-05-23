@@ -577,6 +577,10 @@ export function VenueMap({
           from { background-position: 0 0; }
           to   { background-position: 48px 48px; }
         }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50%       { opacity: 0.4; transform: scale(0.75); }
+        }
       `}</style>
 
       {/* ── Map canvas (shifts right when panel is open) ── */}
@@ -586,6 +590,48 @@ export function VenueMap({
         right: 0,
         transition: "left 0.3s ease",
       }} />
+
+      {/* ── Loading banner over map ── */}
+      {state.status === "searching" && (
+        <div style={{
+          position: "absolute",
+          top: 72,
+          left: showLeftPanel ? leftPanelW + 24 : 24,
+          right: 24,
+          display: "flex",
+          justifyContent: "center",
+          pointerEvents: "none",
+          zIndex: 20,
+          transition: "left 0.3s ease",
+        }}>
+          <div style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "10px 20px",
+            borderRadius: 24,
+            background: "rgba(15,23,42,0.88)",
+            border: "1px solid rgba(99,179,237,0.35)",
+            boxShadow: "0 4px 24px rgba(0,0,0,0.4)",
+            backdropFilter: "blur(12px)",
+          }}>
+            <span style={{
+              width: 8, height: 8, borderRadius: "50%",
+              background: "#60A5FA",
+              display: "inline-block",
+              animation: "pulse 1.4s ease-in-out infinite",
+            }} />
+            <span style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: "#E2E8F0",
+              letterSpacing: "0.01em",
+            }}>
+              Generating Your Place Recommendations…
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* ════════════════════════════════════════════════════════
           LEFT PANEL — Agent Activity (searching) / Results (done)
