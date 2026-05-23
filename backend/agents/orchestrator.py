@@ -184,24 +184,27 @@ async def synthesize_venue_intelligence(
 
 
 def _fallback_intelligence(venue: ScoredVenue, intent: VenueIntent) -> VenueIntelligence:
-    """Build a basic intelligence card from key_quotes when Claude synthesis is unavailable."""
+    """Build a basic intelligence card from venue attributes and key_quotes."""
     occasion = intent.occasion or "your outing"
     cuisine = venue.cuisine or "venue"
     location = venue.neighborhood or venue.city or "the area"
     quotes = venue.key_quotes or []
+    noise_desc = {"very_quiet": "very quiet", "quiet": "quiet", "moderate": "lively but comfortable",
+                  "loud": "energetic", "very_loud": "very lively"}.get(venue.noise_level, "welcoming")
+    price_hint = f" at around ${venue.price_per_head}/head" if venue.price_per_head else ""
+    room_hint = " with a private room available" if venue.has_private_room else ""
 
     if quotes:
-        why = f"{venue.name} is a {cuisine} spot in {location}. " + quotes[0]
+        why = f"{venue.name} is a {noise_desc} {cuisine} in {location}{price_hint}{room_hint}. {quotes[0]}"
     else:
-        noise_desc = {"very_quiet": "very quiet", "quiet": "quiet", "moderate": "lively but comfortable",
-                      "loud": "energetic", "very_loud": "very lively"}.get(venue.noise_level, "welcoming")
         why = (
-            f"{venue.name} is a {noise_desc} {cuisine} in {location} that fits your criteria for {occasion}."
+            f"{venue.name} is a {noise_desc} {cuisine} in {location}{price_hint}{room_hint}. "
+            f"It scored {round(venue.match_score)}% for {occasion} based on atmosphere, capacity, and occasion fit."
         )
 
     scenario = (
         f"Picture arriving at {venue.name} for {occasion} — "
-        + (quotes[1] if len(quotes) > 1 else f"a great {cuisine} experience in {location}.")
+        + (quotes[1] if len(quotes) > 1 else f"a {noise_desc} {cuisine} experience in {location}{price_hint}.")
     )
 
     score = int(min(100, max(0, venue.match_score)))
@@ -295,6 +298,9 @@ async def orchestrate(query: str, user_id: str, *, user_city: str | None = None)
                 venue.intelligence = intel
             else:
                 venue.intelligence = _fallback_intelligence(venue, intent)
+        # Venues beyond top 5 always get a fallback card so descriptions are never blank
+        for venue in scored_venues[5:]:
+            venue.intelligence = _fallback_intelligence(venue, intent)
 
         # Step 7 — personalization re-rank
         raw_prefs = await _cache.get_user_prefs(user_id)
