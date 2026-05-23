@@ -595,9 +595,10 @@ export function VenueMap({
       {state.status === "searching" && (
         <div style={{
           position: "absolute",
-          top: 72,
-          left: showLeftPanel ? leftPanelW + 24 : 24,
-          right: 24,
+          top: "50%",
+          left: showLeftPanel ? leftPanelW : 0,
+          right: 0,
+          transform: "translateY(-50%)",
           display: "flex",
           justifyContent: "center",
           pointerEvents: "none",
