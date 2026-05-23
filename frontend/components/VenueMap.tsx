@@ -607,28 +607,39 @@ export function VenueMap({
         }}>
           <div style={{
             display: "inline-flex",
+            flexDirection: "column",
             alignItems: "center",
-            gap: 10,
-            padding: "10px 20px",
+            gap: 6,
+            padding: "12px 24px",
             borderRadius: 24,
             background: "rgba(15,23,42,0.88)",
             border: "1px solid rgba(99,179,237,0.35)",
             boxShadow: "0 4px 24px rgba(0,0,0,0.4)",
             backdropFilter: "blur(12px)",
           }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: "50%",
+                background: "#60A5FA",
+                display: "inline-block",
+                animation: "pulse 1.4s ease-in-out infinite",
+              }} />
+              <span style={{
+                fontSize: 13,
+                fontWeight: 600,
+                color: "#E2E8F0",
+                letterSpacing: "0.01em",
+              }}>
+                Generating Your Place Recommendations…
+              </span>
+            </div>
             <span style={{
-              width: 8, height: 8, borderRadius: "50%",
-              background: "#60A5FA",
-              display: "inline-block",
-              animation: "pulse 1.4s ease-in-out infinite",
-            }} />
-            <span style={{
-              fontSize: 13,
-              fontWeight: 600,
-              color: "#E2E8F0",
-              letterSpacing: "0.01em",
+              fontSize: 11,
+              color: "#60A5FA",
+              fontWeight: 500,
+              letterSpacing: "0.02em",
             }}>
-              Generating Your Place Recommendations…
+              View Progress in Side Panel
             </span>
           </div>
         </div>
