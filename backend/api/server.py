@@ -7,6 +7,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
+
+# Load .env from project root (two levels up from backend/api/)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parents[2] / ".env")
+except ImportError:
+    pass
 import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncIterator

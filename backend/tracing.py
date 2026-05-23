@@ -23,9 +23,19 @@ import contextlib
 from contextlib import contextmanager
 from typing import Any, Generator, Iterator
 
-from ddtrace import Span
-from ddtrace import tracer as _dd_tracer
-from ddtrace.ext import SpanTypes
+try:
+    from ddtrace import Span
+    from ddtrace import tracer as _dd_tracer
+    from ddtrace.ext import SpanTypes
+    _DDTRACE_AVAILABLE = True
+except (ImportError, AttributeError):
+    _DDTRACE_AVAILABLE = False
+    Span = Any  # type: ignore[assignment,misc]
+
+    class SpanTypes:  # type: ignore[no-redef]
+        LLM = "llm"
+        SQL = "sql"
+        HTTP = "http"
 
 # ─── Service constants ────────────────────────────────────────────────────────
 
@@ -37,7 +47,8 @@ SERVICE_SENSO = "therightspot-senso"
 VERSION = "2.0.0"
 
 # Replaceable in tests — see SpanRecorder below
-tracer = _dd_tracer
+# Falls back to SpanRecorder when ddtrace is not installed
+tracer: Any = _dd_tracer if _DDTRACE_AVAILABLE else None  # set after SpanRecorder defined
 
 
 # ─── Span context managers ────────────────────────────────────────────────────
@@ -235,3 +246,8 @@ class SpanRecorder:
 
     def __len__(self) -> int:
         return len(self.spans)
+
+
+# Use SpanRecorder as the default tracer when ddtrace is not installed
+if not _DDTRACE_AVAILABLE:
+    tracer = SpanRecorder()

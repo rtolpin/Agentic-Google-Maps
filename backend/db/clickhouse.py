@@ -74,10 +74,10 @@ CREATE TABLE IF NOT EXISTS rightspot.venue_signals (
   SETTINGS index_granularity = 8192;
 
 -- Migration for existing tables: add columns if not present
-ALTER TABLE IF EXISTS rightspot.venue_signals ADD COLUMN IF NOT EXISTS place_id String DEFAULT '';
-ALTER TABLE IF EXISTS rightspot.venue_signals ADD COLUMN IF NOT EXISTS address String DEFAULT '';
-ALTER TABLE IF EXISTS rightspot.venue_signals ADD COLUMN IF NOT EXISTS latitude Float32 DEFAULT 0;
-ALTER TABLE IF EXISTS rightspot.venue_signals ADD COLUMN IF NOT EXISTS longitude Float32 DEFAULT 0;
+ALTER TABLE rightspot.venue_signals ADD COLUMN IF NOT EXISTS place_id String DEFAULT '';
+ALTER TABLE rightspot.venue_signals ADD COLUMN IF NOT EXISTS address String DEFAULT '';
+ALTER TABLE rightspot.venue_signals ADD COLUMN IF NOT EXISTS latitude Float32 DEFAULT 0;
+ALTER TABLE rightspot.venue_signals ADD COLUMN IF NOT EXISTS longitude Float32 DEFAULT 0;
 
 -- Pre-aggregated city benchmarks for the global insight panel.
 -- AggregatingMergeTree keeps running state functions so re-aggregating is O(1).
@@ -187,6 +187,15 @@ LIMIT 20
 
 class ClickHouseClient:
     def __init__(self) -> None:
+        # Connect to the default database first so we can create rightspot if needed.
+        bootstrap = clickhouse_connect.get_client(
+            host=_CH_HOST,
+            port=_CH_PORT,
+            username=_CH_USER,
+            password=_CH_PASSWORD,
+        )
+        bootstrap.command(f"CREATE DATABASE IF NOT EXISTS {_CH_DATABASE}")
+        bootstrap.close()
         self.client = clickhouse_connect.get_client(
             host=_CH_HOST,
             port=_CH_PORT,
