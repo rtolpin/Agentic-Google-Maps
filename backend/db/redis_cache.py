@@ -16,8 +16,10 @@ try:
 except ImportError:
     _REDIS_AVAILABLE = False
 
-_REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379")
+_REDIS_URL = os.environ.get("REDIS_URL", "")
 _USER_PREFS_PREFIX = "user_prefs:"
+
+_VALID_SCHEMES = ("redis://", "rediss://", "unix://")
 
 
 class RedisCache:
@@ -28,14 +30,19 @@ class RedisCache:
 
     def __init__(self) -> None:
         self._client: Any = None
-        if _REDIS_AVAILABLE:
+        url = _REDIS_URL
+        if not _REDIS_AVAILABLE or not url or not any(url.startswith(s) for s in _VALID_SCHEMES):
+            return
+        try:
             self._client = aioredis.from_url(
-                _REDIS_URL,
+                url,
                 encoding="utf-8",
                 decode_responses=True,
                 socket_connect_timeout=2,
                 socket_timeout=2,
             )
+        except Exception:
+            pass
 
     async def get(self, key: str) -> str | None:
         if self._client is None:
