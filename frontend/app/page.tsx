@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic'
 
-const VenueMap = dynamic(() => import('../components/VenueMap'), { ssr: false })
+const VenueMap = dynamic(() => import('../components/VenueMap').then(m => m.VenueMap), { ssr: false })
 
 export default function Home() {
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ?? ''
