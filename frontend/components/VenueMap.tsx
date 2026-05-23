@@ -201,6 +201,7 @@ export function VenueMap({
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<Map<string, google.maps.marker.AdvancedMarkerElement>>(new Map());
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
+  const userLocationRef = useRef<{ lat: number; lng: number } | null>(null);
 
   const [mapsReady, setMapsReady] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -261,54 +262,6 @@ export function VenueMap({
 
     infoWindowRef.current = new google.maps.InfoWindow();
 
-    // Show user's current location as a blue pulsing dot; reverse geocode for city
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-
-          // Blue pulsing dot marker
-          const dotEl = document.createElement("div");
-          dotEl.style.cssText = `
-            width: 18px; height: 18px; border-radius: 50%;
-            background: #3B82F6; border: 3px solid #fff;
-            box-shadow: 0 0 0 0 rgba(59,130,246,0.6);
-            animation: locationPulse 2s ease-out infinite;
-          `;
-          new google.maps.marker.AdvancedMarkerElement({
-            map: mapInstanceRef.current!,
-            position: userPos,
-            content: dotEl,
-            title: "Your location",
-            zIndex: 9999,
-          });
-
-          // Center map on user if no markers yet
-          if (!mapInstanceRef.current?.getBounds()?.contains(userPos)) {
-            mapInstanceRef.current?.setCenter(userPos);
-            mapInstanceRef.current?.setZoom(13);
-          }
-
-          // Reverse geocode to extract city name for auto-appending to searches
-          const geocoder = new google.maps.Geocoder();
-          geocoder.geocode({ location: userPos }, (results, status) => {
-            if (status === "OK" && results && results.length > 0) {
-              const locality = results[0].address_components.find((c) =>
-                c.types.includes("locality"),
-              );
-              const area = results[0].address_components.find((c) =>
-                c.types.includes("administrative_area_level_1"),
-              );
-              const city = locality?.long_name || area?.long_name || "";
-              if (city) setDetectedCity(city);
-            }
-          });
-        },
-        () => { /* geolocation denied or unavailable — silently skip */ },
-        { enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 },
-      );
-    }
-
     mapInstanceRef.current.addListener("click", () => {
       infoWindowRef.current?.close();
       selectVenue(null);
@@ -321,6 +274,71 @@ export function VenueMap({
       traceMapInteraction({ action: "zoom", zoomLevel: zoom }).finish();
     });
   }, [mapsReady, config, selectVenue]);
+
+  // ── User location dot ───────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!mapsReady || !mapInstanceRef.current || !("geolocation" in navigator)) return;
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        userLocationRef.current = userPos;
+
+        // Outer ring (accuracy halo)
+        const halo = document.createElement("div");
+        halo.style.cssText = `
+          position: absolute; width: 48px; height: 48px; border-radius: 50%;
+          background: rgba(59,130,246,0.15); border: 1.5px solid rgba(59,130,246,0.35);
+          top: 50%; left: 50%; transform: translate(-50%,-50%);
+          pointer-events: none;
+        `;
+        // Inner dot
+        const dot = document.createElement("div");
+        dot.style.cssText = `
+          width: 16px; height: 16px; border-radius: 50%;
+          background: #3B82F6; border: 2.5px solid #fff;
+          box-shadow: 0 2px 8px rgba(37,99,235,0.55);
+          animation: locationPulse 2.2s ease-out infinite;
+          position: relative; z-index: 1;
+        `;
+        const wrapper = document.createElement("div");
+        wrapper.style.cssText = `
+          width: 16px; height: 16px; position: relative;
+          display: flex; align-items: center; justify-content: center;
+        `;
+        wrapper.appendChild(halo);
+        wrapper.appendChild(dot);
+
+        new google.maps.marker.AdvancedMarkerElement({
+          map: mapInstanceRef.current!,
+          position: userPos,
+          content: wrapper,
+          title: "Your location",
+          zIndex: 9999,
+        });
+
+        // Center map on user only on initial load (no search results yet)
+        if (enrichedMarkers.length === 0) {
+          mapInstanceRef.current?.setCenter(userPos);
+          mapInstanceRef.current?.setZoom(14);
+        }
+
+        // Reverse geocode → city for backend fallback
+        const geocoder = new google.maps.Geocoder();
+        geocoder.geocode({ location: userPos }, (results, status) => {
+          if (status === "OK" && results?.[0]) {
+            const locality = results[0].address_components.find((c) => c.types.includes("locality"));
+            const area = results[0].address_components.find((c) => c.types.includes("administrative_area_level_1"));
+            const city = locality?.long_name || area?.long_name || "";
+            if (city) setDetectedCity(city);
+          }
+        });
+      },
+      () => { /* permission denied or unavailable */ },
+      { enableHighAccuracy: false, timeout: 8000, maximumAge: 120000 },
+    );
+  }, [mapsReady]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Sync markers when venues arrive ────────────────────────────────────
 
@@ -1012,6 +1030,41 @@ export function VenueMap({
         );
       })()}
 
+      {/* ── Locate-me button ── */}
+      {mapsReady && (
+        <button
+          title="Jump to your location"
+          onClick={() => {
+            if (userLocationRef.current) {
+              mapInstanceRef.current?.setCenter(userLocationRef.current);
+              mapInstanceRef.current?.setZoom(14);
+            } else {
+              navigator.geolocation?.getCurrentPosition((pos) => {
+                const p = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                userLocationRef.current = p;
+                mapInstanceRef.current?.setCenter(p);
+                mapInstanceRef.current?.setZoom(14);
+              });
+            }
+          }}
+          style={{
+            position: "absolute",
+            bottom: 120, right: 16,
+            zIndex: 10,
+            width: 44, height: 44, borderRadius: 12,
+            background: "rgba(7,11,24,0.9)",
+            backdropFilter: "blur(12px)",
+            border: "1.5px solid rgba(255,255,255,0.12)",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+            cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 20,
+            transition: "all 0.15s",
+          }}
+        >
+          📍
+        </button>
+      )}
 
       {/* ── Venue detail sidebar ── */}
       {sidebarOpen && state.selectedVenueId && (

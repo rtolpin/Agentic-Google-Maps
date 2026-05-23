@@ -1,51 +1,34 @@
 """
 Scraper Agent — two-phase data pipeline.
 
-Phase 1 (Nimble SERP API):
-  - `google_maps` engine: computer vision extracts structured local-pack results
-    including Google Place IDs, addresses, coordinates, and ratings at scale.
-  - `google` engine: organic SERP results for review text / snippets.
-  Both phases run in parallel.
+Phase 1 (Google Places Text Search API):
+  - Searches for venues by natural-language query.
+  - Returns Place IDs, coordinates, addresses, ratings, and editorial summaries.
+  - Runs multiple parallel queries (broad + occasion-specific) for coverage.
 
 Phase 2 (Claude):
   - Extracts structured venue signals (noise level, private room, capacity...)
-    from the review snippets gathered in Phase 1.
-
-Why Nimble for Place IDs instead of Google directly?
-  - Nimble rotates IPs and bypasses anti-bot measures for bulk extraction.
-  - No per-request Google billing for the maps search phase.
-  - Place IDs extracted this way are legitimate Google identifiers that the
-    Google Maps JS API can use to render interactive map markers.
+    from the editorial summaries and any available review text.
 """
 from __future__ import annotations
 
 import asyncio
 import json
-import os
-import re
 from typing import Any
 
 import anthropic
-import httpx
 
-from ..tracing import ai_span, http_span
+from ..tracing import ai_span
+from ..integrations.google_maps_client import GoogleMapsClient
 from ..models.models import (
     EnrichedVenue,
     ExtractedSignals,
-    NimbleMapsResult,
     RawVenueResult,
     VenueIntent,
 )
 
-NIMBLE_API_KEY = os.environ.get("NIMBLE_API_KEY", "")
-_NIMBLE_URL = "https://api.webit.live/api/v1/realtime/serp"
-
 _client = anthropic.AsyncAnthropic()
 _CLAUDE_SEM = asyncio.Semaphore(5)
-
-# Regex to extract Place ID from Google Maps URLs when Nimble doesn't return it directly
-_PLACE_ID_RE = re.compile(r"place_id:([A-Za-z0-9_-]+)")
-_CID_RE = re.compile(r"[?&]cid=([0-9]+)")
 
 _SIGNAL_EXTRACTOR_PROMPT = """\
 Extract venue attributes from the following review text.
@@ -118,249 +101,89 @@ async def _call_with_retry(
         return None
 
 
+def _build_queries(intent: VenueIntent) -> list[str]:
+    """Build 2–3 complementary search queries for maximum venue coverage."""
+    cuisine = intent.cuisine or "restaurant"
+    city = intent.city
+    occasion = intent.occasion.replace("_", " ")
+
+    if city == "Unknown":
+        location = (
+            next(
+                (s for s in (intent.other_signals or []) if len(s) > 3),
+                "near me",
+            )
+        )
+    else:
+        location = city
+
+    return [
+        f"best {occasion} {cuisine} restaurant {location}",
+        f"{cuisine} restaurant group dining {location}",
+        f"special occasion restaurant {location}",
+    ]
+
+
 class ScraperAgent:
     """
-    Two-phase scraper: Nimble extracts Place IDs + addresses at scale,
-    Claude extracts qualitative venue signals from review text.
+    Two-phase scraper: Google Places Text Search finds venues with Place IDs
+    and coordinates; Claude extracts qualitative signals from editorial text.
     """
 
-    def __init__(self) -> None:
-        self._http: httpx.AsyncClient | None = None
-
-    async def __aenter__(self) -> "ScraperAgent":
-        self._http = httpx.AsyncClient(
-            timeout=15.0,
-            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
-        )
-        return self
-
-    async def __aexit__(self, *_: Any) -> None:
-        if self._http:
-            await self._http.aclose()
-            self._http = None
-
     async def run(self, intent: VenueIntent) -> list[dict]:
-        async with self:
-            return await self._run(intent)
+        queries = _build_queries(intent)
 
-    async def _run(self, intent: VenueIntent) -> list[dict]:
-        cuisine = intent.cuisine or "restaurant"
-        city = intent.city
-        occasion = intent.occasion
-        city_unknown = city == "Unknown"
+        async with GoogleMapsClient() as maps:
+            tasks = [maps.search_venues(q, max_results=10) for q in queries]
+            batches = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # When city is unspecified, use location hints from other_signals or "near me"
-        location = city if not city_unknown else (
-            next((s for s in (intent.other_signals or [])
-                  if any(kw in s.lower() for kw in ["city", "near", "in ", "at ", "nyc", "sf", "la", "chicago", "york", "angeles", "francisco"])),
-                 "near me")
-        )
+        # Merge and deduplicate by place_id
+        seen_ids: set[str] = set()
+        raw_venues: list[RawVenueResult] = []
+        for batch in batches:
+            if isinstance(batch, Exception) or not isinstance(batch, list):
+                continue
+            for v in batch:
+                pid = v.get("place_id", "")
+                key = pid or v.get("name", "")
+                if key and key not in seen_ids:
+                    seen_ids.add(key)
+                    raw_venues.append(RawVenueResult(
+                        name=v.get("name", ""),
+                        url=v.get("url"),
+                        snippet=v.get("snippet", ""),
+                        source=v.get("source", "google_places"),
+                        place_id=pid,
+                        address=v.get("address", ""),
+                        latitude=v.get("latitude"),
+                        longitude=v.get("longitude"),
+                    ))
 
-        # ── Phase 1a: Nimble google_maps engine — structured local results + Place IDs
-        if city_unknown:
-            maps_query = f"best {cuisine} {occasion} restaurant {location}"
-        else:
-            maps_query = f"{cuisine} restaurant {city} {occasion}"
-        maps_task = asyncio.create_task(self._nimble_maps_search(maps_query))
-
-        # ── Phase 1b: Nimble google engine — organic SERP for review snippets
-        if city_unknown:
-            serp_queries = [
-                f"best {cuisine} restaurant {occasion} group dining private room",
-                f"top {cuisine} restaurant {occasion} special occasion {location}",
-                f"site:reddit.com {cuisine} restaurant recommendation {occasion} group",
-            ]
-        else:
-            serp_queries = [
-                f"best {cuisine} restaurants {city} private room group dining",
-                f"{cuisine} restaurant {city} {occasion} birthday reviews",
-                f"site:reddit.com {cuisine} restaurant recommendation {city} {occasion}",
-            ]
-        serp_tasks = [asyncio.create_task(self._nimble_serp_search(q)) for q in serp_queries]
-
-        # Run both phases in parallel
-        maps_results, *serp_batches = await asyncio.gather(
-            maps_task, *serp_tasks, return_exceptions=True
-        )
-
-        # ── Merge: maps results carry Place IDs; SERP results carry snippets
-        maps_by_name: dict[str, NimbleMapsResult] = {}
-        if isinstance(maps_results, list):
-            maps_by_name = {_norm(r.name): r for r in maps_results}
-
-        serp_raw: list[RawVenueResult] = []
-        for batch in serp_batches:
-            if isinstance(batch, list):
-                serp_raw.extend(batch)
-
-        # Merge SERP results with maps metadata using normalized name as key
-        merged: list[RawVenueResult] = []
-        for venue in self._deduplicate(serp_raw):
-            maps_meta = maps_by_name.get(_norm(venue.name))
-            if maps_meta:
-                merged.append(venue.model_copy(update={
-                    "place_id": maps_meta.place_id,
-                    "address": maps_meta.address,
-                    "latitude": maps_meta.latitude,
-                    "longitude": maps_meta.longitude,
-                }))
-            else:
-                merged.append(venue)
-
-        # Also add maps-only results that didn't appear in SERP
-        serp_names = {_norm(v.name) for v in merged}
-        for maps_venue in (maps_by_name.values() if isinstance(maps_results, list) else []):
-            if _norm(maps_venue.name) not in serp_names:
-                merged.append(RawVenueResult(
-                    name=maps_venue.name,
-                    url=maps_venue.url,
-                    snippet=maps_venue.snippet,
-                    place_id=maps_venue.place_id,
-                    address=maps_venue.address,
-                    latitude=maps_venue.latitude,
-                    longitude=maps_venue.longitude,
-                ))
-
-        # ── Phase 2: Claude signal extraction from snippets
-        top = merged[:12]
+        # Phase 2: Claude signal extraction from editorial summaries
+        top = raw_venues[:12]
         signals_list = await asyncio.gather(
             *[_call_with_retry(v) for v in top], return_exceptions=True
         )
 
+        # Merge price hint from Places API into extracted signals
+        places_price: dict[str, int] = {}
+        for batch in batches:
+            if isinstance(batch, list):
+                for v in batch:
+                    if v.get("place_id") and v.get("price_per_head_usd"):
+                        places_price[v["place_id"]] = v["price_per_head_usd"]
+
         enriched: list[dict] = []
         for raw_venue, signals in zip(top, signals_list):
+            base = raw_venue.model_dump()
             if isinstance(signals, Exception) or signals is None:
-                enriched.append(raw_venue.model_dump())
+                enriched.append(base)
                 continue
-            # EnrichedVenue merges both models; place_id flows through from raw_venue
-            ev = EnrichedVenue(**{**raw_venue.model_dump(), **signals.model_dump()})
+            sig_dict = signals.model_dump()
+            # Use Places API price if Claude didn't extract one
+            if not sig_dict.get("price_per_head_usd") and raw_venue.place_id in places_price:
+                sig_dict["price_per_head_usd"] = places_price[raw_venue.place_id]
+            ev = EnrichedVenue(**{**base, **sig_dict})
             enriched.append(ev.model_dump())
 
         return enriched
-
-    async def _nimble_maps_search(self, query: str) -> list[NimbleMapsResult]:
-        """
-        Phase 1a: Nimble google_maps engine.
-        Uses computer vision to extract structured local-pack results including
-        Google Place IDs, coordinates, ratings, and addresses.
-        """
-        assert self._http is not None
-        with http_span(
-            "therightspot.nimble_maps",
-            "nimble",
-            url=_NIMBLE_URL,
-            **{"search.engine": "google_maps", "search.query": query[:100]},
-        ) as span:
-          try:
-            resp = await self._http.post(
-                _NIMBLE_URL,
-                json={
-                    "query": query,
-                    "search_engine": "google_maps",
-                    "country": "US",
-                    "num_results": 15,
-                    "render_js": False,
-                    "parse": True,
-                },
-                headers={
-                    "Authorization": f"Basic {NIMBLE_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-            )
-            resp.raise_for_status()
-            span.set_tag("http.status_code", resp.status_code)
-            data = resp.json()
-          except Exception:
-            span.set_tag("error", True)
-            return []
-
-          results: list[NimbleMapsResult] = []
-          for r in data.get("local_results", data.get("organic_results", [])):
-            place_id = r.get("place_id", "") or _extract_place_id_from_url(r.get("link", ""))
-            coords = r.get("gps_coordinates") or {}
-            results.append(NimbleMapsResult(
-                name=r.get("title", "").split(" - ")[0].strip(),
-                place_id=place_id,
-                address=r.get("address", ""),
-                latitude=coords.get("latitude") or r.get("latitude"),
-                longitude=coords.get("longitude") or r.get("longitude"),
-                rating=r.get("rating"),
-                review_count=r.get("reviews"),
-                snippet=r.get("description", r.get("snippet", "")),
-                url=r.get("link"),
-                phone=r.get("phone"),
-                business_type=r.get("type"),
-            ))
-          span.set_tag("results.count", len(results))
-          return results
-
-    async def _nimble_serp_search(self, query: str) -> list[RawVenueResult]:
-        """
-        Phase 1b: Nimble google engine.
-        Standard SERP for organic results — review sites, Reddit, food blogs.
-        """
-        assert self._http is not None
-        with http_span(
-            "therightspot.nimble_serp",
-            "nimble",
-            url=_NIMBLE_URL,
-            **{"search.engine": "google", "search.query": query[:100]},
-        ) as span:
-          try:
-            resp = await self._http.post(
-                _NIMBLE_URL,
-                json={
-                    "query": query,
-                    "search_engine": "google",
-                    "country": "US",
-                    "num_results": 10,
-                    "render_js": False,
-                    "parse": True,
-                },
-                headers={
-                    "Authorization": f"Basic {NIMBLE_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-            )
-            resp.raise_for_status()
-            span.set_tag("http.status_code", resp.status_code)
-            data = resp.json()
-          except Exception:
-            span.set_tag("error", True)
-            return []
-
-          results = [
-            RawVenueResult(
-                name=r.get("title", "").split(" - ")[0].strip(),
-                url=r.get("link"),
-                snippet=r.get("snippet", ""),
-                source=r.get("displayed_link", ""),
-                place_id=_extract_place_id_from_url(r.get("link", "")),
-            )
-            for r in data.get("organic_results", [])
-          ]
-          span.set_tag("results.count", len(results))
-          return results
-
-    @staticmethod
-    def _deduplicate(venues: list[RawVenueResult]) -> list[RawVenueResult]:
-        seen: set[str] = set()
-        unique: list[RawVenueResult] = []
-        for v in venues:
-            key = _norm(v.name)
-            if len(key) > 2 and key not in seen:
-                seen.add(key)
-                unique.append(v)
-        return unique
-
-
-def _norm(name: str) -> str:
-    return name.lower().replace("'", "").replace(" ", "")
-
-
-def _extract_place_id_from_url(url: str | None) -> str:
-    """Try to extract a Google Place ID from a Google Maps URL."""
-    if not url:
-        return ""
-    m = _PLACE_ID_RE.search(url)
-    return m.group(1) if m else ""

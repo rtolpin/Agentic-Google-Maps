@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 
@@ -46,6 +46,23 @@ _DISPLAY_FIELD_MASK = (
     "location"
 )
 _FIND_FIELD_MASK = "places.id,places.displayName,places.formattedAddress,places.location"
+_SEARCH_FIELD_MASK = (
+    "places.id,places.displayName,places.formattedAddress,places.location,"
+    "places.rating,places.userRatingCount,places.priceLevel,places.editorialSummary,"
+    "places.types,places.websiteUri"
+)
+
+# The API key is browser-restricted (HTTP referrer allowlist).
+# Server-side calls must supply this header to pass the referrer check.
+_SERVER_REFERER = os.environ.get("GOOGLE_MAPS_REFERER", "http://localhost:3000")
+
+_PRICE_LEVEL_TO_USD = {
+    "PRICE_LEVEL_FREE": 0,
+    "PRICE_LEVEL_INEXPENSIVE": 20,
+    "PRICE_LEVEL_MODERATE": 50,
+    "PRICE_LEVEL_EXPENSIVE": 100,
+    "PRICE_LEVEL_VERY_EXPENSIVE": 175,
+}
 
 
 class GoogleMapsClient:
@@ -60,10 +77,68 @@ class GoogleMapsClient:
             headers={
                 "X-Goog-Api-Key": GOOGLE_MAPS_API_KEY,
                 "Content-Type": "application/json",
+                "Referer": _SERVER_REFERER,
             },
-            timeout=10.0,
+            timeout=15.0,
         )
         self._geocoding = httpx.AsyncClient(timeout=10.0)
+
+    # ─── Venue search (Place IDs + coordinates + editorial text) ─────────────
+
+    async def search_venues(
+        self,
+        query: str,
+        max_results: int = 15,
+    ) -> list[dict]:
+        """
+        Text-search for venues using the Google Places API (New).
+
+        Returns a list of dicts with keys:
+          place_id, name, address, latitude, longitude,
+          rating, price_per_head_usd, snippet, url, source
+
+        Coordinates and place_id ARE storable (neutral identifiers / universal data).
+        editorial_summary is used for Claude signal extraction then discarded.
+        """
+        with http_span(
+            "therightspot.google_maps.search",
+            "google_maps",
+            url=f"{_PLACES_BASE}/places:searchText",
+            method="POST",
+            **{"search.query": query[:100]},
+        ) as span:
+            try:
+                resp = await self._places.post(
+                    "/places:searchText",
+                    json={"textQuery": query, "maxResultCount": min(max_results, 20)},
+                    headers={"X-Goog-FieldMask": _SEARCH_FIELD_MASK},
+                )
+                resp.raise_for_status()
+                span.set_tag("http.status_code", resp.status_code)
+            except Exception as exc:
+                span.set_tag("error", str(exc))
+                return []
+
+            places = resp.json().get("places", [])
+            span.set_tag("results.count", len(places))
+
+            results = []
+            for p in places:
+                loc = p.get("location", {})
+                price_label = p.get("priceLevel", "")
+                results.append({
+                    "place_id": p.get("id", ""),
+                    "name": p.get("displayName", {}).get("text", ""),
+                    "address": p.get("formattedAddress", ""),
+                    "latitude": loc.get("latitude"),
+                    "longitude": loc.get("longitude"),
+                    "rating": p.get("rating"),
+                    "price_per_head_usd": _PRICE_LEVEL_TO_USD.get(price_label, 0),
+                    "snippet": p.get("editorialSummary", {}).get("text", ""),
+                    "url": p.get("websiteUri", ""),
+                    "source": "google_places",
+                })
+            return results
 
     # ─── Geocoding (results ARE stored — lat/lng is our data, not Google's) ──
 
@@ -208,6 +283,12 @@ class GoogleMapsClient:
             for v in venues
             if v.place_id  # only venues with a verified Place ID get a marker
         ]
+
+    async def __aenter__(self) -> "GoogleMapsClient":
+        return self
+
+    async def __aexit__(self, *_: Any) -> None:
+        await self.close()
 
     async def close(self) -> None:
         await self._places.aclose()
