@@ -1055,17 +1055,18 @@ export function VenueMap({
               title="Show AI panel"
               style={{
                 flexShrink: 0,
-                display: "inline-flex", alignItems: "center", gap: 5,
-                padding: "5px 11px", borderRadius: 20,
-                background: "rgba(255,255,255,0.06)",
-                border: "1.5px solid rgba(255,255,255,0.12)",
-                color: "#64748B",
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "7px 14px", borderRadius: 20,
+                background: "linear-gradient(135deg, #1D4ED8, #7C3AED)",
+                border: "1.5px solid rgba(139,92,246,0.5)",
+                color: "#fff",
                 fontSize: 12, fontWeight: 700, cursor: "pointer",
-                transition: "all 0.2s",
+                boxShadow: "0 2px 12px rgba(124,58,237,0.45)",
                 letterSpacing: "0.02em",
+                transition: "all 0.2s",
               }}
             >
-              <span style={{ fontSize: 13 }}>▶</span>
+              <span style={{ fontSize: 13 }}>✦</span>
               <span>AI Panel</span>
             </button>
           )}
@@ -1222,38 +1223,38 @@ export function VenueMap({
         const chips = [
           {
             val: city, icon: "📍", label: city, bg: "#2563EB", shadow: "rgba(37,99,235,0.5)",
-            hint: "Click to search a different city",
-            refinement: `${occasion} ${cuisine} in `,
+            hint: "Click to search in a different city",
+            refinement: `${occasion} in `,
           },
           {
             val: intent.occasion, icon: "🎉", label: occasion, bg: "#7C3AED", shadow: "rgba(124,58,237,0.5)",
-            hint: "Click to change occasion",
-            refinement: `${cuisine} restaurant in ${city} for ${n} people`,
+            hint: "Click to change the occasion or activity",
+            refinement: `${occasion} in ${city} for ${n} people`,
           },
           {
             val: intent.cuisine, icon: "🍽️", label: cuisine, bg: "#B45309", shadow: "rgba(180,83,9,0.5)",
-            hint: "Click to change cuisine",
-            refinement: `${occasion} restaurant in ${city} for ${n} people`,
+            hint: "Click to change cuisine type",
+            refinement: `${occasion} ${cuisine} in ${city} for ${n} people`,
           },
           {
             val: intent.group_size > 1, icon: "👥", label: `${n} people`, bg: "#047857", shadow: "rgba(4,120,87,0.5)",
             hint: "Click to change group size",
-            refinement: `${occasion} ${cuisine} in ${city} for `,
+            refinement: `${occasion} in ${city} for `,
           },
           {
             val: intent.needs_private_room, icon: "🚪", label: "private room", bg: "#0E7490", shadow: "rgba(14,116,144,0.5)",
-            hint: "Click to search without private room requirement",
-            refinement: `${occasion} ${cuisine} in ${city} for ${n} people`,
+            hint: "Click to search without private room",
+            refinement: `${occasion} in ${city} for ${n} people no private room needed`,
           },
           {
             val: intent.noise_preference, icon: "🔊", label: intent.noise_preference, bg: "#BE185D", shadow: "rgba(190,24,93,0.5)",
             hint: "Click to change noise preference",
-            refinement: `${occasion} ${cuisine} in ${city} for ${n} people`,
+            refinement: `${occasion} in ${city} for ${n} people ${intent.noise_preference} atmosphere`,
           },
           {
             val: intent.price_band, icon: "💎", label: intent.price_band, bg: "#4D7C0F", shadow: "rgba(77,124,15,0.5)",
             hint: "Click to change price range",
-            refinement: `${occasion} ${cuisine} in ${city} for ${n} people`,
+            refinement: `${occasion} in ${city} for ${n} people ${intent.price_band} budget`,
           },
         ].filter(c => c.val);
 
