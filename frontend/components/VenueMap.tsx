@@ -53,31 +53,46 @@ declare global {
   }
 }
 
+// Shared promise so concurrent calls (React StrictMode double-invoke) don't
+// inject the script twice.
+let _mapsLoadPromise: Promise<void> | null = null;
+
 async function loadGoogleMaps(
   apiKey: string,
   _mapId: string,
   onStep?: (step: number) => void,
 ): Promise<void> {
   if (window.googleMapsLoaded) return;
-  onStep?.(1); // 10% — injecting script
-  if (!document.querySelector('script[data-gmaps]')) {
-    await new Promise<void>((resolve, reject) => {
-      const script = document.createElement("script");
-      script.setAttribute("data-gmaps", "1");
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&loading=async`;
-      script.async = true;
-      script.defer = true;
-      script.onload = () => resolve();
-      script.onerror = reject;
-      document.head.appendChild(script);
-    });
+
+  if (!_mapsLoadPromise) {
+    _mapsLoadPromise = (async () => {
+      onStep?.(1); // 12%
+
+      // Remove any previously injected script so we always get loading=async.
+      document.querySelector("script[data-gmaps]")?.remove();
+
+      await new Promise<void>((resolve, reject) => {
+        const script = document.createElement("script");
+        script.setAttribute("data-gmaps", "1");
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&loading=async`;
+        script.async = true;
+        script.defer = true;
+        script.onload = () => resolve();
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+
+      // onload guarantees google.maps.importLibrary exists at this point.
+      onStep?.(2); // 45%
+      await google.maps.importLibrary("maps");
+      onStep?.(3); // 75%
+      await google.maps.importLibrary("marker");
+      onStep?.(4); // 95%
+      window.googleMapsLoaded = true;
+    })();
   }
-  onStep?.(2); // 45% — script loaded, importing map lib
-  await google.maps.importLibrary("maps");
-  onStep?.(3); // 75% — map lib ready, importing marker lib
-  await google.maps.importLibrary("marker");
-  onStep?.(4); // 95% — all libs ready
-  window.googleMapsLoaded = true;
+
+  return _mapsLoadPromise;
 }
 
 // ─── Spatial query categories ─────────────────────────────────────────────

@@ -128,64 +128,12 @@ class NoopTracer implements Tracer {
   }
 }
 
-/**
- * Server-side tracer backed by dd-trace.
- * Loaded lazily so the browser bundle never imports Node.js modules.
- */
-class DdTracer implements Tracer {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private _dd: any;
-
-  constructor() {
-    try {
-      // Dynamic require so bundlers skip this in browser builds
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      this._dd = require("dd-trace");
-      this._dd.init({
-        service: "therightspot-frontend",
-        version: "2.0.0",
-        env: process.env.NODE_ENV,
-        analytics: true,
-      });
-    } catch {
-      this._dd = null;
-    }
-  }
-
-  startSpan(operation: string, options: SpanOptions = {}): TracingSpan {
-    if (!this._dd) return new NoopSpan();
-    const span = this._dd.startSpan(operation, { tags: options.tags ?? {} });
-    return {
-      setTag(key: string, value: string | number | boolean | null): void {
-        span.setTag(key, value);
-      },
-      finish(): void {
-        span.finish();
-      },
-    };
-  }
-
-  trace<T>(operation: string, options: SpanOptions, fn: (span: TracingSpan) => T): T {
-    if (!this._dd) return fn(new NoopSpan());
-    return this._dd.trace(operation, { tags: options.tags ?? {} }, (ddSpan: unknown) => {
-      const wrapped: TracingSpan = {
-        setTag(key: string, value: string | number | boolean | null): void {
-          (ddSpan as { setTag: (k: string, v: unknown) => void }).setTag(key, value);
-        },
-        finish(): void {
-          (ddSpan as { finish: () => void }).finish();
-        },
-      };
-      return fn(wrapped);
-    }) as T;
-  }
-}
-
 // ─── Active tracer (injectable) ────────────────────────────────────────────
+// Server-side APM (dd-trace) lives in the Python backend, not here.
+// Browser RUM is handled via window.DD_RUM (Datadog CDN snippet).
+// Frontend defaults to NoopTracer; tests inject MockTracer via setTracer().
 
-let _activeTracer: Tracer = typeof window === "undefined"
-  ? new DdTracer()
-  : new NoopTracer();  // Browser RUM handles client-side tracing
+let _activeTracer: Tracer = new NoopTracer();
 
 export function getTracer(): Tracer {
   return _activeTracer;
@@ -196,11 +144,9 @@ export function setTracer(t: Tracer): void {
   _activeTracer = t;
 }
 
-/** Reset to the production tracer. */
+/** Reset to the production tracer (NoopTracer — tests inject MockTracer). */
 export function resetTracer(): void {
-  _activeTracer = typeof window === "undefined"
-    ? new DdTracer()
-    : new NoopTracer();
+  _activeTracer = new NoopTracer();
 }
 
 // ─── Instrumented operations ───────────────────────────────────────────────
