@@ -918,7 +918,7 @@ export function VenueMap({
 
       {/* ── Nearby Transit toggle ── */}
       <div style={{
-        position: "absolute", bottom: 120, right: 16, zIndex: 12,
+        position: "absolute", bottom: 175, right: 16, zIndex: 12,
         display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end",
       }}>
         <button
