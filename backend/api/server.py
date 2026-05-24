@@ -55,7 +55,13 @@ app = FastAPI(title="The Right Spot API", version="2.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://therightspot.app"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://therightspot.app",
+        "https://agent-google-maps-nine.vercel.app",
+        "https://agentic-engineering-hack.vercel.app",
+    ],
+    allow_origin_regex=r"https://agent-google-maps.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
