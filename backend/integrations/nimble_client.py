@@ -53,7 +53,7 @@ class NimbleClient:
                 "Authorization": _auth_header(),
                 "Content-Type": "application/json",
             },
-            timeout=20.0,
+            timeout=8.0,
         )
 
     # ── google_maps engine ────────────────────────────────────────────────────

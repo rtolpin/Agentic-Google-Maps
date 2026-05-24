@@ -190,7 +190,27 @@ def _build_queries(intent: VenueIntent) -> list[str]:
             f"quiet coffee shop{wifi_tag} {location}",
         ]
 
-    venue_type = cuisine if cuisine else "restaurant"
+    # Detect specific non-restaurant venue types from occasion/signals
+    _PUBLIC_VENUES = {
+        "library", "libraries", "museum", "museums", "gallery", "galleries",
+        "gym", "fitness", "pool", "swimming", "bowling", "cinema", "theatre",
+        "theater", "arcade", "bookstore", "bookshop", "market", "farmers market",
+        "spa", "salon", "pharmacy", "clinic", "hospital", "bank", "post office",
+    }
+    venue_type = cuisine or ""
+    if not venue_type:
+        venue_type = next((t for t in _PUBLIC_VENUES if t in all_terms), "")
+    if not venue_type:
+        # Extract from occasion if it names a place type directly
+        venue_type = occasion if any(t in occasion for t in _PUBLIC_VENUES) else "restaurant"
+
+    if venue_type != "restaurant" and venue_type not in {"dining", "dinner", "lunch", "brunch", "breakfast"}:
+        return [
+            f"{venue_type} {location}",
+            f"best {venue_type} near {location}",
+            f"{occasion} {venue_type} {location}",
+        ]
+
     return [
         f"best {occasion} {venue_type} {location}",
         f"{venue_type} group dining {location}",
@@ -218,23 +238,27 @@ class ScraperAgent:
         queries = _build_queries(intent)
         location = intent.neighborhood or intent.city
 
-        # ── Phase 1: parallel fetch from Google Places + Nimble ───────────────
-        async with GoogleMapsClient() as maps, NimbleClient() as nimble:
+        # ── Phase 1: Google Places (must complete) + Nimble (best-effort, 10s cap) ──
+        async with GoogleMapsClient() as maps:
             google_tasks = [maps.search_venues(q, max_results=10) for q in queries]
-            # Nimble maps: first query only (broadest); SERP: first two queries
-            nimble_maps_tasks = [nimble.maps_search(queries[0], location)]
-            nimble_serp_tasks = [nimble.serp_search(q) for q in queries[:2]]
+            google_batches = await asyncio.gather(*google_tasks, return_exceptions=True)
 
-            all_results = await asyncio.gather(
-                *google_tasks, *nimble_maps_tasks, *nimble_serp_tasks,
-                return_exceptions=True,
-            )
-
-        n_google = len(google_tasks)
-        n_maps = len(nimble_maps_tasks)
-        google_batches = all_results[:n_google]
-        nimble_maps_batches = all_results[n_google: n_google + n_maps]
-        nimble_serp_batches = all_results[n_google + n_maps:]
+        nimble_maps_batches: list[Any] = []
+        nimble_serp_batches: list[Any] = []
+        try:
+            async with NimbleClient() as nimble:
+                nimble_tasks = [
+                    nimble.maps_search(queries[0], location),
+                    *[nimble.serp_search(q) for q in queries[:2]],
+                ]
+                nimble_results = await asyncio.wait_for(
+                    asyncio.gather(*nimble_tasks, return_exceptions=True),
+                    timeout=10.0,
+                )
+            nimble_maps_batches = [nimble_results[0]]
+            nimble_serp_batches = list(nimble_results[1:])
+        except (asyncio.TimeoutError, Exception):
+            pass  # Nimble is optional — proceed with Google Places only
 
         # Build a name→snippet index from Nimble SERP (organic web results)
         serp_snippets: dict[str, str] = {}

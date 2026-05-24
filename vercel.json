@@ -1,4 +1,9 @@
 {
+  "functions": {
+    "backend/**": {
+      "maxDuration": 60
+    }
+  },
   "experimentalServices": {
     "frontend": {
       "root": "frontend",
@@ -8,7 +13,8 @@
     "backend": {
       "root": "backend",
       "entrypoint": "api.server:app",
-      "routePrefix": "/_/backend"
+      "routePrefix": "/_/backend",
+      "maxDuration": 60
     }
   }
 }
