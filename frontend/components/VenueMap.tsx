@@ -485,13 +485,13 @@ export function VenueMap({
   const handleSearchThisArea = useCallback(async () => {
     const mapInstance = mapInstanceRef.current;
     if (!mapInstance || !query) return;
-    setShowSearchArea(false);
     const center = mapInstance.getCenter();
     if (!center) return;
 
     const geocoder = new google.maps.Geocoder();
     geocoder.geocode({ location: { lat: center.lat(), lng: center.lng() } }, async (results, status) => {
-      let areaName = "";
+      let neighborhood = "";
+      let city = "";
       if (status === "OK" && results?.[0]) {
         const sub = results[0].address_components.find((c) =>
           c.types.includes("neighborhood") || c.types.includes("sublocality_level_1")
@@ -500,19 +500,38 @@ export function VenueMap({
         const admin = results[0].address_components.find((c) =>
           c.types.includes("administrative_area_level_2") || c.types.includes("administrative_area_level_1")
         );
-        areaName = sub?.long_name || locality?.long_name || admin?.long_name || "";
+        neighborhood = sub?.long_name || "";
+        city = locality?.long_name || admin?.long_name || "";
       }
-      setDetectedCity(areaName || "");
+
+      const fullArea = neighborhood ? `${neighborhood}, ${city}` : city;
+      if (!fullArea) return;
+
+      // Build a new query with the new location explicitly stated so the
+      // intent parser cannot fall back to the old city from the original query.
+      const oldCity = state.intent?.city || "";
+      let newQuery: string;
+      if (oldCity && query.toLowerCase().includes(oldCity.toLowerCase())) {
+        // Replace old city name in-place
+        newQuery = query.replace(new RegExp(oldCity, "gi"), fullArea);
+      } else {
+        // Append new area
+        newQuery = `${query} in ${fullArea}`;
+      }
+
+      setInputValue(newQuery);
+      setQuery(newQuery);
+      setDetectedCity(city);
       hasSearchedRef.current = true;
-      const span = traceSearch({ query, userId });
+      const span = traceSearch({ query: newQuery, userId });
       try {
-        await search(query, areaName || undefined);
+        await search(newQuery, city || undefined);
       } finally {
         span.finish();
       }
-      setAiSuggestions(generateFollowUps(query, activeCategory));
+      setAiSuggestions(generateFollowUps(newQuery, activeCategory));
     });
-  }, [query, search, userId, activeCategory]);
+  }, [query, search, userId, activeCategory, state.intent]);
 
   const handleCategorySwitch = useCallback((cat: PlaceCategory) => {
     setActiveCategory(cat);
@@ -691,7 +710,7 @@ export function VenueMap({
       {state.status === "done" && state.venues.length > 0 && (
         <div style={{
           position: "absolute",
-          top: 240,
+          top: 260,
           left: showLeftPanel ? leftPanelW : 0,
           right: 0,
           display: "flex",
