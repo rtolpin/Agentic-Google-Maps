@@ -285,50 +285,73 @@ export function VenueMap({
       if (hasSearchedRef.current) setShowSearchArea(true);
     });
 
-    // ── User location dot — started here so mapInstanceRef is guaranteed set ──
-    if ("geolocation" in navigator && !userMarkerPlacedRef.current) {
+    // ── User location dot ─────────────────────────────────────────────────────
+    // Persist location to localStorage (30 min TTL) so refreshes don't require
+    // a new geolocation request — browsers throttle repeated requests.
+    const _LS_KEY = "trs_user_location";
+    const _LOC_TTL_MS = 30 * 60 * 1000;
+
+    const placeUserDot = (userPos: { lat: number; lng: number }) => {
+      const mapInstance = mapInstanceRef.current;
+      if (!mapInstance || userMarkerPlacedRef.current) return;
+      userMarkerPlacedRef.current = true;
+      userLocationRef.current = userPos;
+
+      const wrapper = document.createElement("div");
+      wrapper.style.cssText = `
+        width: 20px; height: 20px; border-radius: 50%;
+        background: #3B82F6; border: 3px solid #fff;
+        box-sizing: border-box;
+        box-shadow: 0 2px 8px rgba(37,99,235,0.55);
+        animation: locationPulse 2s ease-out infinite;
+      `;
+      new google.maps.marker.AdvancedMarkerElement({
+        map: mapInstance,
+        position: userPos,
+        content: wrapper,
+        title: "Your location",
+        zIndex: 9999,
+      });
+
+      if (markersRef.current.size === 0) {
+        mapInstance.setCenter(userPos);
+        mapInstance.setZoom(14);
+      }
+
+      const geocoder = new google.maps.Geocoder();
+      geocoder.geocode({ location: userPos }, (results, status) => {
+        if (status === "OK" && results?.[0]) {
+          const locality = results[0].address_components.find((c) => c.types.includes("locality"));
+          const area = results[0].address_components.find((c) => c.types.includes("administrative_area_level_1"));
+          const city = locality?.long_name || area?.long_name || "";
+          if (city) setDetectedCity(city);
+        }
+      });
+    };
+
+    // Try cached position first — avoids geolocation request on refresh
+    try {
+      const cached = localStorage.getItem(_LS_KEY);
+      if (cached) {
+        const { lat, lng, ts } = JSON.parse(cached);
+        if (Date.now() - ts < _LOC_TTL_MS) {
+          placeUserDot({ lat, lng });
+        }
+      }
+    } catch (_) {}
+
+    // Always request fresh position in background to keep cache warm
+    if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          const mapInstance = mapInstanceRef.current;
-          if (!mapInstance || userMarkerPlacedRef.current) return;
-          userMarkerPlacedRef.current = true;
           const userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-          userLocationRef.current = userPos;
-
-          const wrapper = document.createElement("div");
-          wrapper.style.cssText = `
-            width: 20px; height: 20px; border-radius: 50%;
-            background: #3B82F6; border: 3px solid #fff;
-            box-sizing: border-box;
-            box-shadow: 0 2px 8px rgba(37,99,235,0.55);
-            animation: locationPulse 2s ease-out infinite;
-          `;
-          new google.maps.marker.AdvancedMarkerElement({
-            map: mapInstance,
-            position: userPos,
-            content: wrapper,
-            title: "Your location",
-            zIndex: 9999,
-          });
-
-          // Only center on user if no venue markers have been placed yet
-          if (markersRef.current.size === 0) {
-            mapInstance.setCenter(userPos);
-            mapInstance.setZoom(14);
-          }
-
-          const geocoder = new google.maps.Geocoder();
-          geocoder.geocode({ location: userPos }, (results, status) => {
-            if (status === "OK" && results?.[0]) {
-              const locality = results[0].address_components.find((c) => c.types.includes("locality"));
-              const area = results[0].address_components.find((c) => c.types.includes("administrative_area_level_1"));
-              const city = locality?.long_name || area?.long_name || "";
-              if (city) setDetectedCity(city);
-            }
-          });
+          try {
+            localStorage.setItem(_LS_KEY, JSON.stringify({ ...userPos, ts: Date.now() }));
+          } catch (_) {}
+          placeUserDot(userPos);
         },
-        () => { /* permission denied or unavailable */ },
-        { enableHighAccuracy: false, timeout: 8000, maximumAge: 60000 },
+        () => { /* permission denied — cached position already placed if available */ },
+        { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 },
       );
     }
   }, [mapsReady, config, selectVenue]);
@@ -464,15 +487,28 @@ export function VenueMap({
 
     // "near me" → resolve to actual location before searching
     if (/near me/i.test(q)) {
-      // If we don't have location yet, request it now (waits up to 6s)
+      // If we don't have location yet, check localStorage cache first, then request fresh
+      if (!userLocationRef.current) {
+        try {
+          const cached = localStorage.getItem("trs_user_location");
+          if (cached) {
+            const { lat, lng, ts } = JSON.parse(cached);
+            if (Date.now() - ts < 30 * 60 * 1000) {
+              userLocationRef.current = { lat, lng };
+            }
+          }
+        } catch (_) {}
+      }
       if (!userLocationRef.current && "geolocation" in navigator) {
         await new Promise<void>((resolve) => {
           navigator.geolocation.getCurrentPosition(
             (pos) => {
-              userLocationRef.current = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+              const userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+              userLocationRef.current = userPos;
+              try { localStorage.setItem("trs_user_location", JSON.stringify({ ...userPos, ts: Date.now() })); } catch (_) {}
               resolve();
             },
-            () => resolve(), // denied or timeout — fall through
+            () => resolve(),
             { enableHighAccuracy: false, timeout: 6000, maximumAge: 300000 },
           );
         });
