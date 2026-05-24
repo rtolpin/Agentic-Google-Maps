@@ -219,6 +219,40 @@ class GoogleMapsClient:
             })
         return results
 
+    # ─── Reverse geocoding — GPS → structured area (results storable) ───────
+
+    async def reverse_geocode(self, lat: float, lng: float) -> dict[str, str]:
+        """
+        Convert GPS coordinates into structured address components.
+        Returns a dict with keys: neighborhood, city, county, state, country.
+        All values are strings; empty string if the component isn't present.
+        Useful for rural / suburban areas not in _CITY_COORDS.
+        """
+        resp = await self._geocoding.get(
+            _GEOCODING_BASE,
+            params={"latlng": f"{lat},{lng}", "key": GOOGLE_MAPS_API_KEY},
+        )
+        resp.raise_for_status()
+        results = resp.json().get("results", [])
+        if not results:
+            return {}
+
+        components = results[0].get("address_components", [])
+
+        def _get(*types: str) -> str:
+            for c in components:
+                if any(t in c.get("types", []) for t in types):
+                    return c.get("long_name", "")
+            return ""
+
+        return {
+            "neighborhood": _get("neighborhood", "sublocality_level_1", "sublocality"),
+            "city": _get("locality", "administrative_area_level_3", "postal_town"),
+            "county": _get("administrative_area_level_2"),
+            "state": _get("administrative_area_level_1"),
+            "country": _get("country"),
+        }
+
     # ─── Geocoding (results ARE stored — lat/lng is our data, not Google's) ──
 
     async def geocode(self, address: str) -> GeocodeResult | None:

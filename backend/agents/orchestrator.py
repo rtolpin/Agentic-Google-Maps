@@ -262,6 +262,32 @@ async def orchestrate(
         intent = await parse_intent(query)
         if intent.city == "Unknown" and user_city:
             intent = intent.model_copy(update={"city": user_city.strip()})
+
+        # GPS override: reverse geocode → hyper-local area string (suburb/rural support)
+        # This runs whenever coordinates are provided, including Search This Area.
+        user_area = ""
+        if user_lat is not None and user_lng is not None:
+            try:
+                async with GoogleMapsClient() as gc:
+                    geo_parts = await gc.reverse_geocode(user_lat, user_lng)
+                if geo_parts:
+                    city_name    = geo_parts.get("city") or geo_parts.get("county", "")
+                    neighborhood = geo_parts.get("neighborhood", "")
+                    county       = geo_parts.get("county", "")
+                    state        = geo_parts.get("state", "")
+                    primary      = neighborhood or city_name
+                    area_parts   = [p for p in [primary, county, state] if p]
+                    user_area    = ", ".join(area_parts)
+                    updates: dict = {}
+                    if city_name:
+                        updates["city"] = city_name
+                    if neighborhood:
+                        updates["neighborhood"] = neighborhood
+                    if updates:
+                        intent = intent.model_copy(update=updates)
+            except Exception:
+                pass
+
         yield {"event": "intent", "data": intent.model_dump()}
 
         # Step 2 — warm cache check (non-blocking thread)
@@ -272,7 +298,7 @@ async def orchestrate(
 
         # Step 3 — dispatch sub-agents in parallel
         yield {"event": "status", "data": "Searching across sources..."}
-        scrape_task = asyncio.create_task(ScraperAgent().run(intent, user_lat=user_lat, user_lng=user_lng, user_radius_m=user_radius_m))
+        scrape_task = asyncio.create_task(ScraperAgent().run(intent, user_lat=user_lat, user_lng=user_lng, user_radius_m=user_radius_m, user_area=user_area))
         validate_task = asyncio.create_task(ValidatorAgent().run(intent))
         global_task = asyncio.create_task(GlobalIntelligenceAgent().run(intent))
 
@@ -320,18 +346,18 @@ async def orchestrate(
 
         root.set_tag("search.venues_scored", len(scored_venues))
 
-        # Step 6 — synthesize intelligence for top 5 (bounded by semaphore)
+        # Step 6 — synthesize intelligence for top 10 (bounded by semaphore)
         intel_results = await asyncio.gather(
-            *[synthesize_venue_intelligence(v, intent) for v in scored_venues[:5]],
+            *[synthesize_venue_intelligence(v, intent) for v in scored_venues[:10]],
             return_exceptions=True,
         )
-        for venue, intel in zip(scored_venues[:5], intel_results):
+        for venue, intel in zip(scored_venues[:10], intel_results):
             if isinstance(intel, VenueIntelligence):
                 venue.intelligence = intel
             else:
                 venue.intelligence = _fallback_intelligence(venue, intent)
-        # Venues beyond top 5 always get a fallback card so descriptions are never blank
-        for venue in scored_venues[5:]:
+        # Venues beyond top 10 always get a fallback card so descriptions are never blank
+        for venue in scored_venues[10:]:
             venue.intelligence = _fallback_intelligence(venue, intent)
 
         # Step 7 — personalization re-rank

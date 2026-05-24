@@ -122,8 +122,8 @@ _OPEN_NOW_KEYWORDS = {"open now", "open right now", "currently open"}
 _OPEN_TODAY_KEYWORDS = {"open today", "open this weekend", "open this week"}
 
 
-_CLAUDE_EXTRACTION_LIMIT = 25  # venues that get full Claude signal extraction
-_MAX_VENUES = 100              # hard cap on total venues returned
+_CLAUDE_EXTRACTION_LIMIT = 20  # venues that get full Claude signal extraction
+_MAX_VENUES = 20               # return up to 20 recommendations
 
 # Hardcoded city coordinates — used before geocoding so a geocoding failure
 # never silently disables the location restriction.
@@ -188,48 +188,76 @@ _CITY_COORDS: dict[str, tuple[float, float, str]] = {
 }
 
 
-def _build_queries(intent: VenueIntent) -> list[str]:
-    """Build up to 5 complementary search queries for maximum venue coverage."""
+def _build_queries(intent: VenueIntent, user_area: str = "") -> list[str]:
+    """
+    Build up to 8 complementary search queries for maximum local coverage.
+
+    When user_area is set (GPS-derived reverse geocode, e.g. "Maplewood, Essex County, NJ")
+    queries are hyper-local and do NOT rely on the intent city, ensuring correct results
+    for suburbs, small towns, and rural areas.  The final 2 slots are bare-keyword queries
+    that rely entirely on the locationBias circle — these are the safety net for areas
+    where adding a town name returns zero results.
+    """
     cuisine = intent.cuisine or ""
     city = intent.city
     occasion = intent.occasion.replace("_", " ").lower()
     signals = [s.lower() for s in (intent.other_signals or [])]
     all_terms = {occasion} | set(signals) | ({cuisine.lower()} if cuisine else set())
 
-    if city == "Unknown":
-        location = next(
-            (s for s in (intent.other_signals or []) if len(s) > 3),
-            "near me",
-        )
+    # ── Location string resolution ─────────────────────────────────────────
+    # GPS area takes priority — it is always more accurate than the parsed city.
+    is_gps = bool(user_area)
+    if user_area:
+        parts = [p.strip() for p in user_area.split(",")]
+        # "Maplewood, Essex County, NJ" → primary = "Maplewood NJ", broad = "Essex County NJ"
+        primary_loc = f"{parts[0]} {parts[-1]}" if len(parts) >= 2 else parts[0]
+        broad_loc   = f"{parts[1]} {parts[-1]}" if len(parts) >= 3 else primary_loc
+        location    = primary_loc
+    elif city == "Unknown":
+        location  = next((s for s in (intent.other_signals or []) if len(s) > 3), "near me")
+        broad_loc = location
     elif intent.neighborhood:
-        location = f"{intent.neighborhood} {city}"
+        location  = f"{intent.neighborhood} {city}"
+        broad_loc = location
     else:
-        location = city
+        location  = city
+        broad_loc = city
 
-    # Office / corporate HQ searches need entirely different queries
+    # ── Office / corporate HQ ─────────────────────────────────────────────
     is_office_search = (
         occasion in _OFFICE_OCCASIONS
         or any(kw in signals for kw in ("office", "headquarters", "hq", "corporate", "company"))
     )
     if is_office_search:
-        named_companies = [s for s in signals if s not in ("office", "offices", "headquarters", "hq", "corporate", "company", "near")]
-        if named_companies:
-            company_str = " ".join(named_companies[:2])
-            return [
-                f"{company_str} headquarters office {location}",
+        named = [s for s in signals if s not in ("office", "offices", "headquarters", "hq", "corporate", "company", "near")]
+        if named:
+            co = " ".join(named[:2])
+            base = [
+                f"{co} headquarters office {location}",
                 f"corporate headquarters office buildings {location}",
                 f"tech company offices business district {location}",
             ]
-        return [
-            f"corporate headquarters major company offices {location}",
-            f"tech company office buildings {location}",
-            f"business district office towers {location}",
-        ]
+        else:
+            base = [
+                f"corporate headquarters major company offices {location}",
+                f"tech company office buildings {location}",
+                f"business district office towers {location}",
+            ]
+        return (base + [f"company offices {broad_loc}", "office building"])[:8] if is_gps else base
 
-    # Outdoor / hiking / nature searches
+    # ── Outdoor / hiking / nature ─────────────────────────────────────────
     is_outdoor_search = any(kw in all_terms for kw in _OUTDOOR_KEYWORDS)
     if is_outdoor_search:
-        # Include nearby regions so results aren't limited to city limits
+        activity = next((kw for kw in ("hiking", "trail", "walking", "cycling", "trekking") if kw in all_terms), "hiking trail")
+        if is_gps:
+            return [
+                f"{activity} trails parks near {location}",
+                f"best {activity} trails near {location}",
+                f"nature parks scenic trails {location}",
+                f"{activity} trails {broad_loc}",
+                f"parks nature trails near me",
+                f"scenic {activity} route",
+            ]
         nearby = {
             "New York City": "New York New Jersey Hudson Valley",
             "Los Angeles": "Los Angeles Southern California",
@@ -242,14 +270,13 @@ def _build_queries(intent: VenueIntent) -> list[str]:
             "Portland": "Portland Oregon Pacific Northwest",
         }
         region = nearby.get(city, city)
-        activity = next((kw for kw in ("hiking", "trail", "walking", "cycling", "trekking") if kw in all_terms), "hiking trail")
         return [
             f"{activity} trails parks near {location}",
             f"best {activity} trails {region}",
             f"nature parks scenic trails day trips near {location}",
         ]
 
-    # Café / remote-work / wifi searches
+    # ── Café / remote-work / wifi ─────────────────────────────────────────
     has_wifi = any(kw in all_terms for kw in _WIFI_KEYWORDS)
     is_cafe_search = (
         any(kw in all_terms for kw in _CAFE_KEYWORDS)
@@ -258,13 +285,20 @@ def _build_queries(intent: VenueIntent) -> list[str]:
     )
     if is_cafe_search:
         wifi_tag = " with wifi" if has_wifi else ""
-        return [
-            f"cosy café coffee shop{wifi_tag} laptop friendly {location}",
+        base = [
+            f"café coffee shop{wifi_tag} laptop friendly {location}",
             f"best café to work from{wifi_tag} {location}",
             f"quiet coffee shop{wifi_tag} {location}",
         ]
+        if is_gps:
+            base += [
+                f"café coffee shop{wifi_tag} {broad_loc}",
+                f"local coffee shop{wifi_tag} near me",
+                f"coffee shop{wifi_tag}",
+            ]
+        return base[:8]
 
-    # Detect specific non-restaurant venue types from occasion/signals
+    # ── Non-restaurant public venue types ─────────────────────────────────
     _PUBLIC_VENUES = {
         "library", "libraries", "museum", "museums", "gallery", "galleries",
         "gym", "fitness", "pool", "swimming", "bowling", "cinema", "theatre",
@@ -272,12 +306,11 @@ def _build_queries(intent: VenueIntent) -> list[str]:
         "spa", "salon", "pharmacy", "clinic", "hospital", "bank", "post office",
     }
 
-    # Museums + galleries: 5 queries to surface major institutions
-    has_museum = any(t in all_terms for t in ("museum", "museums"))
+    has_museum  = any(t in all_terms for t in ("museum", "museums"))
     has_gallery = any(t in all_terms for t in ("gallery", "galleries"))
     if has_museum or has_gallery:
         if has_museum and has_gallery:
-            return [
+            base = [
                 f"museums and galleries {location}",
                 f"art museum natural history museum {location}",
                 f"science museum children's museum {location}",
@@ -285,7 +318,7 @@ def _build_queries(intent: VenueIntent) -> list[str]:
                 f"contemporary art gallery exhibition {location}",
             ]
         elif has_museum:
-            return [
+            base = [
                 f"museums {location}",
                 f"art museum natural history museum {location}",
                 f"science museum technology museum {location}",
@@ -293,13 +326,16 @@ def _build_queries(intent: VenueIntent) -> list[str]:
                 f"best museums cultural institutions {location}",
             ]
         else:
-            return [
+            base = [
                 f"art gallery {location}",
                 f"best art galleries {location}",
                 f"contemporary art gallery exhibition {location}",
                 f"galleries museums {location}",
                 f"photography gallery design gallery {location}",
             ]
+        if is_gps:
+            base += [f"museum gallery {broad_loc}", "museum gallery near me"]
+        return base[:8]
 
     venue_type = cuisine or ""
     if not venue_type:
@@ -308,14 +344,28 @@ def _build_queries(intent: VenueIntent) -> list[str]:
         venue_type = occasion if any(t in occasion for t in _PUBLIC_VENUES) else "restaurant"
 
     if venue_type != "restaurant" and venue_type not in {"dining", "dinner", "lunch", "brunch", "breakfast"}:
-        return [
+        base = [
             f"{venue_type} {location}",
             f"best {venue_type} near {location}",
             f"{occasion} {venue_type} {location}" if occasion != venue_type else f"top {venue_type} {location}",
         ]
+        if is_gps:
+            base += [f"{venue_type} {broad_loc}", venue_type]
+        return base[:8]
 
-    # Restaurants: 5 queries for maximum coverage
+    # ── Restaurants — 8 queries for GPS, 5 for named-city ────────────────
     cuisine_tag = f" {cuisine}" if cuisine else ""
+    if is_gps:
+        return [
+            f"best {occasion}{cuisine_tag} restaurant {location}",
+            f"{cuisine_tag} restaurant {location}".strip(),
+            f"special occasion{cuisine_tag} restaurant {location}",
+            f"top rated{cuisine_tag} restaurant {location}",
+            f"{cuisine_tag} restaurant {broad_loc}".strip(),
+            f"local{cuisine_tag} restaurant near me".strip(),
+            f"popular{cuisine_tag} dining {location}",
+            f"restaurant{cuisine_tag} near me".strip(),
+        ]
     return [
         f"best {occasion}{cuisine_tag} restaurant {location}",
         f"{cuisine_tag} restaurant group dining {location}",
@@ -348,9 +398,15 @@ class ScraperAgent:
         user_lat: float | None = None,
         user_lng: float | None = None,
         user_radius_m: float | None = None,
+        user_area: str = "",
     ) -> list[dict]:
-        queries = _build_queries(intent)
-        location = intent.neighborhood or intent.city
+        queries = _build_queries(intent, user_area=user_area)
+        # Nimble location: derive "Maplewood New Jersey" style from user_area when GPS is set
+        if user_area:
+            area_parts = [p.strip() for p in user_area.split(",")]
+            nimble_location = f"{area_parts[0]} {area_parts[-1]}" if len(area_parts) >= 2 else area_parts[0]
+        else:
+            nimble_location = intent.neighborhood or intent.city
         all_signals_lower = " ".join([intent.occasion] + (intent.other_signals or [])).lower()
         open_now = any(kw in all_signals_lower for kw in _OPEN_NOW_KEYWORDS)
         is_outdoor = any(kw in all_signals_lower for kw in _OUTDOOR_KEYWORDS)
@@ -360,7 +416,7 @@ class ScraperAgent:
         # Hardcoded coords ensure a geocoding failure never silently disables restriction.
         country_code = ""
         if user_lat is not None and user_lng is not None:
-            radius = max(500.0, min(50000.0, user_radius_m or 5000.0))
+            radius = max(500.0, min(50000.0, user_radius_m or 15000.0))
             bias: dict | None = {"lat": user_lat, "lng": user_lng, "radius_m": radius}
             country_code = "US"
         elif intent.city not in ("Unknown", ""):
@@ -392,7 +448,7 @@ class ScraperAgent:
         try:
             async with NimbleClient() as nimble:
                 nimble_tasks = [
-                    nimble.maps_search(queries[0], location, country=country_code),
+                    nimble.maps_search(queries[0], nimble_location, country=country_code),
                     *[nimble.serp_search(q, country=country_code) for q in queries[:2]],
                 ]
                 nimble_results = await asyncio.wait_for(
