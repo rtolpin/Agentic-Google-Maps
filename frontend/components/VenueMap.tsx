@@ -586,7 +586,7 @@ export function VenueMap({
   }, []);
 
   const getDirections = useCallback(async (
-    venue: { place_id?: string; latitude?: number; longitude?: number; name: string },
+    venue: { place_id?: string | null; latitude?: number | null; longitude?: number | null; name: string },
     travelMode: "DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING",
   ) => {
     const origin = userLocationRef.current;
@@ -2241,7 +2241,7 @@ interface VenueDetailSidebarProps {
   venue: VenueSignal | null;
   placeDetails: GooglePlaceDetails | null;
   onClose: () => void;
-  onGetDirections: (venue: { place_id?: string; latitude?: number; longitude?: number; name: string }, mode: "DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING") => void;
+  onGetDirections: (venue: { place_id?: string | null; latitude?: number | null; longitude?: number | null; name: string }, mode: "DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING") => void;
   onClearDirections: () => void;
   directionsTravelMode: "DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING";
   onSetTravelMode: (m: "DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING") => void;
@@ -2621,10 +2621,10 @@ const TRAVEL_MODES: { mode: TravelMode; icon: string; label: string }[] = [
 function DirectionsPanel({
   venue, travelMode, onSetMode, onGet, onClear, leg, loading, small,
 }: {
-  venue: { place_id?: string; latitude?: number; longitude?: number; name: string };
+  venue: { place_id?: string | null; latitude?: number | null; longitude?: number | null; name: string };
   travelMode: TravelMode;
   onSetMode: (m: TravelMode) => void;
-  onGet: (v: typeof venue, m: TravelMode) => void;
+  onGet: (v: { place_id?: string | null; latitude?: number | null; longitude?: number | null; name: string }, m: TravelMode) => void;
   onClear: () => void;
   leg: { distance: string; duration: string } | null;
   loading: boolean;
