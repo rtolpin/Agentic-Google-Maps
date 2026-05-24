@@ -102,15 +102,16 @@ class GoogleMapsClient:
         Coordinates and place_id ARE storable (neutral identifiers / universal data).
         editorial_summary is used for Claude signal extraction then discarded.
 
-        location_bias: optional {"lat": float, "lng": float} — when provided, adds a
-        locationBias.circle (5 km radius) so results are anchored to the user's GPS
-        position rather than a broad city name.
+        location_bias: optional {"lat": float, "lng": float, "radius_m": float} —
+        when provided, adds a locationRestriction.circle so results are strictly
+        within the given radius of the coordinates. Prevents cross-country or
+        cross-continent results when a city is known.
         """
         body: dict = {"textQuery": query, "maxResultCount": min(max_results, 20)}
         if open_now:
             body["openNow"] = True
         if location_bias:
-            body["locationBias"] = {
+            body["locationRestriction"] = {
                 "circle": {
                     "center": {"latitude": location_bias["lat"], "longitude": location_bias["lng"]},
                     "radius": float(location_bias.get("radius_m", 5000.0)),

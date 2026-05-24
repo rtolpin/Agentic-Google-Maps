@@ -284,15 +284,29 @@ class ScraperAgent:
     ) -> list[dict]:
         queries = _build_queries(intent)
         location = intent.neighborhood or intent.city
-        bias = (
-            {"lat": user_lat, "lng": user_lng, "radius_m": max(500.0, min(50000.0, user_radius_m or 5000.0))}
-            if user_lat is not None and user_lng is not None else None
-        )
-
-        # Detect "open today / open now" in occasion or signals so Google Places
-        # can filter to currently-open venues.
         all_signals_lower = " ".join([intent.occasion] + (intent.other_signals or [])).lower()
         open_now = any(kw in all_signals_lower for kw in _OPEN_NOW_KEYWORDS)
+        is_outdoor = any(kw in all_signals_lower for kw in _OUTDOOR_KEYWORDS)
+
+        # Build location restriction — always required to prevent cross-country results.
+        # GPS coordinates take priority; fall back to geocoding the intent city.
+        if user_lat is not None and user_lng is not None:
+            radius = max(500.0, min(50000.0, user_radius_m or 5000.0))
+            bias: dict | None = {"lat": user_lat, "lng": user_lng, "radius_m": radius}
+        elif intent.city not in ("Unknown", ""):
+            # Geocode the city so we can restrict results to it.
+            # Outdoor searches need a wider radius to cover surrounding regions.
+            city_radius = 80000.0 if is_outdoor else 30000.0
+            bias = None
+            try:
+                async with GoogleMapsClient() as geocoder:
+                    geo = await geocoder.geocode(intent.city)
+                if geo:
+                    bias = {"lat": geo.latitude, "lng": geo.longitude, "radius_m": city_radius}
+            except Exception:
+                pass
+        else:
+            bias = None
 
         # ── Phase 1: Google Places (must complete) + Nimble (best-effort, 10s cap) ──
         async with GoogleMapsClient() as maps:
