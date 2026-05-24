@@ -1462,12 +1462,12 @@ export function VenueMap({
         return chips.length === 0 ? null : (
           <div style={{
             position: "absolute",
-            top: 188,
+            top: showSearchArea ? 215 : 188,
             left: showLeftPanel ? leftPanelW + 16 : 16,
             right: 16,
             zIndex: 10,
             display: "flex", gap: 8, flexWrap: "wrap",
-            transition: "left 0.3s ease",
+            transition: "top 0.2s ease, left 0.3s ease",
             pointerEvents: "none",
           }}>
             {chips.map((chip, idx) => (
