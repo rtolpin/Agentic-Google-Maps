@@ -556,7 +556,7 @@ export function VenueMap({
 
   const handleSearchThisArea = useCallback(async () => {
     const mapInstance = mapInstanceRef.current;
-    if (!mapInstance || !query) return;
+    if (!mapInstance || !inputValue) return;
     const center = mapInstance.getCenter();
     if (!center) return;
 
@@ -566,7 +566,7 @@ export function VenueMap({
     const areaCoords = { lat: center.lat(), lng: center.lng() };
 
     // Strip "near me" and any previously injected "in [location]" suffix
-    const baseQuery = query
+    const baseQuery = inputValue
       .replace(/\s*near me\s*/gi, " ")
       .replace(/\s+in\s+[^,]+(,\s*[^,]+)*$/i, "")
       .trim();
@@ -608,7 +608,7 @@ export function VenueMap({
       span.finish();
     }
     setAiSuggestions(generateFollowUps(baseQuery, activeCategory));
-  }, [query, search, userId, activeCategory]);
+  }, [inputValue, search, userId, activeCategory]);
 
   const handleCategorySwitch = useCallback((cat: PlaceCategory) => {
     setActiveCategory(cat);
