@@ -459,8 +459,35 @@ export function VenueMap({
   // ── Handlers ───────────────────────────────────────────────────────────
 
   const handleSearch = useCallback(async (rawQ: string) => {
-    const q = rawQ.trim();
+    let q = rawQ.trim();
     if (!q) return;
+
+    // "near me" → replace with user's actual location if we have it
+    if (/near me/i.test(q) && userLocationRef.current) {
+      const pos = userLocationRef.current;
+      try {
+        const geocoder = new google.maps.Geocoder();
+        await new Promise<void>((resolve) => {
+          geocoder.geocode({ location: pos }, (results, status) => {
+            if (status === "OK" && results?.[0]) {
+              const sub = results[0].address_components.find((c) =>
+                c.types.includes("neighborhood") || c.types.includes("sublocality_level_1")
+              );
+              const locality = results[0].address_components.find((c) =>
+                c.types.includes("locality")
+              );
+              const area = sub?.long_name || locality?.long_name || "";
+              if (area) {
+                q = q.replace(/near me/gi, `in ${area}`);
+                setDetectedCity(area);
+                setInputValue(q);
+              }
+            }
+            resolve();
+          });
+        });
+      } catch (_) { /* fall through with original query */ }
+    }
 
     hasSearchedRef.current = true;
     setShowSearchArea(false);
@@ -473,7 +500,6 @@ export function VenueMap({
     if (detected !== "all") setActiveCategory(detected);
 
     try {
-      // Pass detectedCity separately — backend applies it only when LLM can't extract a city
       await search(q, detectedCity || undefined);
     } finally {
       mapSpan.finish();
