@@ -2193,30 +2193,12 @@ function VenueDetailSidebar({ venue, placeDetails, onClose }: VenueDetailSidebar
       )}
       {/* Fixed header inside sidebar */}
       <div style={{
-        padding: "18px 18px 14px",
+        padding: "14px 18px 14px",
         borderBottom: "1px solid rgba(255,255,255,0.07)",
         flexShrink: 0,
       }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div style={{ flex: 1, minWidth: 0, paddingRight: 12 }}>
-            <h2 style={{
-              margin: 0, fontSize: 22, fontWeight: 800, color: "#F1F5F9", lineHeight: 1.25, letterSpacing: "-0.3px",
-              display: "inline-block",
-              background: "rgba(16,185,129,0.15)",
-              padding: "2px 10px 4px",
-              borderRadius: 8,
-              border: "1px solid rgba(16,185,129,0.3)",
-              boxShadow: "0 0 12px rgba(16,185,129,0.2)",
-            }}>
-              {venue.name}
-            </h2>
-            {(venue.neighborhood || venue.cuisine) && (
-              <div style={{ fontSize: 12, color: "#64748B", marginTop: 3 }}>
-                {venue.neighborhood && `${venue.neighborhood} · `}
-                {fmt(venue.cuisine)}
-              </div>
-            )}
-          </div>
+        {/* Buttons row — sits above the name so long names never overlap */}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 12 }}>
           <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
             {/* Fullscreen toggle */}
             <button
@@ -2264,6 +2246,26 @@ function VenueDetailSidebar({ venue, placeDetails, onClose }: VenueDetailSidebar
             </button>
           </div>
         </div>
+
+        {/* Name — full width below buttons, no overlap risk */}
+        <h2 style={{
+          margin: 0, fontSize: 22, fontWeight: 800, color: "#F1F5F9", lineHeight: 1.25,
+          letterSpacing: "-0.3px",
+          display: "inline-block",
+          background: "rgba(16,185,129,0.15)",
+          padding: "2px 10px 4px",
+          borderRadius: 8,
+          border: "1px solid rgba(16,185,129,0.3)",
+          boxShadow: "0 0 12px rgba(16,185,129,0.2)",
+        }}>
+          {venue.name}
+        </h2>
+        {(venue.neighborhood || venue.cuisine) && (
+          <div style={{ fontSize: 12, color: "#64748B", marginTop: 3 }}>
+            {venue.neighborhood && `${venue.neighborhood} · `}
+            {fmt(venue.cuisine)}
+          </div>
+        )}
 
         {/* Pills row */}
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
