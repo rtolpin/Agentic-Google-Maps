@@ -189,6 +189,9 @@ export interface VenueMapProps {
   onVenueSelect?: (venue: VenueSignal | null) => void;
 }
 
+const fmt = (s: string | null | undefined) =>
+  (s ?? "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
 // ─── Component ────────────────────────────────────────────────────────────
 
 export function VenueMap({
@@ -504,7 +507,7 @@ export function VenueMap({
     {
       id: "intent", name: "Intent Agent", icon: "🧠",
       desc: state.intent
-        ? `${state.intent.occasion} · ${state.intent.city}${state.intent.group_size > 1 ? ` · ${state.intent.group_size} people` : ""}`
+        ? `${fmt(state.intent.occasion)} · ${state.intent.city}${state.intent.group_size > 1 ? ` · ${state.intent.group_size} people` : ""}`
         : "Understanding your request…",
       done: !!state.intent,
     },
@@ -1245,7 +1248,7 @@ export function VenueMap({
             refinement: `${occasion} in `,
           },
           {
-            val: intent.occasion, icon: "🎉", label: occasion, bg: "#7C3AED", shadow: "rgba(124,58,237,0.5)",
+            val: intent.occasion, icon: "🎉", label: fmt(occasion), bg: "#7C3AED", shadow: "rgba(124,58,237,0.5)",
             hint: "Click to change the occasion or activity",
             refinement: `${occasion} in ${city} for ${n} people`,
           },
@@ -1265,12 +1268,12 @@ export function VenueMap({
             refinement: `${occasion} in ${city} for ${n} people no private room needed`,
           },
           {
-            val: intent.noise_preference, icon: "🔊", label: intent.noise_preference, bg: "#BE185D", shadow: "rgba(190,24,93,0.5)",
+            val: intent.noise_preference, icon: "🔊", label: fmt(intent.noise_preference), bg: "#BE185D", shadow: "rgba(190,24,93,0.5)",
             hint: "Click to change noise preference",
             refinement: `${occasion} in ${city} for ${n} people ${intent.noise_preference} atmosphere`,
           },
           {
-            val: intent.price_band, icon: "💎", label: intent.price_band, bg: "#4D7C0F", shadow: "rgba(77,124,15,0.5)",
+            val: intent.price_band, icon: "💎", label: fmt(intent.price_band), bg: "#4D7C0F", shadow: "rgba(77,124,15,0.5)",
             hint: "Click to change price range",
             refinement: `${occasion} in ${city} for ${n} people ${intent.price_band} budget`,
           },
