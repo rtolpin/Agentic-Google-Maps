@@ -156,6 +156,7 @@ class GoogleMapsClient:
                     "price_per_head_usd": _PRICE_LEVEL_TO_USD.get(price_label, 0),
                     "snippet": p.get("editorialSummary", {}).get("text", ""),
                     "url": p.get("websiteUri", ""),
+                    "types": p.get("types", []),
                     "source": "google_places",
                 })
             return results

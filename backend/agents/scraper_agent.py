@@ -418,12 +418,25 @@ class ScraperAgent:
         seen_ids: set[str] = set()
         raw_venues: list[RawVenueResult] = []
 
+        # Google Places returns transit stops, bus stops, and subway stations
+        # alongside real venues. These type strings appear in the `types` list
+        # returned by the Places API and should never reach the scoring engine.
+        _TRANSIT_TYPES = frozenset({
+            "transit_station", "subway_station", "train_station", "bus_station",
+            "light_rail_station", "ferry_terminal", "airport", "bus_stop",
+        })
+
         def _ingest(batch: Any, source_fallback: str) -> None:
             if isinstance(batch, Exception) or not isinstance(batch, list):
                 return
             for v in batch:
                 if not v.get("name", "").strip():
                     continue  # never ingest nameless venues — they produce blank cards
+                # Drop transit infrastructure — Google Places returns subway stations
+                # adjacent to real venues (e.g. "81 St-Museum of Natural History" subway stop)
+                place_types = set(v.get("types", []))
+                if place_types & _TRANSIT_TYPES:
+                    continue
                 pid = v.get("place_id", "")
                 key = pid or v.get("name", "").lower()
                 if not key or key in seen_ids:
