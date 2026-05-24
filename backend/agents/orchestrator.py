@@ -15,7 +15,7 @@ from typing import AsyncIterator
 import anthropic
 
 from tracing import ai_span, db_span, search_span
-from .scraper_agent import ScraperAgent
+from .scraper_agent import ScraperAgent, _CITY_COORDS
 from integrations.google_maps_client import GoogleMapsClient
 from .validator_agent import ValidatorAgent
 from .global_agent import GlobalIntelligenceAgent
@@ -365,15 +365,20 @@ async def _filter_by_location(
         clat, clng = user_lat, user_lng
         max_m = max(500.0, min(50000.0, user_radius_m or 5000.0)) * 2
     elif intent.city not in ("Unknown", ""):
-        try:
-            async with GoogleMapsClient() as gc:
-                geo = await gc.geocode(intent.city)
-            if not geo:
+        city_key = intent.city.strip()
+        if city_key in _CITY_COORDS:
+            clat, clng, _ = _CITY_COORDS[city_key]
+        else:
+            # Fallback: live geocoding for cities not in the hardcoded table
+            try:
+                async with GoogleMapsClient() as gc:
+                    geo = await gc.geocode(intent.city)
+                if not geo:
+                    return venues
+                clat, clng = geo.latitude, geo.longitude
+            except Exception:
                 return venues
-            clat, clng = geo.latitude, geo.longitude
-            max_m = 35_000.0  # 35 km covers any city metro area
-        except Exception:
-            return venues
+        max_m = 35_000.0  # 35 km covers any city metro area
     else:
         return venues
 

@@ -115,7 +115,11 @@ _OUTDOOR_KEYWORDS = {
     "greenway", "preserve", "state park", "national park",
 }
 
-_OPEN_NOW_KEYWORDS = {"open today", "open now", "open right now", "currently open", "open this weekend"}
+_OPEN_NOW_KEYWORDS = {"open now", "open right now", "currently open"}
+# "open today" / "open this weekend" mean "operating today", not "open at this exact moment".
+# Those are handled by including them in query text rather than setting openNow=true,
+# which would return 0 results when searched outside business hours.
+_OPEN_TODAY_KEYWORDS = {"open today", "open this weekend", "open this week"}
 
 
 _CLAUDE_EXTRACTION_LIMIT = 25  # venues that get full Claude signal extraction
