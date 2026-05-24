@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 from typing import Any
 
 import anthropic
@@ -374,6 +375,18 @@ class ScraperAgent:
             _ingest(batch, "google_places")
         for batch in nimble_maps_batches:
             _ingest(batch, "nimble_maps")
+
+        # Drop venues whose coordinates fall outside the restriction radius.
+        # Nimble results bypass locationRestriction, so this is the safety net.
+        if bias:
+            clat, clng, max_m = bias["lat"], bias["lng"], bias["radius_m"]
+            def _in_radius(v: RawVenueResult) -> bool:
+                if v.latitude is None or v.longitude is None:
+                    return True  # no coords — keep for list, won't appear on map
+                dlat = (v.latitude - clat) * 111320
+                dlng = (v.longitude - clng) * 111320 * math.cos(math.radians(clat))
+                return math.sqrt(dlat ** 2 + dlng ** 2) <= max_m * 1.15  # 15% buffer
+            raw_venues = [v for v in raw_venues if _in_radius(v)]
 
         # ── Phase 2: Claude signal extraction (top 25 only for speed) ──────────
         # Remaining venues are included as base data so the scorer can still
