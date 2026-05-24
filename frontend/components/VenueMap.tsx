@@ -251,6 +251,7 @@ export function VenueMap({
   const [directionsTravelMode, setDirectionsTravelMode] = useState<"DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING">("TRANSIT");
   const [directionsLeg, setDirectionsLeg] = useState<{ distance: string; duration: string } | null>(null);
   const [directionsLoading, setDirectionsLoading] = useState(false);
+  const [directionsError, setDirectionsError] = useState<string | null>(null);
 
   const { state, search, fetchPlaceDetails, selectVenue, cancel } = useVenueSearch(userId);
 
@@ -583,22 +584,29 @@ export function VenueMap({
     directionsRendererRef.current?.setMap(null);
     directionsRendererRef.current = null;
     setDirectionsLeg(null);
+    setDirectionsError(null);
   }, []);
 
   const getDirections = useCallback(async (
-    venue: { place_id?: string | null; latitude?: number | null; longitude?: number | null; name: string },
+    venue: { place_id?: string | null; latitude?: number | null; longitude?: number | null; name: string; address?: string | null },
     travelMode: "DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING",
   ) => {
     const origin = userLocationRef.current;
-    if (!origin || !mapInstanceRef.current) return;
+    if (!origin) {
+      setDirectionsError("Enable location access in your browser to get directions");
+      return;
+    }
+    if (!mapInstanceRef.current) return;
 
-    const destination = venue.place_id
+    // Build the best available destination: Place ID → lat/lng → text query
+    const textQuery = [venue.name, venue.address?.split(",").slice(0, 2).join(",")].filter(Boolean).join(", ");
+    const destination: google.maps.DirectionsRequest["destination"] = venue.place_id
       ? { placeId: venue.place_id }
-      : venue.latitude && venue.longitude
+      : (venue.latitude && venue.longitude)
         ? { lat: venue.latitude, lng: venue.longitude }
-        : null;
-    if (!destination) return;
+        : textQuery;
 
+    setDirectionsError(null);
     setDirectionsLoading(true);
     clearDirections();
 
@@ -626,6 +634,7 @@ export function VenueMap({
       }
     } catch {
       clearDirections();
+      setDirectionsError("No route found — try a different travel mode or open in Google Maps.");
     } finally {
       setDirectionsLoading(false);
     }
@@ -1422,11 +1431,13 @@ export function VenueMap({
                         {venue.intelligence?.why_card && (
                           <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(139,92,246,0.15)", color: "#C4B5FD", border: "1px solid rgba(139,92,246,0.25)" }}>✨ AI</span>
                         )}
-                        {(venue.place_id || (venue.latitude && venue.longitude)) && (
+                        {venue.name && (
                           <a
                             href={venue.place_id
-                              ? `https://www.google.com/maps/dir/?api=1&destination_place_id=${venue.place_id}`
-                              : `https://www.google.com/maps/dir/?api=1&destination=${venue.latitude},${venue.longitude}`}
+                              ? `https://www.google.com/maps/dir/?api=1&destination_place_id=${encodeURIComponent(venue.place_id)}`
+                              : (venue.latitude && venue.longitude)
+                                ? `https://www.google.com/maps/dir/?api=1&destination=${venue.latitude},${venue.longitude}`
+                                : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent([venue.name, venue.address?.split(",").slice(0, 2).join(",")].filter(Boolean).join(", "))}`}
                             target="_blank" rel="noopener noreferrer"
                             onClick={(e) => e.stopPropagation()}
                             style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(52,211,153,0.12)", color: "#34D399", border: "1px solid rgba(52,211,153,0.25)", textDecoration: "none", marginLeft: "auto" }}>
@@ -2070,6 +2081,7 @@ export function VenueMap({
           onSetTravelMode={setDirectionsTravelMode}
           directionsLeg={directionsLeg}
           directionsLoading={directionsLoading}
+          directionsError={directionsError}
         />
       )}
 
@@ -2241,15 +2253,16 @@ interface VenueDetailSidebarProps {
   venue: VenueSignal | null;
   placeDetails: GooglePlaceDetails | null;
   onClose: () => void;
-  onGetDirections: (venue: { place_id?: string | null; latitude?: number | null; longitude?: number | null; name: string }, mode: "DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING") => void;
+  onGetDirections: (venue: { place_id?: string | null; latitude?: number | null; longitude?: number | null; name: string; address?: string | null }, mode: "DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING") => void;
   onClearDirections: () => void;
   directionsTravelMode: "DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING";
   onSetTravelMode: (m: "DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING") => void;
   directionsLeg: { distance: string; duration: string } | null;
   directionsLoading: boolean;
+  directionsError?: string | null;
 }
 
-function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onClearDirections, directionsTravelMode, onSetTravelMode, directionsLeg, directionsLoading }: VenueDetailSidebarProps) {
+function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onClearDirections, directionsTravelMode, onSetTravelMode, directionsLeg, directionsLoading, directionsError }: VenueDetailSidebarProps) {
   const [sidebarW, setSidebarW] = useState(380);
   const [isFullScreen, setIsFullScreen] = useState(false);
 
@@ -2339,54 +2352,117 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
         borderBottom: "1px solid rgba(255,255,255,0.07)",
         flexShrink: 0,
       }}>
-        {/* Buttons row — sits above the name so long names never overlap */}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 12 }}>
-          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-            {/* Fullscreen toggle */}
+        {/* Buttons row — Full screen | Get Directions | Close */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+          {/* Fullscreen toggle */}
+          <button
+            onClick={() => setIsFullScreen((f) => !f)}
+            title={isFullScreen ? "Exit full screen" : "Expand to full screen"}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 5,
+              padding: "6px 12px", borderRadius: 10, height: 34,
+              background: isFullScreen
+                ? "linear-gradient(135deg, #7C3AED, #4F46E5)"
+                : "linear-gradient(135deg, #1D4ED8, #2563EB)",
+              border: `1.5px solid ${isFullScreen ? "rgba(139,92,246,0.6)" : "rgba(59,130,246,0.5)"}`,
+              color: "#fff", cursor: "pointer",
+              fontSize: 12, fontWeight: 700,
+              boxShadow: isFullScreen ? "0 2px 12px rgba(124,58,237,0.5)" : "0 2px 12px rgba(37,99,235,0.45)",
+              letterSpacing: "0.01em", whiteSpace: "nowrap", transition: "all 0.18s",
+            }}
+          >
+            <span style={{ fontSize: 14, lineHeight: 1 }}>{isFullScreen ? "⤡" : "⤢"}</span>
+            <span>{isFullScreen ? "Exit" : "Full screen"}</span>
+          </button>
+
+          {/* Get Directions / Clear Route */}
+          {directionsLeg ? (
             <button
-              onClick={() => setIsFullScreen((f) => !f)}
-              title={isFullScreen ? "Exit full screen" : "Expand to full screen"}
+              onClick={onClearDirections}
               style={{
                 display: "inline-flex", alignItems: "center", gap: 5,
                 padding: "6px 12px", borderRadius: 10, height: 34,
-                background: isFullScreen
-                  ? "linear-gradient(135deg, #7C3AED, #4F46E5)"
-                  : "linear-gradient(135deg, #1D4ED8, #2563EB)",
-                border: `1.5px solid ${isFullScreen ? "rgba(139,92,246,0.6)" : "rgba(59,130,246,0.5)"}`,
+                background: "linear-gradient(135deg, #065F46, #047857)",
+                border: "1.5px solid rgba(16,185,129,0.5)",
                 color: "#fff", cursor: "pointer",
                 fontSize: 12, fontWeight: 700,
-                boxShadow: isFullScreen
-                  ? "0 2px 12px rgba(124,58,237,0.5)"
-                  : "0 2px 12px rgba(37,99,235,0.45)",
-                letterSpacing: "0.01em",
-                whiteSpace: "nowrap",
-                transition: "all 0.18s",
+                boxShadow: "0 2px 12px rgba(16,185,129,0.4)",
+                letterSpacing: "0.01em", whiteSpace: "nowrap", transition: "all 0.18s",
               }}
             >
-              <span style={{ fontSize: 14, lineHeight: 1 }}>{isFullScreen ? "⤡" : "⤢"}</span>
-              <span>{isFullScreen ? "Exit" : "Full screen"}</span>
+              <span style={{ fontSize: 13 }}>✕</span>
+              <span>Clear Route</span>
             </button>
-            {/* Close */}
+          ) : (
             <button
-              onClick={onClose}
-              title="Close panel"
+              onClick={() => onGetDirections(venue, directionsTravelMode)}
+              disabled={directionsLoading}
               style={{
                 display: "inline-flex", alignItems: "center", gap: 5,
                 padding: "6px 12px", borderRadius: 10, height: 34,
-                background: "linear-gradient(135deg, #991B1B, #DC2626)",
-                border: "1.5px solid rgba(239,68,68,0.5)",
-                color: "#fff", cursor: "pointer",
+                background: directionsLoading
+                  ? "rgba(99,102,241,0.3)"
+                  : "linear-gradient(135deg, #4F46E5, #7C3AED)",
+                border: "1.5px solid rgba(99,102,241,0.6)",
+                color: "#fff", cursor: directionsLoading ? "not-allowed" : "pointer",
                 fontSize: 12, fontWeight: 700,
-                boxShadow: "0 2px 12px rgba(220,38,38,0.4)",
-                letterSpacing: "0.01em",
-                whiteSpace: "nowrap",
-                transition: "all 0.18s",
+                boxShadow: "0 2px 12px rgba(99,102,241,0.45)",
+                letterSpacing: "0.01em", whiteSpace: "nowrap", transition: "all 0.18s",
+                opacity: directionsLoading ? 0.7 : 1,
               }}
             >
-              <span style={{ fontSize: 14, lineHeight: 1 }}>✕</span>
-              <span>Close</span>
+              <span style={{ fontSize: 13 }}>{directionsLoading ? "⏳" : "🗺️"}</span>
+              <span>{directionsLoading ? "Routing…" : "Get Directions"}</span>
             </button>
-          </div>
+          )}
+
+          {/* Close — pushed to the right */}
+          <button
+            onClick={onClose}
+            title="Close panel"
+            style={{
+              marginLeft: "auto",
+              display: "inline-flex", alignItems: "center", gap: 5,
+              padding: "6px 12px", borderRadius: 10, height: 34,
+              background: "linear-gradient(135deg, #991B1B, #DC2626)",
+              border: "1.5px solid rgba(239,68,68,0.5)",
+              color: "#fff", cursor: "pointer",
+              fontSize: 12, fontWeight: 700,
+              boxShadow: "0 2px 12px rgba(220,38,38,0.4)",
+              letterSpacing: "0.01em", whiteSpace: "nowrap", transition: "all 0.18s",
+            }}
+          >
+            <span style={{ fontSize: 14, lineHeight: 1 }}>✕</span>
+            <span>Close</span>
+          </button>
+        </div>
+
+        {/* Travel mode selector + route result */}
+        <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", marginBottom: 10 }}>
+          {TRAVEL_MODES.map(({ mode, icon, label }) => (
+            <button
+              key={mode}
+              onClick={() => onSetTravelMode(mode)}
+              style={{
+                padding: "3px 9px", borderRadius: 7, cursor: "pointer",
+                fontSize: 11, fontWeight: directionsTravelMode === mode ? 700 : 400,
+                background: directionsTravelMode === mode ? "rgba(99,102,241,0.25)" : "rgba(255,255,255,0.05)",
+                border: directionsTravelMode === mode ? "1.5px solid rgba(99,102,241,0.6)" : "1px solid rgba(255,255,255,0.1)",
+                color: directionsTravelMode === mode ? "#A5B4FC" : "#64748B",
+                transition: "all 0.12s",
+              }}
+            >
+              {icon} {label}
+            </button>
+          ))}
+          {directionsLeg && (
+            <span style={{ fontSize: 12, color: "#34D399", fontWeight: 700, marginLeft: 6 }}>
+              {directionsLeg.duration} · {directionsLeg.distance}
+            </span>
+          )}
+          {directionsError && (
+            <span style={{ fontSize: 11, color: "#F87171", marginLeft: 4 }}>⚠️ {directionsError}</span>
+          )}
         </div>
 
         {/* Name — full width below buttons, no overlap risk */}
@@ -2419,6 +2495,7 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
             <DarkPill color="#F59E0B" label={`⭐ ${placeDetails.rating} (${placeDetails.user_rating_count?.toLocaleString()})`} />
           )}
         </div>
+
       </div>
 
       {/* Scrollable body */}
@@ -2493,11 +2570,6 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
                   ⚡ {intel.live_signal}
                 </div>
               )}
-              <DirectionsPanel
-                venue={venue} travelMode={directionsTravelMode}
-                onSetMode={onSetTravelMode} onGet={onGetDirections}
-                onClear={onClearDirections} leg={directionsLeg} loading={directionsLoading}
-              />
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 8 }}>
                 {placeDetails?.website_uri && (
                   <a href={placeDetails.website_uri} target="_blank" rel="noopener noreferrer"
@@ -2579,13 +2651,6 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
                 ))}
               </div>
             )}
-            {/* Directions panel */}
-            <DirectionsPanel
-              venue={venue} travelMode={directionsTravelMode}
-              onSetMode={onSetTravelMode} onGet={onGetDirections}
-              onClear={onClearDirections} leg={directionsLeg} loading={directionsLoading}
-              small
-            />
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
               {placeDetails?.website_uri && (
                 <a href={placeDetails.website_uri} target="_blank" rel="noopener noreferrer"
@@ -2619,15 +2684,16 @@ const TRAVEL_MODES: { mode: TravelMode; icon: string; label: string }[] = [
 ];
 
 function DirectionsPanel({
-  venue, travelMode, onSetMode, onGet, onClear, leg, loading, small,
+  venue, travelMode, onSetMode, onGet, onClear, leg, loading, error, small,
 }: {
-  venue: { place_id?: string | null; latitude?: number | null; longitude?: number | null; name: string };
+  venue: { place_id?: string | null; latitude?: number | null; longitude?: number | null; name: string; address?: string | null };
   travelMode: TravelMode;
   onSetMode: (m: TravelMode) => void;
-  onGet: (v: { place_id?: string | null; latitude?: number | null; longitude?: number | null; name: string }, m: TravelMode) => void;
+  onGet: (v: { place_id?: string | null; latitude?: number | null; longitude?: number | null; name: string; address?: string | null }, m: TravelMode) => void;
   onClear: () => void;
   leg: { distance: string; duration: string } | null;
   loading: boolean;
+  error?: string | null;
   small?: boolean;
 }) {
   const fs = small ? 11 : 13;
@@ -2656,7 +2722,7 @@ function DirectionsPanel({
         ))}
       </div>
       {/* Show / clear row */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <button
           onClick={() => onGet(venue, travelMode)}
           disabled={loading}
@@ -2682,6 +2748,11 @@ function DirectionsPanel({
           </>
         )}
       </div>
+      {error && (
+        <div style={{ marginTop: 6, fontSize: 11, color: "#F87171", display: "flex", alignItems: "center", gap: 5 }}>
+          ⚠️ {error}
+        </div>
+      )}
     </div>
   );
 }
