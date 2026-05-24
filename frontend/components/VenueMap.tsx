@@ -81,6 +81,13 @@ async function loadGoogleMaps(
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+const TRANSIT_ICON: Record<string, string> = {
+  subway: "🚇", train: "🚆", bus: "🚌", airport: "✈️", ferry: "⛴️",
+};
+const TRANSIT_COLOR: Record<string, string> = {
+  subway: "#F59E0B", train: "#3B82F6", bus: "#10B981", airport: "#8B5CF6", ferry: "#06B6D4",
+};
+
 interface TransitStop {
   place_id: string;
   name: string;
@@ -484,70 +491,70 @@ export function VenueMap({
   }, [enrichedMarkers, mapsReady]);
 
   // ── Transit markers ─────────────────────────────────────────────────────
+  // Separated into two effects:
+  //   1. Create markers (hidden) when stops are fetched — runs once per fetch
+  //   2. Toggle marker.map to show/hide — no DOM teardown, no flash
 
-  const TRANSIT_ICONS: Record<string, string> = {
-    subway: "🚇", train: "🚆", bus: "🚌", airport: "✈️", ferry: "⛴️",
-  };
-  const TRANSIT_COLORS: Record<string, string> = {
-    subway: "#F59E0B", train: "#3B82F6", bus: "#10B981", airport: "#8B5CF6", ferry: "#06B6D4",
-  };
+  const transitFetchingRef = useRef(false); // guards against double-clicks
 
   const fetchTransit = useCallback(async () => {
+    if (transitFetchingRef.current) return; // already in-flight
     const loc = userLocationRef.current ?? (mapInstanceRef.current ? {
       lat: mapInstanceRef.current.getCenter()!.lat(),
       lng: mapInstanceRef.current.getCenter()!.lng(),
     } : null);
     if (!loc) return;
+    transitFetchingRef.current = true;
     setTransitLoading(true);
     try {
       const resp = await fetch(`${API_BASE}/api/transit/nearby?lat=${loc.lat}&lng=${loc.lng}&radius_m=1500`);
-      if (resp.ok) setTransitStops(await resp.json());
+      if (resp.ok) {
+        setTransitStops(await resp.json());
+        setShowTransit(true);
+      }
     } finally {
       setTransitLoading(false);
+      transitFetchingRef.current = false;
     }
   }, []);
 
+  // Effect 1: build markers (initially hidden) whenever the stops list changes
   useEffect(() => {
-    if (!mapsReady || !mapInstanceRef.current) return;
-    // Clear existing transit markers
+    if (!mapsReady || !mapInstanceRef.current || transitStops.length === 0) return;
+    // Tear down previous set
     transitMarkersRef.current.forEach((m) => { m.map = null; });
     transitMarkersRef.current = [];
-    if (!showTransit || transitStops.length === 0) return;
 
     transitStops.forEach((stop) => {
       if (!stop.latitude || !stop.longitude) return;
-      const icon = TRANSIT_ICONS[stop.transit_type] ?? "🚏";
-      const color = TRANSIT_COLORS[stop.transit_type] ?? "#94A3B8";
+      const icon = TRANSIT_ICON[stop.transit_type] ?? "🚏";
+      const color = TRANSIT_COLOR[stop.transit_type] ?? "#94A3B8";
       const pin = document.createElement("div");
-      pin.style.cssText = `
-        background: ${color}22; border: 2px solid ${color};
-        border-radius: 50%; width: 36px; height: 36px;
-        display: flex; align-items: center; justify-content: center;
-        font-size: 16px; cursor: pointer; box-shadow: 0 2px 8px ${color}55;
-      `;
+      pin.style.cssText = [
+        `background:${color}22`, `border:2px solid ${color}`,
+        "border-radius:50%", "width:36px", "height:36px",
+        "display:flex", "align-items:center", "justify-content:center",
+        "font-size:16px", "cursor:pointer", `box-shadow:0 2px 8px ${color}55`,
+      ].join(";");
       pin.textContent = icon;
-      pin.title = stop.name;
 
       const marker = new google.maps.marker.AdvancedMarkerElement({
-        map: mapInstanceRef.current!,
+        map: null, // hidden until showTransit is true
         position: { lat: stop.latitude, lng: stop.longitude },
         content: pin,
         title: stop.name,
       });
 
-      // Show an InfoWindow on click with directions link
       marker.addListener("click", () => {
         const iw = new google.maps.InfoWindow({
-          content: `
-            <div style="font-family:sans-serif;padding:4px 2px;min-width:160px">
-              <div style="font-weight:700;font-size:13px;margin-bottom:4px">${icon} ${stop.name}</div>
-              <div style="font-size:11px;color:#666;margin-bottom:8px">${stop.address.split(",").slice(0,2).join(",")}</div>
-              <a href="https://www.google.com/maps/dir/?api=1&destination_place_id=${stop.place_id}"
-                 target="_blank" rel="noopener noreferrer"
-                 style="font-size:12px;color:#2563EB;text-decoration:none;font-weight:600">
-                🗺️ Get Directions
-              </a>
-            </div>`,
+          content: `<div style="font-family:sans-serif;padding:4px 2px;min-width:160px">
+            <div style="font-weight:700;font-size:13px;margin-bottom:4px">${icon} ${stop.name}</div>
+            <div style="font-size:11px;color:#666;margin-bottom:8px">${stop.address.split(",").slice(0, 2).join(",")}</div>
+            <a href="https://www.google.com/maps/dir/?api=1&destination_place_id=${stop.place_id}"
+               target="_blank" rel="noopener noreferrer"
+               style="font-size:12px;color:#2563EB;text-decoration:none;font-weight:600">
+              🗺️ Get Directions
+            </a></div>`,
         });
         iw.open(mapInstanceRef.current!, marker);
       });
@@ -555,7 +562,13 @@ export function VenueMap({
       transitMarkersRef.current.push(marker);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showTransit, transitStops, mapsReady]);
+  }, [transitStops, mapsReady]);
+
+  // Effect 2: show/hide existing markers — no creation, no flash
+  useEffect(() => {
+    const map = showTransit ? mapInstanceRef.current : null;
+    transitMarkersRef.current.forEach((m) => { m.map = map; });
+  }, [showTransit]);
 
   // ── SSE event tracing ───────────────────────────────────────────────────
 
@@ -922,12 +935,14 @@ export function VenueMap({
         display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end",
       }}>
         <button
-          onClick={async () => {
-            if (!showTransit) {
-              await fetchTransit();
-              setShowTransit(true);
-            } else {
+          onClick={() => {
+            if (transitLoading) return; // ignore clicks while fetching
+            if (showTransit) {
               setShowTransit(false);
+            } else if (transitStops.length > 0) {
+              setShowTransit(true); // re-show cached stops instantly
+            } else {
+              fetchTransit(); // first load — fetchTransit sets showTransit on success
             }
           }}
           style={{
@@ -958,8 +973,8 @@ export function VenueMap({
               Nearby Transit
             </div>
             {transitStops.map((stop) => {
-              const icon = { subway: "🚇", train: "🚆", bus: "🚌", airport: "✈️", ferry: "⛴️" }[stop.transit_type] ?? "🚏";
-              const color = { subway: "#F59E0B", train: "#3B82F6", bus: "#10B981", airport: "#8B5CF6", ferry: "#06B6D4" }[stop.transit_type] ?? "#94A3B8";
+              const icon = TRANSIT_ICON[stop.transit_type] ?? "🚏";
+              const color = TRANSIT_COLOR[stop.transit_type] ?? "#94A3B8";
               return (
                 <a
                   key={stop.place_id}
