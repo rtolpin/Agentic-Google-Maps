@@ -158,12 +158,11 @@ SELECT
                     WHEN 'very_loud'  THEN 12
                     WHEN 'moderate'   THEN 7
                     ELSE 3 END,
-            -- No noise preference: moderate is ideal, unknown gets minimal credit
+            -- No noise preference: moderate is ideal, unset/unknown gets minimal credit
             CASE noise_level
                 WHEN 'moderate' THEN 12
                 WHEN 'quiet'    THEN 9
                 WHEN 'loud'     THEN 9
-                WHEN ''         THEN 3
                 ELSE 3 END
           )
 
