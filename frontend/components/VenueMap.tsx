@@ -560,47 +560,55 @@ export function VenueMap({
     const center = mapInstance.getCenter();
     if (!center) return;
 
-    const geocoder = new google.maps.Geocoder();
-    geocoder.geocode({ location: { lat: center.lat(), lng: center.lng() } }, async (results, status) => {
-      let neighborhood = "";
-      let city = "";
-      if (status === "OK" && results?.[0]) {
-        const sub = results[0].address_components.find((c) =>
-          c.types.includes("neighborhood") || c.types.includes("sublocality_level_1")
-        );
-        const locality = results[0].address_components.find((c) => c.types.includes("locality"));
-        const admin = results[0].address_components.find((c) =>
-          c.types.includes("administrative_area_level_2") || c.types.includes("administrative_area_level_1")
-        );
-        neighborhood = sub?.long_name || "";
-        city = locality?.long_name || admin?.long_name || "";
-      }
+    // Use the map center's exact GPS coordinates as the search anchor —
+    // the backend will apply a locationBias.circle so results are truly
+    // from the visible area rather than a broad city name.
+    const areaCoords = { lat: center.lat(), lng: center.lng() };
 
-      const fullArea = neighborhood ? `${neighborhood}, ${city}` : city;
-      if (!fullArea) return;
+    // Strip "near me" and any previously injected "in [location]" suffix
+    const baseQuery = query
+      .replace(/\s*near me\s*/gi, " ")
+      .replace(/\s+in\s+[^,]+(,\s*[^,]+)*$/i, "")
+      .trim();
 
-      // Strip "near me" and any previously injected "in [location]" suffix
-      // so repeated clicks always replace rather than accumulate
-      let baseQuery = query
-        .replace(/\s*near me\s*/gi, " ")
-        .replace(/\s+in\s+[^,]+(,\s*[^,]+)*$/i, "")
-        .trim();
+    // Reverse-geocode in the background for display text only
+    let displayCity = "";
+    try {
+      const geocoder = new google.maps.Geocoder();
+      await new Promise<void>((resolve) => {
+        geocoder.geocode({ location: areaCoords }, (results, status) => {
+          if (status === "OK" && results?.[0]) {
+            const sub = results[0].address_components.find((c) =>
+              c.types.includes("neighborhood") || c.types.includes("sublocality_level_1")
+            );
+            const locality = results[0].address_components.find((c) => c.types.includes("locality"));
+            const admin = results[0].address_components.find((c) =>
+              c.types.includes("administrative_area_level_2") || c.types.includes("administrative_area_level_1")
+            );
+            const neighborhood = sub?.long_name || "";
+            displayCity = locality?.long_name || admin?.long_name || "";
+            const fullArea = neighborhood ? `${neighborhood}, ${displayCity}` : displayCity;
+            if (fullArea) {
+              setInputValue(`${baseQuery} in ${fullArea}`);
+              setQuery(`${baseQuery} in ${fullArea}`);
+              setDetectedCity(displayCity);
+            }
+          }
+          resolve();
+        });
+      });
+    } catch (_) { /* fall through — still search with coordinates */ }
 
-      const newQuery = `${baseQuery} in ${fullArea}`;
-
-      setInputValue(newQuery);
-      setQuery(newQuery);
-      setDetectedCity(city);
-      hasSearchedRef.current = true;
-      const span = traceSearch({ query: newQuery, userId });
-      try {
-        await search(newQuery, city || undefined);
-      } finally {
-        span.finish();
-      }
-      setAiSuggestions(generateFollowUps(newQuery, activeCategory));
-    });
-  }, [query, search, userId, activeCategory, state.intent]);
+    setShowSearchArea(false);
+    hasSearchedRef.current = true;
+    const span = traceSearch({ query: baseQuery, userId });
+    try {
+      await search(baseQuery, displayCity || undefined, areaCoords);
+    } finally {
+      span.finish();
+    }
+    setAiSuggestions(generateFollowUps(baseQuery, activeCategory));
+  }, [query, search, userId, activeCategory]);
 
   const handleCategorySwitch = useCallback((cat: PlaceCategory) => {
     setActiveCategory(cat);
