@@ -206,6 +206,7 @@ export function VenueMap({
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const userLocationRef = useRef<{ lat: number; lng: number } | null>(null);
   const userMarkerPlacedRef = useRef(false);
+  const hasSearchedRef = useRef(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const [mapsReady, setMapsReady] = useState(false);
@@ -220,6 +221,7 @@ export function VenueMap({
   const [detectedCity, setDetectedCity] = useState<string>(""); // from reverse geocoding
   const [showAllMatches, setShowAllMatches] = useState(false);
   const [modalQuery, setModalQuery] = useState("");
+  const [showSearchArea, setShowSearchArea] = useState(false);
 
   const { state, search, fetchPlaceDetails, selectVenue, cancel } = useVenueSearch(userId);
 
@@ -276,6 +278,10 @@ export function VenueMap({
     mapInstanceRef.current.addListener("zoom_changed", () => {
       const zoom = mapInstanceRef.current?.getZoom();
       traceMapInteraction({ action: "zoom", zoomLevel: zoom }).finish();
+    });
+
+    mapInstanceRef.current.addListener("dragend", () => {
+      if (hasSearchedRef.current) setShowSearchArea(true);
     });
 
     // ── User location dot — started here so mapInstanceRef is guaranteed set ──
@@ -455,6 +461,8 @@ export function VenueMap({
     const q = rawQ.trim();
     if (!q) return;
 
+    hasSearchedRef.current = true;
+    setShowSearchArea(false);
     const span = traceSearch({ query: q, userId });
     const mapSpan = traceMapInteraction({ action: "ai_query" });
     rumAction("search_submitted", { query: q });
@@ -473,6 +481,38 @@ export function VenueMap({
 
     setAiSuggestions(generateFollowUps(q, detected));
   }, [search, userId, detectedCity]);
+
+  const handleSearchThisArea = useCallback(async () => {
+    const mapInstance = mapInstanceRef.current;
+    if (!mapInstance || !query) return;
+    setShowSearchArea(false);
+    const center = mapInstance.getCenter();
+    if (!center) return;
+
+    const geocoder = new google.maps.Geocoder();
+    geocoder.geocode({ location: { lat: center.lat(), lng: center.lng() } }, async (results, status) => {
+      let areaName = "";
+      if (status === "OK" && results?.[0]) {
+        const sub = results[0].address_components.find((c) =>
+          c.types.includes("neighborhood") || c.types.includes("sublocality_level_1")
+        );
+        const locality = results[0].address_components.find((c) => c.types.includes("locality"));
+        const admin = results[0].address_components.find((c) =>
+          c.types.includes("administrative_area_level_2") || c.types.includes("administrative_area_level_1")
+        );
+        areaName = sub?.long_name || locality?.long_name || admin?.long_name || "";
+      }
+      setDetectedCity(areaName || "");
+      hasSearchedRef.current = true;
+      const span = traceSearch({ query, userId });
+      try {
+        await search(query, areaName || undefined);
+      } finally {
+        span.finish();
+      }
+      setAiSuggestions(generateFollowUps(query, activeCategory));
+    });
+  }, [query, search, userId, activeCategory]);
 
   const handleCategorySwitch = useCallback((cat: PlaceCategory) => {
     setActiveCategory(cat);
@@ -644,6 +684,36 @@ export function VenueMap({
               View AI Agent Progress in Side Panel
             </span>
           </div>
+        </div>
+      )}
+
+      {/* ── Search This Area button ── */}
+      {showSearchArea && query && state.status !== "searching" && (
+        <div style={{
+          position: "absolute",
+          top: 16,
+          left: "50%",
+          transform: `translateX(calc(-50% + ${showLeftPanel ? leftPanelW / 2 : 0}px))`,
+          zIndex: 25,
+          pointerEvents: "auto",
+          transition: "left 0.3s ease",
+        }}>
+          <button
+            onClick={handleSearchThisArea}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 8,
+              padding: "10px 20px", borderRadius: 24,
+              background: "linear-gradient(135deg, #1D4ED8, #7C3AED)",
+              border: "1.5px solid rgba(167,139,250,0.7)",
+              color: "#fff", fontSize: 13, fontWeight: 800,
+              cursor: "pointer", whiteSpace: "nowrap",
+              boxShadow: "0 4px 20px rgba(124,58,237,0.55), 0 2px 8px rgba(0,0,0,0.4)",
+              letterSpacing: "0.02em",
+            }}
+          >
+            <span style={{ fontSize: 15 }}>🔍</span>
+            Search This Area
+          </button>
         </div>
       )}
 
@@ -1270,12 +1340,12 @@ export function VenueMap({
           {
             val: intent.noise_preference, icon: "🔊", label: fmt(intent.noise_preference), bg: "#BE185D", shadow: "rgba(190,24,93,0.5)",
             hint: "Click to change noise preference",
-            refinement: `${occasion} in ${city} for ${n} people ${intent.noise_preference} atmosphere`,
+            refinement: `${occasion} in ${city} for ${n} people ${fmt(intent.noise_preference)} atmosphere`,
           },
           {
             val: intent.price_band, icon: "💎", label: fmt(intent.price_band), bg: "#4D7C0F", shadow: "rgba(77,124,15,0.5)",
             hint: "Click to change price range",
-            refinement: `${occasion} in ${city} for ${n} people ${intent.price_band} budget`,
+            refinement: `${occasion} in ${city} for ${n} people ${fmt(intent.price_band)} budget`,
           },
         ].filter(c => c.val);
 
@@ -1567,7 +1637,7 @@ export function VenueMap({
                           )}
                           {venue.noise_level && (
                             <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(99,179,237,0.1)", color: "#93C5FD", border: "1px solid rgba(99,179,237,0.2)" }}>
-                              {venue.noise_level.replace("_", " ")}
+                              {fmt(venue.noise_level)}
                             </span>
                           )}
                         </div>
