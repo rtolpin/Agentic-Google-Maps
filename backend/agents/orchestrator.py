@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 import re
 from typing import AsyncIterator
 
@@ -15,6 +16,7 @@ import anthropic
 
 from tracing import ai_span, db_span, search_span
 from .scraper_agent import ScraperAgent
+from integrations.google_maps_client import GoogleMapsClient
 from .validator_agent import ValidatorAgent
 from .global_agent import GlobalIntelligenceAgent
 from .publisher_agent import PublisherAgent
@@ -304,6 +306,13 @@ async def orchestrate(
         if not scored_venues and enriched_venues:
             scored_venues = _score_enriched_fallback(enriched_venues, intent)
 
+        # Filter out venues with stale/wrong coordinates (ClickHouse may have old data
+        # stored before the location restriction was added).
+        scored_venues = await _filter_by_location(
+            scored_venues, intent, user_lat=user_lat, user_lng=user_lng,
+            user_radius_m=user_radius_m,
+        )
+
         root.set_tag("search.venues_scored", len(scored_venues))
 
         # Step 6 — synthesize intelligence for top 5 (bounded by semaphore)
@@ -333,6 +342,49 @@ async def orchestrate(
         asyncio.create_task(PublisherAgent().publish_guide(intent, scored_venues[:5]))
 
         yield {"event": "done", "data": {"total_venues": len(scored_venues)}}
+
+
+def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    R = 6_371_000.0
+    dlat = math.radians(lat2 - lat1)
+    dlng = math.radians(lng2 - lng1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng / 2) ** 2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+async def _filter_by_location(
+    venues: list[ScoredVenue],
+    intent: VenueIntent,
+    *,
+    user_lat: float | None,
+    user_lng: float | None,
+    user_radius_m: float | None,
+) -> list[ScoredVenue]:
+    """Remove venues whose coordinates fall outside the expected search area."""
+    if user_lat is not None and user_lng is not None:
+        clat, clng = user_lat, user_lng
+        max_m = max(500.0, min(50000.0, user_radius_m or 5000.0)) * 2
+    elif intent.city not in ("Unknown", ""):
+        try:
+            async with GoogleMapsClient() as gc:
+                geo = await gc.geocode(intent.city)
+            if not geo:
+                return venues
+            clat, clng = geo.latitude, geo.longitude
+            max_m = 35_000.0  # 35 km covers any city metro area
+        except Exception:
+            return venues
+    else:
+        return venues
+
+    filtered = []
+    for v in venues:
+        if v.latitude is None or v.longitude is None:
+            filtered.append(v)  # no coords — keep for list
+            continue
+        if _haversine_m(clat, clng, v.latitude, v.longitude) <= max_m:
+            filtered.append(v)
+    return filtered
 
 
 def _score_enriched_fallback(enriched: list[dict], intent: VenueIntent) -> list[ScoredVenue]:
