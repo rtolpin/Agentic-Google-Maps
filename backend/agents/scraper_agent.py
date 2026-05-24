@@ -20,6 +20,7 @@ import anthropic
 
 from tracing import ai_span
 from integrations.google_maps_client import GoogleMapsClient
+from integrations.nimble_client import NimbleClient
 from models.models import (
     EnrichedVenue,
     ExtractedSignals,
@@ -197,50 +198,98 @@ def _build_queries(intent: VenueIntent) -> list[str]:
     ]
 
 
+def _merge_snippet(google_snippet: str, nimble_snippet: str) -> str:
+    """Combine Google editorial text and Nimble web snippet for richer Claude input."""
+    parts = [s.strip() for s in (google_snippet, nimble_snippet) if s and s.strip()]
+    return " | ".join(parts)
+
+
 class ScraperAgent:
     """
-    Two-phase scraper: Google Places Text Search finds venues with Place IDs
-    and coordinates; Claude extracts qualitative signals from editorial text.
+    Two-phase scraper:
+      Phase 1 — Google Places + Nimble run in parallel for maximum coverage.
+                Google Places provides editorial summaries and price levels.
+                Nimble google_maps adds Place IDs + local pack data from the
+                open web; Nimble google_search adds Yelp/TripAdvisor snippets.
+      Phase 2 — Claude extracts qualitative signals from the merged text.
     """
 
     async def run(self, intent: VenueIntent) -> list[dict]:
         queries = _build_queries(intent)
+        location = intent.neighborhood or intent.city
 
-        async with GoogleMapsClient() as maps:
-            tasks = [maps.search_venues(q, max_results=10) for q in queries]
-            batches = await asyncio.gather(*tasks, return_exceptions=True)
+        # ── Phase 1: parallel fetch from Google Places + Nimble ───────────────
+        async with GoogleMapsClient() as maps, NimbleClient() as nimble:
+            google_tasks = [maps.search_venues(q, max_results=10) for q in queries]
+            # Nimble maps: first query only (broadest); SERP: first two queries
+            nimble_maps_tasks = [nimble.maps_search(queries[0], location)]
+            nimble_serp_tasks = [nimble.serp_search(q) for q in queries[:2]]
 
-        # Merge and deduplicate by place_id
+            all_results = await asyncio.gather(
+                *google_tasks, *nimble_maps_tasks, *nimble_serp_tasks,
+                return_exceptions=True,
+            )
+
+        n_google = len(google_tasks)
+        n_maps = len(nimble_maps_tasks)
+        google_batches = all_results[:n_google]
+        nimble_maps_batches = all_results[n_google: n_google + n_maps]
+        nimble_serp_batches = all_results[n_google + n_maps:]
+
+        # Build a name→snippet index from Nimble SERP (organic web results)
+        serp_snippets: dict[str, str] = {}
+        for batch in nimble_serp_batches:
+            if isinstance(batch, list):
+                for r in batch:
+                    name = r.get("name", "").lower()
+                    if name:
+                        serp_snippets[name] = r.get("snippet", "")
+
+        # Merge and deduplicate venues across all sources
+        # Priority: Google Places (has price level) → Nimble maps (has Place ID)
         seen_ids: set[str] = set()
         raw_venues: list[RawVenueResult] = []
-        for batch in batches:
+
+        def _ingest(batch: Any, source_fallback: str) -> None:
             if isinstance(batch, Exception) or not isinstance(batch, list):
-                continue
+                return
             for v in batch:
                 pid = v.get("place_id", "")
-                key = pid or v.get("name", "")
-                if key and key not in seen_ids:
-                    seen_ids.add(key)
-                    raw_venues.append(RawVenueResult(
-                        name=v.get("name", ""),
-                        url=v.get("url"),
-                        snippet=v.get("snippet", ""),
-                        source=v.get("source", "google_places"),
-                        place_id=pid,
-                        address=v.get("address", ""),
-                        latitude=v.get("latitude"),
-                        longitude=v.get("longitude"),
-                    ))
+                key = pid or v.get("name", "").lower()
+                if not key or key in seen_ids:
+                    continue
+                seen_ids.add(key)
+                # Augment snippet with any matching Nimble SERP text
+                name_key = v.get("name", "").lower()
+                merged = _merge_snippet(
+                    v.get("snippet", ""),
+                    serp_snippets.get(name_key, ""),
+                )
+                raw_venues.append(RawVenueResult(
+                    name=v.get("name", ""),
+                    url=v.get("url"),
+                    snippet=merged,
+                    source=v.get("source", source_fallback),
+                    place_id=pid,
+                    address=v.get("address", ""),
+                    latitude=v.get("latitude"),
+                    longitude=v.get("longitude"),
+                ))
 
-        # Phase 2: Claude signal extraction from editorial summaries
+        for batch in google_batches:
+            _ingest(batch, "google_places")
+        for batch in nimble_maps_batches:
+            _ingest(batch, "nimble_maps")
+
+        # ── Phase 2: Claude signal extraction ────────────────────────────────
         top = raw_venues[:12]
         signals_list = await asyncio.gather(
             *[_call_with_retry(v) for v in top], return_exceptions=True
         )
 
-        # Merge price hint from Places API into extracted signals
+        # Price hint from Google Places API (most reliable source)
         places_price: dict[str, int] = {}
-        for batch in batches:
+        for batch in google_batches:
             if isinstance(batch, list):
                 for v in batch:
                     if v.get("place_id") and v.get("price_per_head_usd"):
@@ -253,7 +302,6 @@ class ScraperAgent:
                 enriched.append(base)
                 continue
             sig_dict = signals.model_dump()
-            # Use Places API price if Claude didn't extract one
             if not sig_dict.get("price_per_head_usd") and raw_venue.place_id in places_price:
                 sig_dict["price_per_head_usd"] = places_price[raw_venue.place_id]
             ev = EnrichedVenue(**{**base, **sig_dict})
