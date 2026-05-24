@@ -1634,6 +1634,24 @@ export function VenueMap({
             </div>
 
             {/* Venue grid */}
+            {(() => {
+              const q = modalQuery.trim().toLowerCase();
+              // Deduplicate by name (ClickHouse may store same venue twice before FINAL merge)
+              const seen = new Set<string>();
+              const dedupedVenues = state.venues.filter((v) => {
+                const key = v.name.toLowerCase().trim();
+                if (seen.has(key)) return false;
+                seen.add(key);
+                return true;
+              });
+              // Filter only against the displayed address (first 2 comma-parts) to avoid
+              // matching hidden geocoder segments (zip codes, country, etc.)
+              const displayedVenues = dedupedVenues.filter((v) => {
+                if (!q) return true;
+                const displayAddr = (v.address ?? "").split(",").slice(0, 2).join(",").toLowerCase();
+                return v.name.toLowerCase().includes(q) || displayAddr.includes(q);
+              });
+              return (
             <div style={{
               flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 20px 20px",
               display: "grid",
@@ -1641,13 +1659,7 @@ export function VenueMap({
               gridAutoRows: 110,
               gap: 14,
             }}>
-              {state.venues
-                .filter((v) => {
-                  if (!modalQuery.trim()) return true;
-                  const q = modalQuery.toLowerCase();
-                  return v.name.toLowerCase().includes(q) || v.address?.toLowerCase().includes(q);
-                })
-                .map((venue, idx) => {
+              {displayedVenues.map((venue, idx) => {
                   const score = Math.round(venue.match_score);
                   const isSelected = state.selectedVenueId === venue.venue_id;
                   const cardColors = [
@@ -1747,12 +1759,14 @@ export function VenueMap({
                 })}
 
               {/* Empty state */}
-              {state.venues.filter((v) => !modalQuery.trim() || v.name.toLowerCase().includes(modalQuery.toLowerCase()) || v.address?.toLowerCase().includes(modalQuery.toLowerCase())).length === 0 && (
+              {displayedVenues.length === 0 && (
                 <div style={{ gridColumn: "1/-1", textAlign: "center", padding: "40px 20px", color: "#475569" }}>
                   No venues match "{modalQuery}"
                 </div>
               )}
             </div>
+              );
+            })()}
           </div>
         </div>
       )}
