@@ -14,40 +14,53 @@ Instead of returning a pile of pins, The Right Spot understands *intent* — and
 
 | You type | You get |
 |---|---|
-| `"quiet cafe for deep work in SoHo"` | Venues scored by WiFi quality, noise level, outlet availability, and time-of-day crowd data |
-| `"post-hike coffee with a view near Twin Peaks"` | Trail-adjacent venues with scenic ratings, dog policy, and outdoor seating |
+| `"quiet cafe for deep work in SoHo"` | Venues scored by WiFi quality, noise level, and time-of-day crowd data |
+| `"hiking trails near me"` | Real trail recommendations anchored to your GPS position, not a city name |
 | `"first date spot in a new city"` | Atmospheric matches: dimly lit, conversational noise level, impressive but not intimidating |
+| `"best restaurant near me"` | GPS-biased search with a 5 km location circle — results within walking distance |
+| `"public libraries near me"` | Non-restaurant venue types routed to the correct Google Places query |
 | `"offices to scout near Midtown"` | Neighborhood clustering with transit scores and coworking density |
+
+### Map Features
+- **Search This Area** — drag or zoom the map, hit the button and the search re-runs anchored to the visible viewport (radius derived from zoom level)
+- **User location dot** — GPS position persisted in `localStorage` (30 min TTL) so the dot survives page refreshes
+- **Intent chips** — parsed occasion, cuisine, noise preference, and price band shown as tappable refinement chips below the search bar
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-User Query (natural language)
+User Query + GPS coords (optional)
         │
         ▼
 ┌───────────────────────────────────┐
-│         Orchestrator              │  ← Claude: parse intent → VenueSearchIntent
+│         Orchestrator              │  ← Claude: parse intent → VenueIntent
 │  (FastAPI SSE streaming)          │
 └──────────┬────────────────────────┘
            │  asyncio.gather() — parallel
     ┌──────┴──────┬──────────────────┐
     ▼             ▼                  ▼
 ScraperAgent  ValidatorAgent  GlobalIntelligenceAgent
-(Nimble SERP) (confidence)    (city benchmarks)
+ Phase 1:     (confidence)    (city benchmarks)
+  Google Places API (text search + locationBias.circle)
+  Nimble google_maps (local pack, place IDs) ─ best-effort 10s
+  Nimble google_search (Yelp/TripAdvisor snippets) ─ best-effort
+ Phase 2:
+  Claude signal extraction (noise, capacity, occasion score…)
     └──────┬──────┴──────────────────┘
            │
            ▼
 ┌───────────────────────────────────┐
-│       ClickHouse Scoring          │  ← Multi-factor venue ranking
-│  ReplacingMergeTree venue_signals │
+│       ClickHouse Scoring          │  ← Multi-factor ranking
+│  ReplacingMergeTree venue_signals │    base 25 + capacity + noise +
+│                                   │    occasion fit + price band
 └──────────┬────────────────────────┘
            │
            ▼
 ┌───────────────────────────────────┐
-│     Claude Synthesis              │  ← Brand-voice recommendations
-│  (prompt caching: ephemeral)      │
+│     Claude Synthesis              │  ← Why-card, scenario, sensitivity bars
+│  (prompt caching: ephemeral)      │    for top 5 venues
 └──────────┬────────────────────────┘
            │
     ┌──────┴──────────────────┐
@@ -103,14 +116,17 @@ agentic-engineering-hack/
 ├── backend/
 │   ├── agents/
 │   │   ├── orchestrator.py        # Intent parsing + synthesis (Claude)
-│   │   ├── scraper_agent.py       # Nimble SERP: Maps + review extraction
+│   │   ├── scraper_agent.py       # Phase 1: Google Places + Nimble; Phase 2: Claude signals
+│   │   ├── validator_agent.py     # Result confidence scoring
+│   │   ├── global_agent.py        # City-level benchmark intelligence
 │   │   └── publisher_agent.py     # Senso GEO publishing
 │   ├── api/
 │   │   └── server.py              # FastAPI + SSE streaming endpoints
 │   ├── db/
-│   │   └── clickhouse.py          # MergeTree schema + venue scoring queries
+│   │   └── clickhouse.py          # MergeTree schema + multi-factor scoring query
 │   ├── integrations/
-│   │   ├── google_maps_client.py  # Places API (real-time, TOS compliant)
+│   │   ├── google_maps_client.py  # Places API (real-time, TOS compliant, locationBias)
+│   │   ├── nimble_client.py       # Nimble google_maps + google_search engines
 │   │   └── senso_client.py        # Senso knowledge base client
 │   ├── models/
 │   │   └── models.py              # All Pydantic v2 domain types
@@ -143,6 +159,25 @@ agentic-engineering-hack/
 
 ---
 
+## ☁️ Vercel Deployment
+
+The repo is structured for Vercel's `experimentalServices` monorepo support:
+
+```json
+// vercel.json
+{
+  "experimentalServices": {
+    "frontend": { "root": "frontend", "framework": "nextjs", "routePrefix": "/" },
+    "backend":  { "root": "backend", "entrypoint": "api.server:app",
+                  "routePrefix": "/_/backend", "maxDuration": 60 }
+  }
+}
+```
+
+Set all `.env` variables as **encrypted environment variables** in the Vercel dashboard (Settings → Environment Variables). Never commit `.env` to version control.
+
+---
+
 ## 🚀 Getting Started
 
 ### Prerequisites
@@ -162,11 +197,28 @@ cp .env.example .env
 Fill in your `.env`:
 
 ```env
+# AI / data
 ANTHROPIC_API_KEY=sk-ant-...       # console.anthropic.com
-NIMBLE_API_KEY=...                  # nimbleway.com → Dashboard
+NIMBLE_API_KEY=...                  # nimbleway.com → Dashboard (optional — falls back to Google Places only)
 SENSO_API_KEY=tgr_...              # app.senso.ai → Settings
+
+# Google Maps
 GOOGLE_MAPS_API_KEY=AIza...        # console.cloud.google.com
 GOOGLE_MAPS_MAP_ID=...             # Google Maps Platform → Map Management
+GOOGLE_MAPS_REFERER=http://localhost:3000   # server-side referer header for key restrictions
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=AIza...     # browser-side (same key, browser-restricted)
+NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID=...
+
+# ClickHouse Cloud
+CLICKHOUSE_HOST=<your>.clickhouse.cloud
+CLICKHOUSE_PORT=8443
+CLICKHOUSE_USER=default
+CLICKHOUSE_PASSWORD=...
+CLICKHOUSE_SECURE=true
+
+# Datadog APM (optional for local dev)
+DD_API_KEY=...
+DD_ENV=local
 ```
 
 ### 2. Start all services
@@ -206,11 +258,11 @@ Type anything — `"quiet cafe for deep work"`, `"hiking near downtown"`, `"firs
 
 ## 🗺️ Google Maps Setup
 
-Enable these 3 APIs in Google Cloud Console:
+Enable these APIs in Google Cloud Console:
 
-1. **Maps JavaScript API** — map rendering
-2. **Places API (New)** — real-time place details
-3. **Geocoding API** — city name → coordinates
+1. **Maps JavaScript API** — map rendering + AdvancedMarkerElement
+2. **Places API (New)** — text search with `locationBias`, real-time place details
+3. **Geocoding API** — reverse geocoding for Search This Area label + user location city detection
 
 Create a **Map ID** at Google Maps Platform → Map Management (Vector type with tilt + rotation for 3D building views).
 
