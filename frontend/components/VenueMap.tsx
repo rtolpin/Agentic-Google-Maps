@@ -1569,7 +1569,7 @@ export function VenueMap({
           onClick={(e) => { if (e.target === e.currentTarget) setShowAllMatches(false); }}
         >
           <div style={{
-            width: "100%", maxWidth: 860, maxHeight: "88vh",
+            width: "100%", maxWidth: 1100, maxHeight: "92vh",
             background: "linear-gradient(160deg, #0f172a 0%, #1a2236 100%)",
             borderRadius: 20,
             border: "1.5px solid rgba(255,255,255,0.1)",
@@ -1673,8 +1673,7 @@ export function VenueMap({
                         setShowAllMatches(false);
                       }}
                       style={{
-                        borderRadius: 14, cursor: "pointer",
-                        minHeight: 120,
+                        borderRadius: 14, cursor: "pointer", overflow: "hidden",
                         border: `1.5px solid ${isSelected ? c.from : "rgba(255,255,255,0.08)"}`,
                         boxShadow: isSelected ? `0 0 20px ${c.glow}` : "0 2px 10px rgba(0,0,0,0.3)",
                         background: isSelected
@@ -1712,7 +1711,13 @@ export function VenueMap({
                         </div>
 
                         {/* Name */}
-                        <div style={{ fontSize: 14, fontWeight: 700, color: venue.name ? "#F1F5F9" : "#475569", marginBottom: 4, lineHeight: 1.3, fontStyle: venue.name ? "normal" : "italic" }}>
+                        <div style={{
+                          fontSize: 14, fontWeight: 700, color: venue.name ? "#F1F5F9" : "#475569",
+                          marginBottom: 4, lineHeight: 1.3, fontStyle: venue.name ? "normal" : "italic",
+                          display: "-webkit-box", WebkitLineClamp: 2,
+                          WebkitBoxOrient: "vertical" as React.CSSProperties["WebkitBoxOrient"],
+                          overflow: "hidden",
+                        }}>
                           {venue.name || "Unnamed venue"}
                         </div>
 
@@ -1723,36 +1728,17 @@ export function VenueMap({
                           </div>
                         )}
 
-                        {/* AI snippet */}
-                        {venue.intelligence?.why_card && (
-                          <div style={{
-                            fontSize: 11, color: "#94A3B8", lineHeight: 1.5,
-                            padding: "8px 10px", borderRadius: 8,
-                            background: "rgba(255,255,255,0.04)",
-                            border: "1px solid rgba(255,255,255,0.06)",
-                            display: "-webkit-box",
-                            WebkitLineClamp: 3,
-                            WebkitBoxOrient: "vertical" as React.CSSProperties["WebkitBoxOrient"],
-                            overflow: "hidden",
-                          }}>
-                            {venue.intelligence.why_card}
+                        {/* Inline tags — price and private room only if known */}
+                        {(venue.has_private_room || venue.price_per_head > 0) && (
+                          <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
+                            {venue.has_private_room && (
+                              <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(16,185,129,0.15)", color: "#34D399", border: "1px solid rgba(16,185,129,0.25)" }}>🚪 Private</span>
+                            )}
+                            {venue.price_per_head > 0 && (
+                              <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(251,191,36,0.12)", color: "#FCD34D", border: "1px solid rgba(251,191,36,0.2)" }}>${venue.price_per_head}/head</span>
+                            )}
                           </div>
                         )}
-
-                        {/* Tags */}
-                        <div style={{ display: "flex", gap: 4, marginTop: 8, flexWrap: "wrap" }}>
-                          {venue.has_private_room && (
-                            <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(16,185,129,0.15)", color: "#34D399", border: "1px solid rgba(16,185,129,0.25)" }}>🚪 Private</span>
-                          )}
-                          {venue.price_per_head > 0 && (
-                            <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(251,191,36,0.12)", color: "#FCD34D", border: "1px solid rgba(251,191,36,0.2)" }}>${venue.price_per_head}/head</span>
-                          )}
-                          {venue.noise_level && (
-                            <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(99,179,237,0.1)", color: "#93C5FD", border: "1px solid rgba(99,179,237,0.2)" }}>
-                              {fmt(venue.noise_level)}
-                            </span>
-                          )}
-                        </div>
                       </div>
                     </div>
                   );
