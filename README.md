@@ -4,7 +4,7 @@
 
 ## 🔗 Live Demo
 
-### **[https://agentic-engineering-hack.vercel.app](https://agentic-engineering-hack.vercel.app)**
+### **[https://agent-google-maps-nine.vercel.app](https://agent-google-maps-nine.vercel.app)**
 
 Instead of returning a pile of pins, The Right Spot understands *intent* — and returns the right spot for your specific situation, time, and mood.
 
@@ -269,7 +269,7 @@ Create a **Map ID** at Google Maps Platform → Map Management (Vector type with
 **Key restrictions** (HTTP referrers):
 ```
 localhost:3000/*
-https://agentic-engineering-hack.vercel.app/*
+https://agent-google-maps-nine.vercel.app/*
 ```
 
 ---
