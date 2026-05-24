@@ -202,6 +202,7 @@ export function VenueMap({
   const markersRef = useRef<Map<string, google.maps.marker.AdvancedMarkerElement>>(new Map());
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
   const userLocationRef = useRef<{ lat: number; lng: number } | null>(null);
+  const userMarkerPlacedRef = useRef(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const [mapsReady, setMapsReady] = useState(false);
@@ -275,11 +276,12 @@ export function VenueMap({
     });
 
     // ── User location dot — started here so mapInstanceRef is guaranteed set ──
-    if ("geolocation" in navigator) {
+    if ("geolocation" in navigator && !userMarkerPlacedRef.current) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const mapInstance = mapInstanceRef.current;
-          if (!mapInstance) return;
+          if (!mapInstance || userMarkerPlacedRef.current) return;
+          userMarkerPlacedRef.current = true;
           const userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
           userLocationRef.current = userPos;
 
@@ -299,7 +301,8 @@ export function VenueMap({
             zIndex: 9999,
           });
 
-          if (enrichedMarkers.length === 0) {
+          // Only center on user if no venue markers have been placed yet
+          if (markersRef.current.size === 0) {
             mapInstance.setCenter(userPos);
             mapInstance.setZoom(14);
           }

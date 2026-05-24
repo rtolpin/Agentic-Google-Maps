@@ -101,14 +101,18 @@ async def _call_with_retry(
         return None
 
 
-_OFFICE_OCCASIONS = {"offices", "office", "scouting offices", "work", "corporate", "business"}
+_OFFICE_OCCASIONS = {"offices", "office", "scouting offices", "corporate", "business"}
+
+_CAFE_KEYWORDS = {"cafe", "café", "coffee", "cosy", "cozy", "laptop", "remote", "work from", "working"}
+_WIFI_KEYWORDS = {"wifi", "wi-fi", "internet", "laptop"}
 
 def _build_queries(intent: VenueIntent) -> list[str]:
     """Build 2–3 complementary search queries for maximum venue coverage."""
-    cuisine = intent.cuisine or "restaurant"
+    cuisine = intent.cuisine or ""
     city = intent.city
-    occasion = intent.occasion.replace("_", " ")
+    occasion = intent.occasion.replace("_", " ").lower()
     signals = [s.lower() for s in (intent.other_signals or [])]
+    all_terms = {occasion} | set(signals) | ({cuisine.lower()} if cuisine else set())
 
     if city == "Unknown":
         location = next(
@@ -122,11 +126,10 @@ def _build_queries(intent: VenueIntent) -> list[str]:
 
     # Office / corporate HQ searches need entirely different queries
     is_office_search = (
-        occasion.lower() in _OFFICE_OCCASIONS
+        occasion in _OFFICE_OCCASIONS
         or any(kw in signals for kw in ("office", "headquarters", "hq", "corporate", "company"))
     )
     if is_office_search:
-        # Look for specific named companies if mentioned
         named_companies = [s for s in signals if s not in ("office", "offices", "headquarters", "hq", "corporate", "company", "near")]
         if named_companies:
             company_str = " ".join(named_companies[:2])
@@ -141,10 +144,27 @@ def _build_queries(intent: VenueIntent) -> list[str]:
             f"business district office towers {location}",
         ]
 
+    # Café / remote-work / wifi searches
+    has_wifi = any(kw in all_terms for kw in _WIFI_KEYWORDS)
+    is_cafe_search = (
+        any(kw in all_terms for kw in _CAFE_KEYWORDS)
+        or cuisine.lower() in ("cafe", "café", "coffee", "coffee shop")
+        or has_wifi
+    )
+    if is_cafe_search:
+        venue_type = "café coffee shop"
+        wifi_tag = " with wifi" if has_wifi else ""
+        return [
+            f"cosy café coffee shop{wifi_tag} laptop friendly {location}",
+            f"best café to work from{wifi_tag} {location}",
+            f"quiet coffee shop{wifi_tag} {location}",
+        ]
+
+    venue_type = cuisine if cuisine else "restaurant"
     return [
-        f"best {occasion} {cuisine} restaurant {location}",
-        f"{cuisine} restaurant group dining {location}",
-        f"special occasion restaurant {location}",
+        f"best {occasion} {venue_type} {location}",
+        f"{venue_type} group dining {location}",
+        f"special occasion {venue_type} {location}",
     ]
 
 
