@@ -691,16 +691,19 @@ export function VenueMap({
       {showSearchArea && query && state.status !== "searching" && (
         <div style={{
           position: "absolute",
-          top: 16,
-          left: "50%",
-          transform: `translateX(calc(-50% + ${showLeftPanel ? leftPanelW / 2 : 0}px))`,
-          zIndex: 25,
-          pointerEvents: "auto",
+          top: 155,
+          left: showLeftPanel ? leftPanelW : 0,
+          right: 0,
+          display: "flex",
+          justifyContent: "center",
+          zIndex: 8,
+          pointerEvents: "none",
           transition: "left 0.3s ease",
         }}>
           <button
             onClick={handleSearchThisArea}
             style={{
+              pointerEvents: "auto",
               display: "inline-flex", alignItems: "center", gap: 8,
               padding: "10px 20px", borderRadius: 24,
               background: "linear-gradient(135deg, #1D4ED8, #7C3AED)",
