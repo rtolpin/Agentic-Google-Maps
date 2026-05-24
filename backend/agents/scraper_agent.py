@@ -106,6 +106,13 @@ _OFFICE_OCCASIONS = {"offices", "office", "scouting offices", "corporate", "busi
 _CAFE_KEYWORDS = {"cafe", "café", "coffee", "cosy", "cozy", "laptop", "remote", "work from", "working"}
 _WIFI_KEYWORDS = {"wifi", "wi-fi", "internet", "laptop"}
 
+_OUTDOOR_KEYWORDS = {
+    "hiking", "hike", "trail", "trails", "nature", "park", "outdoor", "outdoors",
+    "walk", "walking", "trekking", "trek", "forest", "mountain", "mountains",
+    "waterfall", "scenic", "wilderness", "campsite", "camping", "cycling", "bike trail",
+    "greenway", "preserve", "state park", "national park",
+}
+
 def _build_queries(intent: VenueIntent) -> list[str]:
     """Build 2–3 complementary search queries for maximum venue coverage."""
     cuisine = intent.cuisine or ""
@@ -144,6 +151,29 @@ def _build_queries(intent: VenueIntent) -> list[str]:
             f"business district office towers {location}",
         ]
 
+    # Outdoor / hiking / nature searches
+    is_outdoor_search = any(kw in all_terms for kw in _OUTDOOR_KEYWORDS)
+    if is_outdoor_search:
+        # Include nearby regions so results aren't limited to city limits
+        nearby = {
+            "New York City": "New York New Jersey Hudson Valley",
+            "Los Angeles": "Los Angeles Southern California",
+            "San Francisco": "Bay Area Marin County",
+            "Chicago": "Chicago Illinois Wisconsin",
+            "Seattle": "Seattle Pacific Northwest",
+            "Boston": "Boston New England",
+            "Austin": "Austin Texas Hill Country",
+            "Denver": "Denver Colorado Rockies",
+            "Portland": "Portland Oregon Pacific Northwest",
+        }
+        region = nearby.get(city, city)
+        activity = next((kw for kw in ("hiking", "trail", "walking", "cycling", "trekking") if kw in all_terms), "hiking trail")
+        return [
+            f"{activity} trails parks near {location}",
+            f"best {activity} trails {region}",
+            f"nature parks scenic trails day trips near {location}",
+        ]
+
     # Café / remote-work / wifi searches
     has_wifi = any(kw in all_terms for kw in _WIFI_KEYWORDS)
     is_cafe_search = (
@@ -152,7 +182,6 @@ def _build_queries(intent: VenueIntent) -> list[str]:
         or has_wifi
     )
     if is_cafe_search:
-        venue_type = "café coffee shop"
         wifi_tag = " with wifi" if has_wifi else ""
         return [
             f"cosy café coffee shop{wifi_tag} laptop friendly {location}",
