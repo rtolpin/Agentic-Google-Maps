@@ -1,9 +1,4 @@
 {
-  "functions": {
-    "backend/**": {
-      "maxDuration": 60
-    }
-  },
   "experimentalServices": {
     "frontend": {
       "root": "frontend",
