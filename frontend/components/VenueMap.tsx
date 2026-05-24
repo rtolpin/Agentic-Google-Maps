@@ -77,6 +77,7 @@ async function loadGoogleMaps(
   await Promise.all([
     loader.importLibrary("marker"),
     loader.importLibrary("routes"),
+    loader.importLibrary("places"),
   ]);
   onStep?.(4); // 95%
   window.googleMapsLoaded = true;
@@ -253,6 +254,9 @@ export function VenueMap({
   const [directionsLoading, setDirectionsLoading] = useState(false);
   const [directionsError, setDirectionsError] = useState<string | null>(null);
 
+  const addressInputRef = useRef<HTMLInputElement>(null);
+  const [addressInputValue, setAddressInputValue] = useState("");
+
   const { state, search, fetchPlaceDetails, selectVenue, cancel } = useVenueSearch(userId);
 
   // ── Load Google Maps API ────────────────────────────────────────────────
@@ -384,6 +388,27 @@ export function VenueMap({
         { enableHighAccuracy: false, timeout: 8000, maximumAge: 300000 },
       );
     }
+
+    // ── Address autocomplete — jump to any address or area ─────────────────
+    // Uses the Places Autocomplete widget; pans the map to the chosen place.
+    (async () => {
+      if (!addressInputRef.current || !mapInstanceRef.current) return;
+      try {
+        const { Autocomplete } = await google.maps.importLibrary("places") as google.maps.PlacesLibrary;
+        const ac = new Autocomplete(addressInputRef.current, {
+          fields: ["geometry", "formatted_address", "name"],
+        });
+        ac.bindTo("bounds", mapInstanceRef.current);
+        ac.addListener("place_changed", () => {
+          const place = ac.getPlace();
+          if (!place.geometry?.location) return;
+          mapInstanceRef.current?.panTo(place.geometry.location);
+          mapInstanceRef.current?.setZoom(15);
+          setAddressInputValue(place.formatted_address || place.name || "");
+          setShowSearchArea(true);
+        });
+      } catch (_) { /* places library unavailable — address bar still renders, just without autocomplete */ }
+    })();
   }, [mapsReady, config, selectVenue]);
 
   // ── Sync markers when venues arrive ────────────────────────────────────
@@ -749,7 +774,10 @@ export function VenueMap({
 
   const handleSearchThisArea = useCallback(async () => {
     const mapInstance = mapInstanceRef.current;
-    if (!mapInstance || !inputValue) return;
+    if (!mapInstance) return;
+    // Use the AI search box value; fall back to the active category's default query so
+    // Search This Area works even before the user has typed anything.
+    const rawQ = inputValue || CATEGORIES[activeCategory].defaultQuery || "places near me";
     const center = mapInstance.getCenter();
     if (!center) return;
 
@@ -770,7 +798,7 @@ export function VenueMap({
     const areaCoords = { lat: centerLat, lng: centerLng, radiusM };
 
     // Strip "near me" and any previously injected "in [location]" suffix
-    const baseQuery = inputValue
+    const baseQuery = rawQ
       .replace(/\s*near me\s*/gi, " ")
       .replace(/\s+in\s+[^,]+(,\s*[^,]+)*$/i, "")
       .trim();
@@ -991,19 +1019,55 @@ export function VenueMap({
         </div>
       )}
 
-      {/* ── Search This Area button ── */}
-      {showSearchArea && state.status !== "searching" && state.venues.length > 0 && (
+      {/* ── Address search + Search This Area bar (always visible once map is ready) ── */}
+      {mapsReady && state.status !== "searching" && (
         <div style={{
           position: "absolute",
-          top: 160,
+          top: 172,
           left: showLeftPanel ? leftPanelW : 0,
           right: 0,
           display: "flex",
           justifyContent: "center",
+          alignItems: "center",
+          gap: 8,
           zIndex: 12,
           pointerEvents: "none",
           transition: "left 0.3s ease",
+          padding: "0 16px",
         }}>
+          {/* Address / area lookup — Google Places Autocomplete */}
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8,
+            background: "rgba(7,11,24,0.92)", backdropFilter: "blur(14px)",
+            WebkitBackdropFilter: "blur(14px)",
+            border: "1.5px solid rgba(255,255,255,0.13)",
+            borderRadius: 24, padding: "9px 14px",
+            boxShadow: "0 4px 18px rgba(0,0,0,0.45)",
+            pointerEvents: "auto",
+            flex: "0 1 300px",
+          }}>
+            <span style={{ fontSize: 14, flexShrink: 0, opacity: 0.55 }}>📍</span>
+            <input
+              ref={addressInputRef}
+              value={addressInputValue}
+              onChange={(e) => setAddressInputValue(e.target.value)}
+              placeholder="Go to an address or area…"
+              style={{
+                flex: 1, minWidth: 0,
+                background: "transparent", border: "none", outline: "none",
+                fontSize: 13, color: "#E2E8F0", caretColor: "#3B82F6",
+              }}
+            />
+            {addressInputValue && (
+              <button
+                type="button"
+                onClick={() => setAddressInputValue("")}
+                style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 17, padding: 0, lineHeight: 1, flexShrink: 0 }}
+              >×</button>
+            )}
+          </div>
+
+          {/* Search This Area */}
           <button
             onClick={handleSearchThisArea}
             style={{
@@ -1013,7 +1077,7 @@ export function VenueMap({
               background: "linear-gradient(135deg, #1D4ED8, #7C3AED)",
               border: "1.5px solid rgba(167,139,250,0.7)",
               color: "#fff", fontSize: 13, fontWeight: 800,
-              cursor: "pointer", whiteSpace: "nowrap",
+              cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
               boxShadow: "0 4px 20px rgba(124,58,237,0.55), 0 2px 8px rgba(0,0,0,0.4)",
               letterSpacing: "0.02em",
             }}
@@ -1776,7 +1840,7 @@ export function VenueMap({
         return chips.length === 0 ? null : (
           <div style={{
             position: "absolute",
-            top: showSearchArea ? 215 : 188,
+            top: (mapsReady && state.status !== "searching") ? 224 : 188,
             left: showLeftPanel ? leftPanelW + 16 : 16,
             right: 16,
             zIndex: 10,
