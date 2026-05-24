@@ -476,10 +476,12 @@ export function VenueMap({
               const locality = results[0].address_components.find((c) =>
                 c.types.includes("locality")
               );
-              const area = sub?.long_name || locality?.long_name || "";
+              const nbhd = sub?.long_name || "";
+              const cityName = locality?.long_name || "";
+              const area = nbhd ? `${nbhd}, ${cityName}` : cityName;
               if (area) {
                 q = q.replace(/near me/gi, `in ${area}`);
-                setDetectedCity(area);
+                setDetectedCity(cityName || area);
                 setInputValue(q);
               }
             }
@@ -534,16 +536,16 @@ export function VenueMap({
       const fullArea = neighborhood ? `${neighborhood}, ${city}` : city;
       if (!fullArea) return;
 
-      // Build a new query with the new location explicitly stated so the
-      // intent parser cannot fall back to the old city from the original query.
+      // Strip "near me" first — Search This Area replaces it with an explicit location
+      let baseQuery = query.replace(/\s*near me\s*/gi, " ").trim();
+
+      // Replace old city name if present, otherwise append the new area
       const oldCity = state.intent?.city || "";
       let newQuery: string;
-      if (oldCity && query.toLowerCase().includes(oldCity.toLowerCase())) {
-        // Replace old city name in-place
-        newQuery = query.replace(new RegExp(oldCity, "gi"), fullArea);
+      if (oldCity && baseQuery.toLowerCase().includes(oldCity.toLowerCase())) {
+        newQuery = baseQuery.replace(new RegExp(oldCity, "gi"), fullArea);
       } else {
-        // Append new area
-        newQuery = `${query} in ${fullArea}`;
+        newQuery = `${baseQuery} in ${fullArea}`;
       }
 
       setInputValue(newQuery);
