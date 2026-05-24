@@ -688,7 +688,7 @@ export function VenueMap({
       )}
 
       {/* ── Search This Area button ── */}
-      {showSearchArea && query && state.status !== "searching" && (
+      {state.status === "done" && state.venues.length > 0 && (
         <div style={{
           position: "absolute",
           top: 155,
@@ -696,7 +696,7 @@ export function VenueMap({
           right: 0,
           display: "flex",
           justifyContent: "center",
-          zIndex: 8,
+          zIndex: 12,
           pointerEvents: "none",
           transition: "left 0.3s ease",
         }}>
