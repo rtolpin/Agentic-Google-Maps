@@ -1037,34 +1037,46 @@ export function VenueMap({
         }}>
           {/* Address / area lookup — Google Places Autocomplete */}
           <div style={{
-            display: "flex", alignItems: "center", gap: 8,
-            background: "rgba(7,11,24,0.92)", backdropFilter: "blur(14px)",
-            WebkitBackdropFilter: "blur(14px)",
-            border: "1.5px solid rgba(255,255,255,0.13)",
-            borderRadius: 24, padding: "9px 14px",
-            boxShadow: "0 4px 18px rgba(0,0,0,0.45)",
+            display: "flex", flexDirection: "column", gap: 3,
             pointerEvents: "auto",
-            flex: "0 1 300px",
+            flex: "0 1 320px",
           }}>
-            <span style={{ fontSize: 14, flexShrink: 0, opacity: 0.55 }}>📍</span>
-            <input
-              ref={addressInputRef}
-              value={addressInputValue}
-              onChange={(e) => setAddressInputValue(e.target.value)}
-              placeholder="Go to an address or area…"
-              style={{
-                flex: 1, minWidth: 0,
-                background: "transparent", border: "none", outline: "none",
-                fontSize: 13, color: "#E2E8F0", caretColor: "#3B82F6",
-              }}
-            />
-            {addressInputValue && (
-              <button
-                type="button"
-                onClick={() => setAddressInputValue("")}
-                style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontSize: 17, padding: 0, lineHeight: 1, flexShrink: 0 }}
-              >×</button>
-            )}
+            <span style={{
+              fontSize: 10, fontWeight: 800, letterSpacing: "0.1em",
+              color: "#93C5FD", textTransform: "uppercase",
+              paddingLeft: 14, userSelect: "none",
+              textShadow: "0 0 8px rgba(147,197,253,0.6)",
+            }}>
+              📍 Go to location
+            </span>
+            <div style={{
+              display: "flex", alignItems: "center", gap: 8,
+              background: "rgba(255,255,255,0.97)",
+              border: "2px solid #3B82F6",
+              borderRadius: 24, padding: "10px 16px",
+              boxShadow: "0 0 0 4px rgba(59,130,246,0.18), 0 4px 20px rgba(0,0,0,0.35)",
+            }}>
+              <span style={{ fontSize: 15, flexShrink: 0 }}>🔍</span>
+              <input
+                ref={addressInputRef}
+                value={addressInputValue}
+                onChange={(e) => setAddressInputValue(e.target.value)}
+                placeholder="Address, neighborhood, or city…"
+                style={{
+                  flex: 1, minWidth: 0,
+                  background: "transparent", border: "none", outline: "none",
+                  fontSize: 13, fontWeight: 600, color: "#1E293B",
+                  caretColor: "#3B82F6",
+                }}
+              />
+              {addressInputValue && (
+                <button
+                  type="button"
+                  onClick={() => setAddressInputValue("")}
+                  style={{ background: "none", border: "none", color: "#94A3B8", cursor: "pointer", fontSize: 17, padding: 0, lineHeight: 1, flexShrink: 0 }}
+                >×</button>
+              )}
+            </div>
           </div>
 
           {/* Search This Area */}
