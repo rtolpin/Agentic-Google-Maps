@@ -1710,8 +1710,8 @@ export function VenueMap({
                         </div>
 
                         {/* Name */}
-                        <div style={{ fontSize: 14, fontWeight: 700, color: "#F1F5F9", marginBottom: 4, lineHeight: 1.3 }}>
-                          {venue.name}
+                        <div style={{ fontSize: 14, fontWeight: 700, color: venue.name ? "#F1F5F9" : "#475569", marginBottom: 4, lineHeight: 1.3, fontStyle: venue.name ? "normal" : "italic" }}>
+                          {venue.name || "Unnamed venue"}
                         </div>
 
                         {/* Address */}

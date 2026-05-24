@@ -422,6 +422,8 @@ class ScraperAgent:
             if isinstance(batch, Exception) or not isinstance(batch, list):
                 return
             for v in batch:
+                if not v.get("name", "").strip():
+                    continue  # never ingest nameless venues — they produce blank cards
                 pid = v.get("place_id", "")
                 key = pid or v.get("name", "").lower()
                 if not key or key in seen_ids:

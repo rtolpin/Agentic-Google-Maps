@@ -191,6 +191,7 @@ FINAL
 WHERE (city = {city:String} OR {city:String} = 'Unknown')
   AND (cuisine = {cuisine:String} OR {cuisine:String} = '')
   AND scraped_at >= now() - INTERVAL 7 DAY
+  AND name != ''
 ORDER BY match_score DESC
 LIMIT 100
 """
@@ -269,8 +270,19 @@ class ClickHouseClient:
         rows: list[list] = []
         for raw in venues:
             try:
+                if not raw.get("name"):
+                    continue  # skip nameless venues — they produce blank cards
                 # Enrich with city so venue_id is scoped correctly
                 raw["city"] = raw.get("city") or city
+                # EnrichedVenue uses Optional[NoiseLevel] (can be None); VenueSignal
+                # requires NoiseLevel.  Coerce None → default so model_validate succeeds.
+                for enum_field, default in (
+                    ("noise_level", "moderate"),
+                    ("wifi_quality", "none"),
+                    ("booking_difficulty", "moderate"),
+                ):
+                    if raw.get(enum_field) is None:
+                        raw[enum_field] = default
                 signal = VenueSignal.model_validate(raw)
                 rows.append(signal.to_ch_row(now))
             except Exception:
