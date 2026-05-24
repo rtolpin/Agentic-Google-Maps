@@ -74,7 +74,10 @@ async function loadGoogleMaps(
   const loader = getLoader(apiKey);
   await loader.importLibrary("maps");
   onStep?.(3); // 75%
-  await loader.importLibrary("marker");
+  await Promise.all([
+    loader.importLibrary("marker"),
+    loader.importLibrary("routes"),
+  ]);
   onStep?.(4); // 95%
   window.googleMapsLoaded = true;
 }
@@ -244,6 +247,10 @@ export function VenueMap({
   const [showTransit, setShowTransit] = useState(false);
   const [transitLoading, setTransitLoading] = useState(false);
   const transitMarkersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
+  const directionsRendererRef = useRef<google.maps.DirectionsRenderer | null>(null);
+  const [directionsTravelMode, setDirectionsTravelMode] = useState<"DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING">("TRANSIT");
+  const [directionsLeg, setDirectionsLeg] = useState<{ distance: string; duration: string } | null>(null);
+  const [directionsLoading, setDirectionsLoading] = useState(false);
 
   const { state, search, fetchPlaceDetails, selectVenue, cancel } = useVenueSearch(userId);
 
@@ -570,6 +577,60 @@ export function VenueMap({
     transitMarkersRef.current.forEach((m) => { m.map = map; });
   }, [showTransit]);
 
+  // ── In-map directions (DirectionsService + DirectionsRenderer) ───────────
+
+  const clearDirections = useCallback(() => {
+    directionsRendererRef.current?.setMap(null);
+    directionsRendererRef.current = null;
+    setDirectionsLeg(null);
+  }, []);
+
+  const getDirections = useCallback(async (
+    venue: { place_id?: string; latitude?: number; longitude?: number; name: string },
+    travelMode: "DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING",
+  ) => {
+    const origin = userLocationRef.current;
+    if (!origin || !mapInstanceRef.current) return;
+
+    const destination = venue.place_id
+      ? { placeId: venue.place_id }
+      : venue.latitude && venue.longitude
+        ? { lat: venue.latitude, lng: venue.longitude }
+        : null;
+    if (!destination) return;
+
+    setDirectionsLoading(true);
+    clearDirections();
+
+    const service = new google.maps.DirectionsService();
+    const renderer = new google.maps.DirectionsRenderer({
+      suppressMarkers: false,
+      polylineOptions: { strokeColor: "#6366F1", strokeWeight: 5, strokeOpacity: 0.85 },
+    });
+    renderer.setMap(mapInstanceRef.current);
+    directionsRendererRef.current = renderer;
+
+    try {
+      const result = await service.route({
+        origin,
+        destination,
+        travelMode: google.maps.TravelMode[travelMode],
+      });
+      renderer.setDirections(result);
+      const leg = result.routes[0]?.legs[0];
+      if (leg) {
+        setDirectionsLeg({
+          distance: leg.distance?.text ?? "",
+          duration: leg.duration?.text ?? "",
+        });
+      }
+    } catch {
+      clearDirections();
+    } finally {
+      setDirectionsLoading(false);
+    }
+  }, [clearDirections]);
+
   // ── SSE event tracing ───────────────────────────────────────────────────
 
   useEffect(() => {
@@ -828,6 +889,10 @@ export function VenueMap({
           from { background-position: 0 0; }
           to   { background-position: 48px 48px; }
         }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
+        }
         @keyframes pulse {
           0%, 100% { opacity: 1; transform: scale(1); }
           50%       { opacity: 0.4; transform: scale(0.75); }
@@ -960,7 +1025,9 @@ export function VenueMap({
             backdropFilter: "blur(8px)",
           }}
         >
-          {transitLoading ? "⏳" : "🚇"} {showTransit ? "Hide Transit" : "Nearby Transit"}
+          {transitLoading ? (
+            <><span style={{ display: "inline-block", animation: "spin 1s linear infinite" }}>⏳</span> Finding stops…</>
+          ) : showTransit ? "🚇 Hide Transit" : "🚇 Nearby Transit"}
         </button>
         {showTransit && transitStops.length > 0 && (
           <div style={{
@@ -1948,7 +2015,14 @@ export function VenueMap({
             selectVenue(null);
             infoWindowRef.current?.close();
             onVenueSelect?.(null);
+            clearDirections();
           }}
+          onGetDirections={getDirections}
+          onClearDirections={clearDirections}
+          directionsTravelMode={directionsTravelMode}
+          onSetTravelMode={setDirectionsTravelMode}
+          directionsLeg={directionsLeg}
+          directionsLoading={directionsLoading}
         />
       )}
 
@@ -2120,9 +2194,15 @@ interface VenueDetailSidebarProps {
   venue: VenueSignal | null;
   placeDetails: GooglePlaceDetails | null;
   onClose: () => void;
+  onGetDirections: (venue: { place_id?: string; latitude?: number; longitude?: number; name: string }, mode: "DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING") => void;
+  onClearDirections: () => void;
+  directionsTravelMode: "DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING";
+  onSetTravelMode: (m: "DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING") => void;
+  directionsLeg: { distance: string; duration: string } | null;
+  directionsLoading: boolean;
 }
 
-function VenueDetailSidebar({ venue, placeDetails, onClose }: VenueDetailSidebarProps) {
+function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onClearDirections, directionsTravelMode, onSetTravelMode, directionsLeg, directionsLoading }: VenueDetailSidebarProps) {
   const [sidebarW, setSidebarW] = useState(380);
   const [isFullScreen, setIsFullScreen] = useState(false);
 
@@ -2366,17 +2446,12 @@ function VenueDetailSidebar({ venue, placeDetails, onClose }: VenueDetailSidebar
                   ⚡ {intel.live_signal}
                 </div>
               )}
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 4 }}>
-                {(venue.place_id || (venue.latitude && venue.longitude)) && (
-                  <a
-                    href={venue.place_id
-                      ? `https://www.google.com/maps/dir/?api=1&destination_place_id=${venue.place_id}`
-                      : `https://www.google.com/maps/dir/?api=1&destination=${venue.latitude},${venue.longitude}`}
-                    target="_blank" rel="noopener noreferrer"
-                    style={{ fontSize: 14, color: "#34D399", textDecoration: "none", display: "flex", alignItems: "center", gap: 5, fontWeight: 600 }}>
-                    🗺️ Get Directions
-                  </a>
-                )}
+              <DirectionsPanel
+                venue={venue} travelMode={directionsTravelMode}
+                onSetMode={onSetTravelMode} onGet={onGetDirections}
+                onClear={onClearDirections} leg={directionsLeg} loading={directionsLoading}
+              />
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 8 }}>
                 {placeDetails?.website_uri && (
                   <a href={placeDetails.website_uri} target="_blank" rel="noopener noreferrer"
                     style={{ fontSize: 14, color: "#60A5FA", textDecoration: "none", display: "flex", alignItems: "center", gap: 5 }}>
@@ -2457,17 +2532,14 @@ function VenueDetailSidebar({ venue, placeDetails, onClose }: VenueDetailSidebar
                 ))}
               </div>
             )}
+            {/* Directions panel */}
+            <DirectionsPanel
+              venue={venue} travelMode={directionsTravelMode}
+              onSetMode={onSetTravelMode} onGet={onGetDirections}
+              onClear={onClearDirections} leg={directionsLeg} loading={directionsLoading}
+              small
+            />
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
-              {(venue.place_id || (venue.latitude && venue.longitude)) && (
-                <a
-                  href={venue.place_id
-                    ? `https://www.google.com/maps/dir/?api=1&destination_place_id=${venue.place_id}`
-                    : `https://www.google.com/maps/dir/?api=1&destination=${venue.latitude},${venue.longitude}`}
-                  target="_blank" rel="noopener noreferrer"
-                  style={{ fontSize: 12, color: "#34D399", textDecoration: "none", display: "flex", alignItems: "center", gap: 4, fontWeight: 600 }}>
-                  🗺️ Get Directions
-                </a>
-              )}
               {placeDetails?.website_uri && (
                 <a href={placeDetails.website_uri} target="_blank" rel="noopener noreferrer"
                   style={{ fontSize: 12, color: "#60A5FA", textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
@@ -2486,6 +2558,84 @@ function VenueDetailSidebar({ venue, placeDetails, onClose }: VenueDetailSidebar
       </div>
     </div>
     </>
+  );
+}
+
+// ─── Directions panel ────────────────────────────────────────────────────
+
+type TravelMode = "DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING";
+const TRAVEL_MODES: { mode: TravelMode; icon: string; label: string }[] = [
+  { mode: "TRANSIT",   icon: "🚇", label: "Transit"  },
+  { mode: "DRIVING",   icon: "🚗", label: "Drive"    },
+  { mode: "WALKING",   icon: "🚶", label: "Walk"     },
+  { mode: "BICYCLING", icon: "🚲", label: "Bike"     },
+];
+
+function DirectionsPanel({
+  venue, travelMode, onSetMode, onGet, onClear, leg, loading, small,
+}: {
+  venue: { place_id?: string; latitude?: number; longitude?: number; name: string };
+  travelMode: TravelMode;
+  onSetMode: (m: TravelMode) => void;
+  onGet: (v: typeof venue, m: TravelMode) => void;
+  onClear: () => void;
+  leg: { distance: string; duration: string } | null;
+  loading: boolean;
+  small?: boolean;
+}) {
+  const fs = small ? 11 : 13;
+  return (
+    <div style={{ marginTop: 12, marginBottom: 4 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 7 }}>
+        Directions
+      </div>
+      {/* Travel mode tabs */}
+      <div style={{ display: "flex", gap: 5, marginBottom: 8 }}>
+        {TRAVEL_MODES.map(({ mode, icon, label }) => (
+          <button
+            key={mode}
+            onClick={() => onSetMode(mode)}
+            style={{
+              padding: "4px 9px", borderRadius: 8, cursor: "pointer",
+              fontSize: fs, fontWeight: travelMode === mode ? 700 : 400,
+              background: travelMode === mode ? "rgba(99,102,241,0.25)" : "rgba(255,255,255,0.05)",
+              border: travelMode === mode ? "1.5px solid rgba(99,102,241,0.6)" : "1px solid rgba(255,255,255,0.1)",
+              color: travelMode === mode ? "#A5B4FC" : "#64748B",
+              transition: "all 0.12s",
+            }}
+          >
+            {icon} {label}
+          </button>
+        ))}
+      </div>
+      {/* Show / clear row */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <button
+          onClick={() => onGet(venue, travelMode)}
+          disabled={loading}
+          style={{
+            padding: "5px 14px", borderRadius: 8, cursor: loading ? "not-allowed" : "pointer",
+            fontSize: fs, fontWeight: 700,
+            background: "linear-gradient(135deg, #4F46E5, #7C3AED)",
+            border: "1.5px solid rgba(99,102,241,0.6)",
+            color: "#fff", opacity: loading ? 0.6 : 1,
+            display: "flex", alignItems: "center", gap: 5,
+          }}
+        >
+          {loading ? "⏳ Routing…" : "🗺️ Show on map"}
+        </button>
+        {leg && (
+          <>
+            <span style={{ fontSize: fs, color: "#34D399", fontWeight: 600 }}>{leg.duration}</span>
+            <span style={{ fontSize: fs - 1, color: "#475569" }}>({leg.distance})</span>
+            <button
+              onClick={onClear}
+              style={{ padding: "3px 8px", borderRadius: 6, fontSize: fs - 1, cursor: "pointer", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#475569" }}
+            >✕ Clear</button>
+          </>
+        )}
+      </div>
+    </div>
   );
 }
 
