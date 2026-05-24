@@ -536,17 +536,14 @@ export function VenueMap({
       const fullArea = neighborhood ? `${neighborhood}, ${city}` : city;
       if (!fullArea) return;
 
-      // Strip "near me" first — Search This Area replaces it with an explicit location
-      let baseQuery = query.replace(/\s*near me\s*/gi, " ").trim();
+      // Strip "near me" and any previously injected "in [location]" suffix
+      // so repeated clicks always replace rather than accumulate
+      let baseQuery = query
+        .replace(/\s*near me\s*/gi, " ")
+        .replace(/\s+in\s+[^,]+(,\s*[^,]+)*$/i, "")
+        .trim();
 
-      // Replace old city name if present, otherwise append the new area
-      const oldCity = state.intent?.city || "";
-      let newQuery: string;
-      if (oldCity && baseQuery.toLowerCase().includes(oldCity.toLowerCase())) {
-        newQuery = baseQuery.replace(new RegExp(oldCity, "gi"), fullArea);
-      } else {
-        newQuery = `${baseQuery} in ${fullArea}`;
-      }
+      const newQuery = `${baseQuery} in ${fullArea}`;
 
       setInputValue(newQuery);
       setQuery(newQuery);
