@@ -599,31 +599,45 @@ export function VenueMap({
     if (!mapInstanceRef.current) return;
 
     // Build the best available destination: Place ID → lat/lng → text query
+    // Note: empty string place_id is falsy; also treat 0,0 coords as absent
+    const validPlaceId = venue.place_id || null;
+    const validLat = venue.latitude && Math.abs(venue.latitude) > 0.001 ? venue.latitude : null;
+    const validLng = venue.longitude && Math.abs(venue.longitude) > 0.001 ? venue.longitude : null;
     const textQuery = [venue.name, venue.address?.split(",").slice(0, 2).join(",")].filter(Boolean).join(", ");
-    const destination: google.maps.DirectionsRequest["destination"] = venue.place_id
-      ? { placeId: venue.place_id }
-      : (venue.latitude && venue.longitude)
-        ? { lat: venue.latitude, lng: venue.longitude }
+    const destination: google.maps.DirectionsRequest["destination"] = validPlaceId
+      ? { placeId: validPlaceId }
+      : (validLat && validLng)
+        ? { lat: validLat, lng: validLng }
         : textQuery;
 
     setDirectionsError(null);
     setDirectionsLoading(true);
     clearDirections();
 
-    const service = new google.maps.DirectionsService();
-    const renderer = new google.maps.DirectionsRenderer({
+    // Import DirectionsService and DirectionsRenderer from the routes library
+    const { DirectionsService, DirectionsRenderer } = await google.maps.importLibrary("routes") as google.maps.RoutesLibrary;
+
+    const service = new DirectionsService();
+    const renderer = new DirectionsRenderer({
       suppressMarkers: false,
+      draggable: true,
       polylineOptions: { strokeColor: "#6366F1", strokeWeight: 5, strokeOpacity: 0.85 },
     });
     renderer.setMap(mapInstanceRef.current);
     directionsRendererRef.current = renderer;
 
+    const request: google.maps.DirectionsRequest = {
+      origin,
+      destination,
+      travelMode: google.maps.TravelMode[travelMode],
+      provideRouteAlternatives: false,
+      ...(travelMode === "TRANSIT"
+        ? { transitOptions: { departureTime: new Date() } }
+        : {}),
+    };
+
     try {
-      const result = await service.route({
-        origin,
-        destination,
-        travelMode: google.maps.TravelMode[travelMode],
-      });
+      const result = await service.route(request);
       renderer.setDirections(result);
       const leg = result.routes[0]?.legs[0];
       if (leg) {
@@ -632,9 +646,16 @@ export function VenueMap({
           duration: leg.duration?.text ?? "",
         });
       }
-    } catch {
+    } catch (e: unknown) {
       clearDirections();
-      setDirectionsError("No route found — try a different travel mode or open in Google Maps.");
+      const errStr = e instanceof Error ? e.message : String(e);
+      if (errStr.includes("REQUEST_DENIED")) {
+        setDirectionsError("Directions API not enabled — check Google Cloud Console.");
+      } else if (errStr.includes("ZERO_RESULTS") || errStr.includes("NOT_FOUND")) {
+        setDirectionsError("No route found for this mode — try Drive or Walk.");
+      } else {
+        setDirectionsError(`Routing failed: ${errStr.slice(0, 80)}`);
+      }
     } finally {
       setDirectionsLoading(false);
     }
@@ -1432,17 +1453,18 @@ export function VenueMap({
                           <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(139,92,246,0.15)", color: "#C4B5FD", border: "1px solid rgba(139,92,246,0.25)" }}>✨ AI</span>
                         )}
                         {venue.name && (
-                          <a
-                            href={venue.place_id
-                              ? `https://www.google.com/maps/dir/?api=1&destination_place_id=${encodeURIComponent(venue.place_id)}`
-                              : (venue.latitude && venue.longitude)
-                                ? `https://www.google.com/maps/dir/?api=1&destination=${venue.latitude},${venue.longitude}`
-                                : `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent([venue.name, venue.address?.split(",").slice(0, 2).join(",")].filter(Boolean).join(", "))}`}
-                            target="_blank" rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(52,211,153,0.12)", color: "#34D399", border: "1px solid rgba(52,211,153,0.25)", textDecoration: "none", marginLeft: "auto" }}>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              selectVenue(venue.venue_id);
+                              setSidebarOpen(true);
+                              fetchPlaceDetails(venue.venue_id).then(setSelectedPlaceDetails);
+                              onVenueSelect?.(venue);
+                              getDirections(venue, directionsTravelMode);
+                            }}
+                            style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(52,211,153,0.12)", color: "#34D399", border: "1px solid rgba(52,211,153,0.25)", cursor: "pointer", marginLeft: "auto" }}>
                             🗺️ Directions
-                          </a>
+                          </button>
                         )}
                       </div>
                     </div>
