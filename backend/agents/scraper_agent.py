@@ -117,8 +117,12 @@ _OUTDOOR_KEYWORDS = {
 _OPEN_NOW_KEYWORDS = {"open today", "open now", "open right now", "currently open", "open this weekend"}
 
 
+_CLAUDE_EXTRACTION_LIMIT = 25  # venues that get full Claude signal extraction
+_MAX_VENUES = 100              # hard cap on total venues returned
+
+
 def _build_queries(intent: VenueIntent) -> list[str]:
-    """Build 2–3 complementary search queries for maximum venue coverage."""
+    """Build up to 5 complementary search queries for maximum venue coverage."""
     cuisine = intent.cuisine or ""
     city = intent.city
     occasion = intent.occasion.replace("_", " ").lower()
@@ -201,34 +205,39 @@ def _build_queries(intent: VenueIntent) -> list[str]:
         "spa", "salon", "pharmacy", "clinic", "hospital", "bank", "post office",
     }
 
-    # Museums + galleries: broad, diverse queries to surface major institutions
+    # Museums + galleries: 5 queries to surface major institutions
     has_museum = any(t in all_terms for t in ("museum", "museums"))
     has_gallery = any(t in all_terms for t in ("gallery", "galleries"))
     if has_museum or has_gallery:
         if has_museum and has_gallery:
             return [
                 f"museums and galleries {location}",
-                f"art museum natural history museum science museum {location}",
+                f"art museum natural history museum {location}",
+                f"science museum children's museum {location}",
                 f"best cultural institutions museums {location}",
+                f"contemporary art gallery exhibition {location}",
             ]
         elif has_museum:
             return [
                 f"museums {location}",
-                f"art museum natural history museum science museum {location}",
+                f"art museum natural history museum {location}",
+                f"science museum technology museum {location}",
+                f"children's museum history museum {location}",
                 f"best museums cultural institutions {location}",
             ]
         else:
             return [
-                f"galleries art gallery {location}",
-                f"best art galleries museums {location}",
+                f"art gallery {location}",
+                f"best art galleries {location}",
                 f"contemporary art gallery exhibition {location}",
+                f"galleries museums {location}",
+                f"photography gallery design gallery {location}",
             ]
 
     venue_type = cuisine or ""
     if not venue_type:
         venue_type = next((t for t in _PUBLIC_VENUES if t in all_terms), "")
     if not venue_type:
-        # Extract from occasion if it names a place type directly
         venue_type = occasion if any(t in occasion for t in _PUBLIC_VENUES) else "restaurant"
 
     if venue_type != "restaurant" and venue_type not in {"dining", "dinner", "lunch", "brunch", "breakfast"}:
@@ -238,10 +247,14 @@ def _build_queries(intent: VenueIntent) -> list[str]:
             f"{occasion} {venue_type} {location}" if occasion != venue_type else f"top {venue_type} {location}",
         ]
 
+    # Restaurants: 5 queries for maximum coverage
+    cuisine_tag = f" {cuisine}" if cuisine else ""
     return [
-        f"best {occasion} {venue_type} {location}",
-        f"{venue_type} group dining {location}",
-        f"special occasion {venue_type} {location}",
+        f"best {occasion}{cuisine_tag} restaurant {location}",
+        f"{cuisine_tag} restaurant group dining {location}",
+        f"special occasion{cuisine_tag} restaurant {location}",
+        f"top rated{cuisine_tag} restaurant {location}",
+        f"popular{cuisine_tag} restaurant {location}",
     ]
 
 
@@ -348,10 +361,15 @@ class ScraperAgent:
         for batch in nimble_maps_batches:
             _ingest(batch, "nimble_maps")
 
-        # ── Phase 2: Claude signal extraction ────────────────────────────────
-        top = raw_venues[:20]
+        # ── Phase 2: Claude signal extraction (top 25 only for speed) ──────────
+        # Remaining venues are included as base data so the scorer can still
+        # rank them — they just won't have noise/occasion/capacity signals.
+        all_venues = raw_venues[:_MAX_VENUES]
+        extraction_batch = all_venues[:_CLAUDE_EXTRACTION_LIMIT]
+        base_only = all_venues[_CLAUDE_EXTRACTION_LIMIT:]
+
         signals_list = await asyncio.gather(
-            *[_call_with_retry(v) for v in top], return_exceptions=True
+            *[_call_with_retry(v) for v in extraction_batch], return_exceptions=True
         )
 
         # Price hint from Google Places API (most reliable source)
@@ -363,7 +381,7 @@ class ScraperAgent:
                         places_price[v["place_id"]] = v["price_per_head_usd"]
 
         enriched: list[dict] = []
-        for raw_venue, signals in zip(top, signals_list):
+        for raw_venue, signals in zip(extraction_batch, signals_list):
             base = raw_venue.model_dump()
             if isinstance(signals, Exception) or signals is None:
                 enriched.append(base)
@@ -373,5 +391,9 @@ class ScraperAgent:
                 sig_dict["price_per_head_usd"] = places_price[raw_venue.place_id]
             ev = EnrichedVenue(**{**base, **sig_dict})
             enriched.append(ev.model_dump())
+
+        # Append remaining raw venues (no Claude signals — scorer uses base score)
+        for raw_venue in base_only:
+            enriched.append(raw_venue.model_dump())
 
         return enriched
