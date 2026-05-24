@@ -121,6 +121,68 @@ _OPEN_NOW_KEYWORDS = {"open today", "open now", "open right now", "currently ope
 _CLAUDE_EXTRACTION_LIMIT = 25  # venues that get full Claude signal extraction
 _MAX_VENUES = 100              # hard cap on total venues returned
 
+# Hardcoded city coordinates — used before geocoding so a geocoding failure
+# never silently disables the location restriction.
+# (lat, lng, ISO-3166-1 alpha-2 country code)
+_CITY_COORDS: dict[str, tuple[float, float, str]] = {
+    "New York City":  (40.7128, -74.0060, "US"),
+    "New York":       (40.7128, -74.0060, "US"),
+    "NYC":            (40.7128, -74.0060, "US"),
+    "Manhattan":      (40.7831, -73.9712, "US"),
+    "Brooklyn":       (40.6782, -73.9442, "US"),
+    "Queens":         (40.7282, -73.7949, "US"),
+    "Bronx":          (40.8448, -73.8648, "US"),
+    "Los Angeles":    (34.0522, -118.2437, "US"),
+    "LA":             (34.0522, -118.2437, "US"),
+    "San Francisco":  (37.7749, -122.4194, "US"),
+    "SF":             (37.7749, -122.4194, "US"),
+    "Chicago":        (41.8781, -87.6298, "US"),
+    "Seattle":        (47.6062, -122.3321, "US"),
+    "Boston":         (42.3601, -71.0589, "US"),
+    "Austin":         (30.2672, -97.7431, "US"),
+    "Denver":         (39.7392, -104.9903, "US"),
+    "Portland":       (45.5051, -122.6750, "US"),
+    "Miami":          (25.7617, -80.1918, "US"),
+    "Atlanta":        (33.7490, -84.3880, "US"),
+    "Dallas":         (32.7767, -96.7970, "US"),
+    "Houston":        (29.7604, -95.3698, "US"),
+    "Phoenix":        (33.4484, -112.0740, "US"),
+    "Philadelphia":   (39.9526, -75.1652, "US"),
+    "San Diego":      (32.7157, -117.1611, "US"),
+    "Las Vegas":      (36.1699, -115.1398, "US"),
+    "Nashville":      (36.1627, -86.7816, "US"),
+    "Minneapolis":    (44.9778, -93.2650, "US"),
+    "New Orleans":    (29.9511, -90.0715, "US"),
+    "Washington DC":  (38.9072, -77.0369, "US"),
+    "Washington":     (38.9072, -77.0369, "US"),
+    "DC":             (38.9072, -77.0369, "US"),
+    "San Jose":       (37.3382, -121.8863, "US"),
+    "Oakland":        (37.8044, -122.2712, "US"),
+    "Pittsburgh":     (40.4406, -79.9959, "US"),
+    "Charlotte":      (35.2271, -80.8431, "US"),
+    "Indianapolis":   (39.7684, -86.1581, "US"),
+    "Columbus":       (39.9612, -82.9988, "US"),
+    "Fort Worth":     (32.7555, -97.3308, "US"),
+    "Memphis":        (35.1495, -90.0490, "US"),
+    "Baltimore":      (39.2904, -76.6122, "US"),
+    "Louisville":     (38.2527, -85.7585, "US"),
+    "Milwaukee":      (43.0389, -87.9065, "US"),
+    "Albuquerque":    (35.0844, -106.6504, "US"),
+    "Tucson":         (32.2226, -110.9747, "US"),
+    "Fresno":         (36.7378, -119.7871, "US"),
+    "Sacramento":     (38.5816, -121.4944, "US"),
+    "Salt Lake City": (40.7608, -111.8910, "US"),
+    "Kansas City":    (39.0997, -94.5786, "US"),
+    "Long Beach":     (33.7701, -118.1937, "US"),
+    "Raleigh":        (35.7796, -78.6382, "US"),
+    "Tampa":          (27.9506, -82.4572, "US"),
+    "Orlando":        (28.5383, -81.3792, "US"),
+    "Cincinnati":     (39.1031, -84.5120, "US"),
+    "Cleveland":      (41.4993, -81.6944, "US"),
+    "St. Louis":      (38.6270, -90.1994, "US"),
+    "Detroit":        (42.3314, -83.0458, "US"),
+}
+
 
 def _build_queries(intent: VenueIntent) -> list[str]:
     """Build up to 5 complementary search queries for maximum venue coverage."""
@@ -290,22 +352,29 @@ class ScraperAgent:
         is_outdoor = any(kw in all_signals_lower for kw in _OUTDOOR_KEYWORDS)
 
         # Build location restriction — always required to prevent cross-country results.
-        # GPS coordinates take priority; fall back to geocoding the intent city.
+        # GPS coordinates take priority; then hardcoded city coords; then live geocoding.
+        # Hardcoded coords ensure a geocoding failure never silently disables restriction.
+        country_code = ""
         if user_lat is not None and user_lng is not None:
             radius = max(500.0, min(50000.0, user_radius_m or 5000.0))
             bias: dict | None = {"lat": user_lat, "lng": user_lng, "radius_m": radius}
+            country_code = "US"
         elif intent.city not in ("Unknown", ""):
-            # Geocode the city so we can restrict results to it.
-            # Outdoor searches need a wider radius to cover surrounding regions.
             city_radius = 80000.0 if is_outdoor else 30000.0
             bias = None
-            try:
-                async with GoogleMapsClient() as geocoder:
-                    geo = await geocoder.geocode(intent.city)
-                if geo:
-                    bias = {"lat": geo.latitude, "lng": geo.longitude, "radius_m": city_radius}
-            except Exception:
-                pass
+            city_key = intent.city.strip()
+            if city_key in _CITY_COORDS:
+                clat, clng, country_code = _CITY_COORDS[city_key]
+                bias = {"lat": clat, "lng": clng, "radius_m": city_radius}
+            else:
+                # Unknown city — attempt live geocoding as fallback
+                try:
+                    async with GoogleMapsClient() as geocoder:
+                        geo = await geocoder.geocode(intent.city)
+                    if geo:
+                        bias = {"lat": geo.latitude, "lng": geo.longitude, "radius_m": city_radius}
+                except Exception:
+                    pass
         else:
             bias = None
 
@@ -319,8 +388,8 @@ class ScraperAgent:
         try:
             async with NimbleClient() as nimble:
                 nimble_tasks = [
-                    nimble.maps_search(queries[0], location),
-                    *[nimble.serp_search(q) for q in queries[:2]],
+                    nimble.maps_search(queries[0], location, country=country_code),
+                    *[nimble.serp_search(q, country=country_code) for q in queries[:2]],
                 ]
                 nimble_results = await asyncio.wait_for(
                     asyncio.gather(*nimble_tasks, return_exceptions=True),

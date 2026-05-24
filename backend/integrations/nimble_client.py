@@ -58,23 +58,29 @@ class NimbleClient:
 
     # ── google_maps engine ────────────────────────────────────────────────────
 
-    async def maps_search(self, query: str, location: str = "") -> list[dict]:
+    async def maps_search(self, query: str, location: str = "", country: str = "") -> list[dict]:
         """
         Nimble google_maps SERP — returns local pack results.
 
         Each result dict has the same keys as GoogleMapsClient.search_venues:
           place_id, name, address, latitude, longitude,
           rating, price_per_head_usd, snippet, url, source
+
+        country: ISO 3166-1 alpha-2 code (e.g. "US") — restricts results to
+        that country.  Without this, Nimble may return results from abroad.
         """
         if not self._http:
             return []
 
+        locale = f"en-{country}" if country else "en"
         payload: dict[str, Any] = {
             "parse": True,
             "search_engine_type": "google_maps",
             "query": query,
-            "locale": "en",
+            "locale": locale,
         }
+        if country:
+            payload["country"] = country
         if location:
             payload["geo"] = location
 
@@ -116,7 +122,7 @@ class NimbleClient:
 
     # ── google_search engine ──────────────────────────────────────────────────
 
-    async def serp_search(self, query: str) -> list[dict]:
+    async def serp_search(self, query: str, country: str = "") -> list[dict]:
         """
         Nimble google_search SERP — organic web results.
 
@@ -124,16 +130,22 @@ class NimbleClient:
         The snippet (from Yelp, TripAdvisor, Time Out, etc.) is passed to
         Claude for signal extraction.  No coordinates — these supplement
         maps results rather than replacing them.
+
+        country: ISO 3166-1 alpha-2 code (e.g. "US") — restricts organic
+        results to that country's Google index.
         """
         if not self._http:
             return []
 
+        locale = f"en-{country}" if country else "en"
         payload: dict[str, Any] = {
             "parse": True,
             "search_engine_type": "google_search",
             "query": query,
-            "locale": "en",
+            "locale": locale,
         }
+        if country:
+            payload["country"] = country
 
         with http_span(
             "therightspot.nimble_serp",
