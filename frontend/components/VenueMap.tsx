@@ -1673,8 +1673,8 @@ export function VenueMap({
                         setShowAllMatches(false);
                       }}
                       style={{
-                        borderRadius: 14, cursor: "pointer", overflow: "hidden",
-                        minHeight: 80,
+                        borderRadius: 14, cursor: "pointer",
+                        minHeight: 120,
                         border: `1.5px solid ${isSelected ? c.from : "rgba(255,255,255,0.08)"}`,
                         boxShadow: isSelected ? `0 0 20px ${c.glow}` : "0 2px 10px rgba(0,0,0,0.3)",
                         background: isSelected
@@ -1686,6 +1686,7 @@ export function VenueMap({
                       {/* Top gradient bar */}
                       <div style={{
                         height: 4,
+                        borderRadius: "14px 14px 0 0",
                         background: `linear-gradient(90deg, ${c.from}, ${c.to})`,
                       }} />
 
