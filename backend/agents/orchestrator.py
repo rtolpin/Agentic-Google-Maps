@@ -240,7 +240,14 @@ def _fallback_intelligence(venue: ScoredVenue, intent: VenueIntent) -> VenueInte
 
 # ─── Orchestration ────────────────────────────────────────────────────────────
 
-async def orchestrate(query: str, user_id: str, *, user_city: str | None = None) -> AsyncIterator[dict]:
+async def orchestrate(
+    query: str,
+    user_id: str,
+    *,
+    user_city: str | None = None,
+    user_lat: float | None = None,
+    user_lng: float | None = None,
+) -> AsyncIterator[dict]:
     """
     Main orchestration loop.
     Yields SSE-compatible dicts as results arrive.
@@ -262,7 +269,7 @@ async def orchestrate(query: str, user_id: str, *, user_city: str | None = None)
 
         # Step 3 — dispatch sub-agents in parallel
         yield {"event": "status", "data": "Searching across sources..."}
-        scrape_task = asyncio.create_task(ScraperAgent().run(intent))
+        scrape_task = asyncio.create_task(ScraperAgent().run(intent, user_lat=user_lat, user_lng=user_lng))
         validate_task = asyncio.create_task(ValidatorAgent().run(intent))
         global_task = asyncio.create_task(GlobalIntelligenceAgent().run(intent))
 

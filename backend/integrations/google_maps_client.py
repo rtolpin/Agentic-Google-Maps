@@ -89,6 +89,7 @@ class GoogleMapsClient:
         self,
         query: str,
         max_results: int = 15,
+        location_bias: dict | None = None,
     ) -> list[dict]:
         """
         Text-search for venues using the Google Places API (New).
@@ -99,7 +100,20 @@ class GoogleMapsClient:
 
         Coordinates and place_id ARE storable (neutral identifiers / universal data).
         editorial_summary is used for Claude signal extraction then discarded.
+
+        location_bias: optional {"lat": float, "lng": float} — when provided, adds a
+        locationBias.circle (5 km radius) so results are anchored to the user's GPS
+        position rather than a broad city name.
         """
+        body: dict = {"textQuery": query, "maxResultCount": min(max_results, 20)}
+        if location_bias:
+            body["locationBias"] = {
+                "circle": {
+                    "center": {"latitude": location_bias["lat"], "longitude": location_bias["lng"]},
+                    "radius": 5000.0,
+                }
+            }
+
         with http_span(
             "therightspot.google_maps.search",
             "google_maps",
@@ -110,7 +124,7 @@ class GoogleMapsClient:
             try:
                 resp = await self._places.post(
                     "/places:searchText",
-                    json={"textQuery": query, "maxResultCount": min(max_results, 20)},
+                    json=body,
                     headers={"X-Goog-FieldMask": _SEARCH_FIELD_MASK},
                 )
                 resp.raise_for_status()

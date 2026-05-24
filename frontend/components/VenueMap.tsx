@@ -485,9 +485,11 @@ export function VenueMap({
     let q = rawQ.trim();
     if (!q) return;
 
-    // "near me" → resolve to actual location before searching
+    // "near me" → resolve GPS coords; pass them to backend as locationBias instead of
+    // replacing the query text with a broad city name like "Manhattan, New York".
+    let searchCoords: { lat: number; lng: number } | undefined;
     if (/near me/i.test(q)) {
-      // If we don't have location yet, check localStorage cache first, then request fresh
+      // Check localStorage cache first, then request fresh position
       if (!userLocationRef.current) {
         try {
           const cached = localStorage.getItem("trs_user_location");
@@ -515,29 +517,18 @@ export function VenueMap({
       }
 
       if (userLocationRef.current) {
-        const pos = userLocationRef.current;
+        searchCoords = userLocationRef.current;
+        // Geocode in background to update detectedCity for display (does NOT replace query text)
         try {
           const geocoder = new google.maps.Geocoder();
-          await new Promise<void>((resolve) => {
-            geocoder.geocode({ location: pos }, (results, status) => {
-              if (status === "OK" && results?.[0]) {
-                const sub = results[0].address_components.find((c) =>
-                  c.types.includes("neighborhood") || c.types.includes("sublocality_level_1")
-                );
-                const locality = results[0].address_components.find((c) =>
-                  c.types.includes("locality")
-                );
-                const nbhd = sub?.long_name || "";
-                const cityName = locality?.long_name || "";
-                const area = nbhd ? `${nbhd}, ${cityName}` : cityName;
-                if (area) {
-                  q = q.replace(/near me/gi, `in ${area}`);
-                  setDetectedCity(cityName || area);
-                  setInputValue(q);
-                }
-              }
-              resolve();
-            });
+          geocoder.geocode({ location: searchCoords }, (results, status) => {
+            if (status === "OK" && results?.[0]) {
+              const locality = results[0].address_components.find((c) =>
+                c.types.includes("locality")
+              );
+              const cityName = locality?.long_name || "";
+              if (cityName) setDetectedCity(cityName);
+            }
           });
         } catch (_) { /* fall through */ }
       }
@@ -554,7 +545,7 @@ export function VenueMap({
     if (detected !== "all") setActiveCategory(detected);
 
     try {
-      await search(q, detectedCity || undefined);
+      await search(q, detectedCity || undefined, searchCoords);
     } finally {
       mapSpan.finish();
       span.finish();

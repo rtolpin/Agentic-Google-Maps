@@ -384,6 +384,8 @@ class SearchRequest(BaseModel):
     query: str = Field(..., min_length=3, max_length=500)
     user_id: Optional[str] = None
     user_city: Optional[str] = None  # browser-detected city; used as fallback when LLM can't extract one
+    user_lat: Optional[float] = None  # GPS latitude — biases Google Places search to exact user position
+    user_lng: Optional[float] = None  # GPS longitude
 
 
 class CityBenchmark(BaseModel):

@@ -234,13 +234,20 @@ class ScraperAgent:
       Phase 2 — Claude extracts qualitative signals from the merged text.
     """
 
-    async def run(self, intent: VenueIntent) -> list[dict]:
+    async def run(
+        self,
+        intent: VenueIntent,
+        *,
+        user_lat: float | None = None,
+        user_lng: float | None = None,
+    ) -> list[dict]:
         queries = _build_queries(intent)
         location = intent.neighborhood or intent.city
+        bias = {"lat": user_lat, "lng": user_lng} if user_lat is not None and user_lng is not None else None
 
         # ── Phase 1: Google Places (must complete) + Nimble (best-effort, 10s cap) ──
         async with GoogleMapsClient() as maps:
-            google_tasks = [maps.search_venues(q, max_results=10) for q in queries]
+            google_tasks = [maps.search_venues(q, max_results=10, location_bias=bias) for q in queries]
             google_batches = await asyncio.gather(*google_tasks, return_exceptions=True)
 
         nimble_maps_batches: list[Any] = []
