@@ -90,6 +90,7 @@ class GoogleMapsClient:
         query: str,
         max_results: int = 15,
         location_bias: dict | None = None,
+        open_now: bool = False,
     ) -> list[dict]:
         """
         Text-search for venues using the Google Places API (New).
@@ -106,6 +107,8 @@ class GoogleMapsClient:
         position rather than a broad city name.
         """
         body: dict = {"textQuery": query, "maxResultCount": min(max_results, 20)}
+        if open_now:
+            body["openNow"] = True
         if location_bias:
             body["locationBias"] = {
                 "circle": {

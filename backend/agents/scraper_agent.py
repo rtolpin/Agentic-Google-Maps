@@ -114,6 +114,9 @@ _OUTDOOR_KEYWORDS = {
     "greenway", "preserve", "state park", "national park",
 }
 
+_OPEN_NOW_KEYWORDS = {"open today", "open now", "open right now", "currently open", "open this weekend"}
+
+
 def _build_queries(intent: VenueIntent) -> list[str]:
     """Build 2–3 complementary search queries for maximum venue coverage."""
     cuisine = intent.cuisine or ""
@@ -197,6 +200,30 @@ def _build_queries(intent: VenueIntent) -> list[str]:
         "theater", "arcade", "bookstore", "bookshop", "market", "farmers market",
         "spa", "salon", "pharmacy", "clinic", "hospital", "bank", "post office",
     }
+
+    # Museums + galleries: broad, diverse queries to surface major institutions
+    has_museum = any(t in all_terms for t in ("museum", "museums"))
+    has_gallery = any(t in all_terms for t in ("gallery", "galleries"))
+    if has_museum or has_gallery:
+        if has_museum and has_gallery:
+            return [
+                f"museums and galleries {location}",
+                f"art museum natural history museum science museum {location}",
+                f"best cultural institutions museums {location}",
+            ]
+        elif has_museum:
+            return [
+                f"museums {location}",
+                f"art museum natural history museum science museum {location}",
+                f"best museums cultural institutions {location}",
+            ]
+        else:
+            return [
+                f"galleries art gallery {location}",
+                f"best art galleries museums {location}",
+                f"contemporary art gallery exhibition {location}",
+            ]
+
     venue_type = cuisine or ""
     if not venue_type:
         venue_type = next((t for t in _PUBLIC_VENUES if t in all_terms), "")
@@ -208,7 +235,7 @@ def _build_queries(intent: VenueIntent) -> list[str]:
         return [
             f"{venue_type} {location}",
             f"best {venue_type} near {location}",
-            f"{occasion} {venue_type} {location}",
+            f"{occasion} {venue_type} {location}" if occasion != venue_type else f"top {venue_type} {location}",
         ]
 
     return [
@@ -249,9 +276,14 @@ class ScraperAgent:
             if user_lat is not None and user_lng is not None else None
         )
 
+        # Detect "open today / open now" in occasion or signals so Google Places
+        # can filter to currently-open venues.
+        all_signals_lower = " ".join([intent.occasion] + (intent.other_signals or [])).lower()
+        open_now = any(kw in all_signals_lower for kw in _OPEN_NOW_KEYWORDS)
+
         # ── Phase 1: Google Places (must complete) + Nimble (best-effort, 10s cap) ──
         async with GoogleMapsClient() as maps:
-            google_tasks = [maps.search_venues(q, max_results=10, location_bias=bias) for q in queries]
+            google_tasks = [maps.search_venues(q, max_results=20, location_bias=bias, open_now=open_now) for q in queries]
             google_batches = await asyncio.gather(*google_tasks, return_exceptions=True)
 
         nimble_maps_batches: list[Any] = []
@@ -317,7 +349,7 @@ class ScraperAgent:
             _ingest(batch, "nimble_maps")
 
         # ── Phase 2: Claude signal extraction ────────────────────────────────
-        top = raw_venues[:12]
+        top = raw_venues[:20]
         signals_list = await asyncio.gather(
             *[_call_with_retry(v) for v in top], return_exceptions=True
         )

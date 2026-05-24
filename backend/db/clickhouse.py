@@ -192,7 +192,7 @@ WHERE (city = {city:String} OR {city:String} = 'Unknown')
   AND (cuisine = {cuisine:String} OR {cuisine:String} = '')
   AND scraped_at >= now() - INTERVAL 7 DAY
 ORDER BY match_score DESC
-LIMIT 20
+LIMIT 30
 """
 
 
