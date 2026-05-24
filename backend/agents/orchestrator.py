@@ -302,16 +302,21 @@ async def orchestrate(
             scored_venues: list[ScoredVenue] = await asyncio.to_thread(_ch.score_venues, intent)
             span.set_tag("db.rows_returned", len(scored_venues))
 
-        # Fallback: ClickHouse empty (cold start / unknown city) — score enriched in-memory
-        if not scored_venues and enriched_venues:
-            scored_venues = _score_enriched_fallback(enriched_venues, intent)
-
-        # Filter out venues with stale/wrong coordinates (ClickHouse may have old data
-        # stored before the location restriction was added).
+        # Filter BEFORE fallback check — ClickHouse may hold stale entries with wrong
+        # coordinates (stored before the locationRestriction fix).  Filtering first means
+        # "all ClickHouse results were stale" correctly triggers the in-memory fallback.
         scored_venues = await _filter_by_location(
             scored_venues, intent, user_lat=user_lat, user_lng=user_lng,
             user_radius_m=user_radius_m,
         )
+
+        # Fallback: no valid results in ClickHouse → score fresh scraper data in-memory
+        if not scored_venues and enriched_venues:
+            scored_venues = _score_enriched_fallback(enriched_venues, intent)
+            scored_venues = await _filter_by_location(
+                scored_venues, intent, user_lat=user_lat, user_lng=user_lng,
+                user_radius_m=user_radius_m,
+            )
 
         root.set_tag("search.venues_scored", len(scored_venues))
 
