@@ -1637,9 +1637,9 @@ export function VenueMap({
             <div style={{
               flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 20px 20px",
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
-              gap: 12,
-              alignContent: "start",
+              gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
+              gridAutoRows: 110,
+              gap: 14,
             }}>
               {state.venues
                 .filter((v) => {
@@ -1674,6 +1674,7 @@ export function VenueMap({
                       }}
                       style={{
                         borderRadius: 14, cursor: "pointer", overflow: "hidden",
+                        height: "100%", display: "flex", flexDirection: "column",
                         border: `1.5px solid ${isSelected ? c.from : "rgba(255,255,255,0.08)"}`,
                         boxShadow: isSelected ? `0 0 20px ${c.glow}` : "0 2px 10px rgba(0,0,0,0.3)",
                         background: isSelected
@@ -1713,17 +1714,18 @@ export function VenueMap({
                         {/* Name */}
                         <div style={{
                           fontSize: 14, fontWeight: 700, color: venue.name ? "#F1F5F9" : "#475569",
-                          marginBottom: 4, lineHeight: 1.3, fontStyle: venue.name ? "normal" : "italic",
-                          display: "-webkit-box", WebkitLineClamp: 2,
-                          WebkitBoxOrient: "vertical" as React.CSSProperties["WebkitBoxOrient"],
-                          overflow: "hidden",
+                          marginBottom: 3, lineHeight: "18px", height: 36,
+                          overflow: "hidden", fontStyle: venue.name ? "normal" : "italic",
                         }}>
                           {venue.name || "Unnamed venue"}
                         </div>
 
                         {/* Address */}
                         {venue.address && (
-                          <div style={{ fontSize: 11, color: "#64748B", marginBottom: 8, lineHeight: 1.4 }}>
+                          <div style={{
+                            fontSize: 11, color: "#64748B", lineHeight: "16px",
+                            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                          }}>
                             {venue.address.split(",").slice(0, 2).join(",")}
                           </div>
                         )}
