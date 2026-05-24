@@ -1025,10 +1025,46 @@ export function VenueMap({
             backdropFilter: "blur(8px)",
           }}
         >
-          {transitLoading ? (
-            <><span style={{ display: "inline-block", animation: "spin 1s linear infinite" }}>⏳</span> Finding stops…</>
-          ) : showTransit ? "🚇 Hide Transit" : "🚇 Nearby Transit"}
+          🚇 {showTransit ? "Hide Transit" : "Nearby Transit"}
         </button>
+
+        {/* Loading card — shown while fetching */}
+        {transitLoading && (
+          <div style={{
+            background: "rgba(15,23,42,0.96)", backdropFilter: "blur(12px)",
+            border: "1px solid rgba(255,255,255,0.12)", borderRadius: 14,
+            padding: "16px 18px", width: 240,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+            display: "flex", flexDirection: "column", gap: 10,
+          }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#E2E8F0" }}>
+              Finding nearby transit…
+            </div>
+            {/* Animated skeleton rows */}
+            {[90, 75, 82].map((w, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{
+                  width: 28, height: 28, borderRadius: "50%", flexShrink: 0,
+                  background: "rgba(255,255,255,0.08)",
+                  animation: `pulse 1.4s ease-in-out ${i * 0.15}s infinite`,
+                }} />
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 5 }}>
+                  <div style={{
+                    height: 10, borderRadius: 5, width: `${w}%`,
+                    background: "rgba(255,255,255,0.08)",
+                    animation: `pulse 1.4s ease-in-out ${i * 0.15}s infinite`,
+                  }} />
+                  <div style={{
+                    height: 8, borderRadius: 4, width: "50%",
+                    background: "rgba(255,255,255,0.05)",
+                    animation: `pulse 1.4s ease-in-out ${i * 0.15 + 0.1}s infinite`,
+                  }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {showTransit && transitStops.length > 0 && (
           <div style={{
             background: "rgba(15,23,42,0.95)", backdropFilter: "blur(12px)",
