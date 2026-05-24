@@ -25,6 +25,24 @@ Instead of returning a pile of pins, The Right Spot understands *intent* — and
 - **Search This Area** — drag or zoom the map, hit the button and the search re-runs anchored to the visible viewport (radius derived from zoom level)
 - **User location dot** — GPS position persisted in `localStorage` (30 min TTL) so the dot survives page refreshes
 - **Intent chips** — parsed occasion, cuisine, noise preference, and price band shown as tappable refinement chips below the search bar
+- **All Matches modal** — "View All ↗" opens a searchable, filterable grid of every result; deduplicates venues by name in case ClickHouse `ReplacingMergeTree` hasn't merged yet
+- **Resizable panels** — left AI panel and right venue detail sidebar are both drag-resizable; left panel is collapsible
+
+### 🗺️ Directions (In-Map Routing)
+- **Get Directions button** — appears in the venue detail sidebar header; renders the route directly on the map using Google Maps `DirectionsService` + `DirectionsRenderer` (no redirect to a separate app)
+- **Four travel modes** — Transit 🚇, Drive 🚗, Walk 🚶, Bike 🚲 — selectable inline; result shows duration and distance (e.g. *25 min · 2.1 km*)
+- **Smart destination fallback** — uses Google Place ID when available, falls back to lat/lng coordinates, then to venue name + address as a text query — so directions always work even for venues without stored coordinates
+- **Clear Route** — button toggles to "Clear Route" once a route is active; clears the polyline from the map
+- **External directions chip** — each venue card in the left panel has a "🗺️ Directions" chip that opens Google Maps with the destination pre-filled (Place ID → coordinates → name/address text query)
+- **GPS error handling** — if location permission is denied, an inline error prompts the user to enable it instead of silently failing
+
+### 🚇 Nearby Transit
+- **Nearby Transit button** — floating button on the map fetches airports, subway stations, bus stops, train stations, and ferry terminals within 1.5 km of the current map center using the Google Places Nearby Search API
+- **Color-coded markers** — each transit type has a distinct color and emoji pin (🚇 subway amber, 🚌 bus green, ✈️ airport purple, 🚆 train blue, ⛴️ ferry cyan)
+- **Transit info window** — clicking a transit marker shows its name, address, and a directions link
+- **Toggle on/off** — markers are created once and shown/hidden with `marker.map` assignment (no DOM teardown = no flashing)
+- **Loading skeleton** — animated skeleton rows appear while the API call is in-flight so the UI never looks frozen
+- **Transit stop filtering** — backend scraper agent blocks transit stations (`subway_station`, `train_station`, `bus_stop`, etc.) from being ingested as venue results
 
 ---
 
@@ -261,8 +279,9 @@ Type anything — `"quiet cafe for deep work"`, `"hiking near downtown"`, `"firs
 Enable these APIs in Google Cloud Console:
 
 1. **Maps JavaScript API** — map rendering + AdvancedMarkerElement
-2. **Places API (New)** — text search with `locationBias`, real-time place details
+2. **Places API (New)** — text search with `locationBias`, real-time place details, and nearby transit search
 3. **Geocoding API** — reverse geocoding for Search This Area label + user location city detection
+4. **Directions API** — in-map route rendering via `DirectionsService` (Transit, Drive, Walk, Bike modes)
 
 Create a **Map ID** at Google Maps Platform → Map Management (Vector type with tilt + rotation for 3D building views).
 
