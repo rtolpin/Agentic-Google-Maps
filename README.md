@@ -4,7 +4,7 @@
 
 ## 🔗 Live Demo
 
-### **[→ agentic-engineering-hack.vercel.app](https://agentic-engineering-hack.vercel.app)**
+### **[https://agentic-engineering-hack.vercel.app](https://agentic-engineering-hack.vercel.app)**
 
 Instead of returning a pile of pins, The Right Spot understands *intent* — and returns the right spot for your specific situation, time, and mood.
 
