@@ -247,6 +247,7 @@ async def orchestrate(
     user_city: str | None = None,
     user_lat: float | None = None,
     user_lng: float | None = None,
+    user_radius_m: float | None = None,
 ) -> AsyncIterator[dict]:
     """
     Main orchestration loop.
@@ -269,7 +270,7 @@ async def orchestrate(
 
         # Step 3 — dispatch sub-agents in parallel
         yield {"event": "status", "data": "Searching across sources..."}
-        scrape_task = asyncio.create_task(ScraperAgent().run(intent, user_lat=user_lat, user_lng=user_lng))
+        scrape_task = asyncio.create_task(ScraperAgent().run(intent, user_lat=user_lat, user_lng=user_lng, user_radius_m=user_radius_m))
         validate_task = asyncio.create_task(ValidatorAgent().run(intent))
         global_task = asyncio.create_task(GlobalIntelligenceAgent().run(intent))
 

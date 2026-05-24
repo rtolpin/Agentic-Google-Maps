@@ -110,7 +110,7 @@ class GoogleMapsClient:
             body["locationBias"] = {
                 "circle": {
                     "center": {"latitude": location_bias["lat"], "longitude": location_bias["lng"]},
-                    "radius": 5000.0,
+                    "radius": float(location_bias.get("radius_m", 5000.0)),
                 }
             }
 

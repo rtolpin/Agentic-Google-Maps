@@ -560,10 +560,21 @@ export function VenueMap({
     const center = mapInstance.getCenter();
     if (!center) return;
 
-    // Use the map center's exact GPS coordinates as the search anchor —
-    // the backend will apply a locationBias.circle so results are truly
-    // from the visible area rather than a broad city name.
-    const areaCoords = { lat: center.lat(), lng: center.lng() };
+    // Use the map center's exact GPS coordinates as the search anchor.
+    // Derive the radius from the visible viewport so Search This Area
+    // respects the current zoom level rather than using a fixed 5 km.
+    const centerLat = center.lat();
+    const centerLng = center.lng();
+    let radiusM = 5000; // default fallback
+    const bounds = mapInstance.getBounds();
+    if (bounds) {
+      const ne = bounds.getNorthEast();
+      const DEG_TO_M = 111320;
+      const halfLatM = Math.abs(ne.lat() - centerLat) * DEG_TO_M;
+      const halfLngM = Math.abs(ne.lng() - centerLng) * DEG_TO_M * Math.cos(centerLat * Math.PI / 180);
+      radiusM = Math.max(500, Math.min(50000, Math.max(halfLatM, halfLngM)));
+    }
+    const areaCoords = { lat: centerLat, lng: centerLng, radiusM };
 
     // Strip "near me" and any previously injected "in [location]" suffix
     const baseQuery = inputValue
@@ -2046,7 +2057,7 @@ function VenueDetailSidebar({ venue, placeDetails, onClose }: VenueDetailSidebar
             {(venue.neighborhood || venue.cuisine) && (
               <div style={{ fontSize: 12, color: "#64748B", marginTop: 3 }}>
                 {venue.neighborhood && `${venue.neighborhood} · `}
-                {venue.cuisine}
+                {fmt(venue.cuisine)}
               </div>
             )}
           </div>
@@ -2124,7 +2135,7 @@ function VenueDetailSidebar({ venue, placeDetails, onClose }: VenueDetailSidebar
                   </div>
                   <p style={{ margin: 0, fontSize: 15, color: "#E2E8F0", lineHeight: 1.75 }}>
                     {intel?.why_card || (
-                      `${venue.name} is a ${venue.cuisine || "venue"} in ${venue.neighborhood || venue.city}. ` +
+                      `${venue.name} is a ${fmt(venue.cuisine) || "venue"} in ${venue.neighborhood || venue.city}. ` +
                       venue.key_quotes.slice(0, 2).join(" ")
                     )}
                   </p>
@@ -2168,7 +2179,7 @@ function VenueDetailSidebar({ venue, placeDetails, onClose }: VenueDetailSidebar
                   </div>
                   <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                     {Object.entries(intel.sensitivity_bars).map(([dim, score]) => (
-                      <SensitivityBar key={dim} label={dim.replace(/_/g, " ")} value={score} large />
+                      <SensitivityBar key={dim} label={fmt(dim)} value={score} large />
                     ))}
                   </div>
                 </div>
@@ -2210,7 +2221,7 @@ function VenueDetailSidebar({ venue, placeDetails, onClose }: VenueDetailSidebar
                 </div>
                 <p style={{ margin: 0, fontSize: 13, color: "#CBD5E1", lineHeight: 1.65 }}>
                   {intel?.why_card || (
-                    `${venue.name} is a ${venue.cuisine || "venue"} in ${venue.neighborhood || venue.city}. ` +
+                    `${venue.name} is a ${fmt(venue.cuisine) || "venue"} in ${venue.neighborhood || venue.city}. ` +
                     venue.key_quotes.slice(0, 2).join(" ")
                   )}
                 </p>
@@ -2235,7 +2246,7 @@ function VenueDetailSidebar({ venue, placeDetails, onClose }: VenueDetailSidebar
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 16px" }}>
                   {Object.entries(intel.sensitivity_bars).map(([dim, score]) => (
-                    <SensitivityBar key={dim} label={dim.replace(/_/g, " ")} value={score} />
+                    <SensitivityBar key={dim} label={fmt(dim)} value={score} />
                   ))}
                 </div>
               </div>

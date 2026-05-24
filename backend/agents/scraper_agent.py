@@ -240,10 +240,14 @@ class ScraperAgent:
         *,
         user_lat: float | None = None,
         user_lng: float | None = None,
+        user_radius_m: float | None = None,
     ) -> list[dict]:
         queries = _build_queries(intent)
         location = intent.neighborhood or intent.city
-        bias = {"lat": user_lat, "lng": user_lng} if user_lat is not None and user_lng is not None else None
+        bias = (
+            {"lat": user_lat, "lng": user_lng, "radius_m": max(500.0, min(50000.0, user_radius_m or 5000.0))}
+            if user_lat is not None and user_lng is not None else None
+        )
 
         # ── Phase 1: Google Places (must complete) + Nimble (best-effort, 10s cap) ──
         async with GoogleMapsClient() as maps:

@@ -386,6 +386,7 @@ class SearchRequest(BaseModel):
     user_city: Optional[str] = None  # browser-detected city; used as fallback when LLM can't extract one
     user_lat: Optional[float] = None  # GPS latitude — biases Google Places search to exact user position
     user_lng: Optional[float] = None  # GPS longitude
+    user_radius_m: Optional[float] = None  # search radius in metres (derived from map viewport for Search This Area)
 
 
 class CityBenchmark(BaseModel):

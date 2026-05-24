@@ -233,7 +233,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export interface UseVenueSearchReturn {
   state: SearchState;
-  search: (query: string, userCity?: string, userCoords?: { lat: number; lng: number }) => Promise<void>;
+  search: (query: string, userCity?: string, userCoords?: { lat: number; lng: number; radiusM?: number }) => Promise<void>;
   sendFeedback: (venueId: string, query: string, feedback: FeedbackValue) => Promise<void>;
   /**
    * Fetch real-time Google Place details for a venue.
@@ -275,7 +275,7 @@ export function useVenueSearch(userId: string): UseVenueSearchReturn {
   }, []);
 
   const search = useCallback(
-    async (query: string, userCity?: string, userCoords?: { lat: number; lng: number }): Promise<void> => {
+    async (query: string, userCity?: string, userCoords?: { lat: number; lng: number; radiusM?: number }): Promise<void> => {
       abortRef.current?.abort();
       abortRef.current = new AbortController();
       dispatch({ type: "SEARCH_STARTED" });
@@ -290,6 +290,7 @@ export function useVenueSearch(userId: string): UseVenueSearchReturn {
             user_city: userCity || undefined,
             user_lat: userCoords?.lat ?? undefined,
             user_lng: userCoords?.lng ?? undefined,
+            user_radius_m: userCoords?.radiusM ?? undefined,
           }),
           signal: abortRef.current.signal,
         });
