@@ -1635,7 +1635,7 @@ export function VenueMap({
 
             {/* Venue grid */}
             <div style={{
-              flex: 1, overflowY: "auto", padding: "16px 20px 20px",
+              flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 20px 20px",
               display: "grid",
               gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
               gap: 12,
@@ -1674,6 +1674,7 @@ export function VenueMap({
                       }}
                       style={{
                         borderRadius: 14, cursor: "pointer", overflow: "hidden",
+                        minHeight: 80,
                         border: `1.5px solid ${isSelected ? c.from : "rgba(255,255,255,0.08)"}`,
                         boxShadow: isSelected ? `0 0 20px ${c.glow}` : "0 2px 10px rgba(0,0,0,0.3)",
                         background: isSelected
