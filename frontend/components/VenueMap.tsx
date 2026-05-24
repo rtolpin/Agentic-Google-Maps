@@ -752,7 +752,7 @@ export function VenueMap({
       {showSearchArea && state.status !== "searching" && state.venues.length > 0 && (
         <div style={{
           position: "absolute",
-          top: 260,
+          top: 230,
           left: showLeftPanel ? leftPanelW : 0,
           right: 0,
           display: "flex",
