@@ -79,6 +79,17 @@ async function loadGoogleMaps(
   window.googleMapsLoaded = true;
 }
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+interface TransitStop {
+  place_id: string;
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+  transit_type: "subway" | "train" | "bus" | "airport" | "ferry";
+}
+
 // ─── Spatial query categories ─────────────────────────────────────────────
 
 export type PlaceCategory =
@@ -222,6 +233,10 @@ export function VenueMap({
   const [showAllMatches, setShowAllMatches] = useState(false);
   const [modalQuery, setModalQuery] = useState("");
   const [showSearchArea, setShowSearchArea] = useState(false);
+  const [transitStops, setTransitStops] = useState<TransitStop[]>([]);
+  const [showTransit, setShowTransit] = useState(false);
+  const [transitLoading, setTransitLoading] = useState(false);
+  const transitMarkersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
 
   const { state, search, fetchPlaceDetails, selectVenue, cancel } = useVenueSearch(userId);
 
@@ -467,6 +482,80 @@ export function VenueMap({
       if (count === 1) mapInstanceRef.current.setZoom(15);
     }
   }, [enrichedMarkers, mapsReady]);
+
+  // ── Transit markers ─────────────────────────────────────────────────────
+
+  const TRANSIT_ICONS: Record<string, string> = {
+    subway: "🚇", train: "🚆", bus: "🚌", airport: "✈️", ferry: "⛴️",
+  };
+  const TRANSIT_COLORS: Record<string, string> = {
+    subway: "#F59E0B", train: "#3B82F6", bus: "#10B981", airport: "#8B5CF6", ferry: "#06B6D4",
+  };
+
+  const fetchTransit = useCallback(async () => {
+    const loc = userLocationRef.current ?? (mapInstanceRef.current ? {
+      lat: mapInstanceRef.current.getCenter()!.lat(),
+      lng: mapInstanceRef.current.getCenter()!.lng(),
+    } : null);
+    if (!loc) return;
+    setTransitLoading(true);
+    try {
+      const resp = await fetch(`${API_BASE}/api/transit/nearby?lat=${loc.lat}&lng=${loc.lng}&radius_m=1500`);
+      if (resp.ok) setTransitStops(await resp.json());
+    } finally {
+      setTransitLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!mapsReady || !mapInstanceRef.current) return;
+    // Clear existing transit markers
+    transitMarkersRef.current.forEach((m) => { m.map = null; });
+    transitMarkersRef.current = [];
+    if (!showTransit || transitStops.length === 0) return;
+
+    transitStops.forEach((stop) => {
+      if (!stop.latitude || !stop.longitude) return;
+      const icon = TRANSIT_ICONS[stop.transit_type] ?? "🚏";
+      const color = TRANSIT_COLORS[stop.transit_type] ?? "#94A3B8";
+      const pin = document.createElement("div");
+      pin.style.cssText = `
+        background: ${color}22; border: 2px solid ${color};
+        border-radius: 50%; width: 36px; height: 36px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 16px; cursor: pointer; box-shadow: 0 2px 8px ${color}55;
+      `;
+      pin.textContent = icon;
+      pin.title = stop.name;
+
+      const marker = new google.maps.marker.AdvancedMarkerElement({
+        map: mapInstanceRef.current!,
+        position: { lat: stop.latitude, lng: stop.longitude },
+        content: pin,
+        title: stop.name,
+      });
+
+      // Show an InfoWindow on click with directions link
+      marker.addListener("click", () => {
+        const iw = new google.maps.InfoWindow({
+          content: `
+            <div style="font-family:sans-serif;padding:4px 2px;min-width:160px">
+              <div style="font-weight:700;font-size:13px;margin-bottom:4px">${icon} ${stop.name}</div>
+              <div style="font-size:11px;color:#666;margin-bottom:8px">${stop.address.split(",").slice(0,2).join(",")}</div>
+              <a href="https://www.google.com/maps/dir/?api=1&destination_place_id=${stop.place_id}"
+                 target="_blank" rel="noopener noreferrer"
+                 style="font-size:12px;color:#2563EB;text-decoration:none;font-weight:600">
+                🗺️ Get Directions
+              </a>
+            </div>`,
+        });
+        iw.open(mapInstanceRef.current!, marker);
+      });
+
+      transitMarkersRef.current.push(marker);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showTransit, transitStops, mapsReady]);
 
   // ── SSE event tracing ───────────────────────────────────────────────────
 
@@ -826,6 +915,69 @@ export function VenueMap({
           </button>
         </div>
       )}
+
+      {/* ── Nearby Transit toggle ── */}
+      <div style={{
+        position: "absolute", bottom: 120, right: 16, zIndex: 12,
+        display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end",
+      }}>
+        <button
+          onClick={async () => {
+            if (!showTransit) {
+              await fetchTransit();
+              setShowTransit(true);
+            } else {
+              setShowTransit(false);
+            }
+          }}
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 7,
+            padding: "9px 16px", borderRadius: 22,
+            background: showTransit
+              ? "linear-gradient(135deg, #F59E0B, #EF4444)"
+              : "rgba(15,23,42,0.92)",
+            border: showTransit
+              ? "1.5px solid rgba(245,158,11,0.8)"
+              : "1.5px solid rgba(255,255,255,0.15)",
+            color: "#fff", fontSize: 13, fontWeight: 700,
+            cursor: "pointer", whiteSpace: "nowrap",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.45)",
+            backdropFilter: "blur(8px)",
+          }}
+        >
+          {transitLoading ? "⏳" : "🚇"} {showTransit ? "Hide Transit" : "Nearby Transit"}
+        </button>
+        {showTransit && transitStops.length > 0 && (
+          <div style={{
+            background: "rgba(15,23,42,0.95)", backdropFilter: "blur(12px)",
+            border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14,
+            padding: "10px 14px", maxWidth: 260, maxHeight: 280, overflowY: "auto",
+            boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+          }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
+              Nearby Transit
+            </div>
+            {transitStops.map((stop) => {
+              const icon = { subway: "🚇", train: "🚆", bus: "🚌", airport: "✈️", ferry: "⛴️" }[stop.transit_type] ?? "🚏";
+              const color = { subway: "#F59E0B", train: "#3B82F6", bus: "#10B981", airport: "#8B5CF6", ferry: "#06B6D4" }[stop.transit_type] ?? "#94A3B8";
+              return (
+                <a
+                  key={stop.place_id}
+                  href={`https://www.google.com/maps/dir/?api=1&destination_place_id=${stop.place_id}`}
+                  target="_blank" rel="noopener noreferrer"
+                  style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.06)", textDecoration: "none" }}
+                >
+                  <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>{icon}</span>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color, lineHeight: 1.3 }}>{stop.name}</div>
+                    <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>{stop.address.split(",")[0]}</div>
+                  </div>
+                </a>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* ════════════════════════════════════════════════════════
           LEFT PANEL — Agent Activity (searching) / Results (done)
@@ -2197,22 +2349,30 @@ function VenueDetailSidebar({ venue, placeDetails, onClose }: VenueDetailSidebar
                   ⚡ {intel.live_signal}
                 </div>
               )}
-              {(placeDetails?.website_uri || placeDetails?.phone_number) && (
-                <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                  {placeDetails.website_uri && (
-                    <a href={placeDetails.website_uri} target="_blank" rel="noopener noreferrer"
-                      style={{ fontSize: 14, color: "#60A5FA", textDecoration: "none", display: "flex", alignItems: "center", gap: 5 }}>
-                      🌐 Website
-                    </a>
-                  )}
-                  {placeDetails.phone_number && (
-                    <a href={`tel:${placeDetails.phone_number}`}
-                      style={{ fontSize: 14, color: "#60A5FA", textDecoration: "none", display: "flex", alignItems: "center", gap: 5 }}>
-                      📞 {placeDetails.phone_number}
-                    </a>
-                  )}
-                </div>
-              )}
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 4 }}>
+                {(venue.place_id || (venue.latitude && venue.longitude)) && (
+                  <a
+                    href={venue.place_id
+                      ? `https://www.google.com/maps/dir/?api=1&destination_place_id=${venue.place_id}`
+                      : `https://www.google.com/maps/dir/?api=1&destination=${venue.latitude},${venue.longitude}`}
+                    target="_blank" rel="noopener noreferrer"
+                    style={{ fontSize: 14, color: "#34D399", textDecoration: "none", display: "flex", alignItems: "center", gap: 5, fontWeight: 600 }}>
+                    🗺️ Get Directions
+                  </a>
+                )}
+                {placeDetails?.website_uri && (
+                  <a href={placeDetails.website_uri} target="_blank" rel="noopener noreferrer"
+                    style={{ fontSize: 14, color: "#60A5FA", textDecoration: "none", display: "flex", alignItems: "center", gap: 5 }}>
+                    🌐 Website
+                  </a>
+                )}
+                {placeDetails?.phone_number && (
+                  <a href={`tel:${placeDetails.phone_number}`}
+                    style={{ fontSize: 14, color: "#60A5FA", textDecoration: "none", display: "flex", alignItems: "center", gap: 5 }}>
+                    📞 {placeDetails.phone_number}
+                  </a>
+                )}
+              </div>
             </div>
           </div>
         ) : (
@@ -2280,22 +2440,30 @@ function VenueDetailSidebar({ venue, placeDetails, onClose }: VenueDetailSidebar
                 ))}
               </div>
             )}
-            {(placeDetails?.website_uri || placeDetails?.phone_number) && (
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
-                {placeDetails.website_uri && (
-                  <a href={placeDetails.website_uri} target="_blank" rel="noopener noreferrer"
-                    style={{ fontSize: 12, color: "#60A5FA", textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
-                    🌐 Website
-                  </a>
-                )}
-                {placeDetails.phone_number && (
-                  <a href={`tel:${placeDetails.phone_number}`}
-                    style={{ fontSize: 12, color: "#60A5FA", textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
-                    📞 {placeDetails.phone_number}
-                  </a>
-                )}
-              </div>
-            )}
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
+              {(venue.place_id || (venue.latitude && venue.longitude)) && (
+                <a
+                  href={venue.place_id
+                    ? `https://www.google.com/maps/dir/?api=1&destination_place_id=${venue.place_id}`
+                    : `https://www.google.com/maps/dir/?api=1&destination=${venue.latitude},${venue.longitude}`}
+                  target="_blank" rel="noopener noreferrer"
+                  style={{ fontSize: 12, color: "#34D399", textDecoration: "none", display: "flex", alignItems: "center", gap: 4, fontWeight: 600 }}>
+                  🗺️ Get Directions
+                </a>
+              )}
+              {placeDetails?.website_uri && (
+                <a href={placeDetails.website_uri} target="_blank" rel="noopener noreferrer"
+                  style={{ fontSize: 12, color: "#60A5FA", textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
+                  🌐 Website
+                </a>
+              )}
+              {placeDetails?.phone_number && (
+                <a href={`tel:${placeDetails.phone_number}`}
+                  style={{ fontSize: 12, color: "#60A5FA", textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
+                  📞 {placeDetails.phone_number}
+                </a>
+              )}
+            </div>
           </>
         )}
       </div>

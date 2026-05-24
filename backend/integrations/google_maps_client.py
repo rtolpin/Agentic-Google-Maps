@@ -161,6 +161,64 @@ class GoogleMapsClient:
                 })
             return results
 
+    # ─── Nearby transit search ────────────────────────────────────────────────
+
+    async def search_nearby_transit(
+        self, lat: float, lng: float, radius_m: float = 1000
+    ) -> list[dict]:
+        """
+        Return nearby transit stops using the Places API Nearby Search.
+        Results are NOT stored — display on a Google Map per TOS requirements.
+        """
+        body = {
+            "locationRestriction": {
+                "circle": {
+                    "center": {"latitude": lat, "longitude": lng},
+                    "radius": min(float(radius_m), 2000.0),
+                }
+            },
+            "includedTypes": [
+                "subway_station", "train_station", "bus_station", "bus_stop",
+                "transit_station", "light_rail_station", "ferry_terminal", "airport",
+            ],
+            "maxResultCount": 20,
+            "rankPreference": "DISTANCE",
+        }
+        try:
+            resp = await self._places.post(
+                "/places:searchNearby",
+                json=body,
+                headers={"X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.location,places.types"},
+            )
+            resp.raise_for_status()
+            places = resp.json().get("places", [])
+        except Exception:
+            return []
+
+        results = []
+        for p in places:
+            loc = p.get("location", {})
+            types = set(p.get("types", []))
+            if "airport" in types:
+                transit_type = "airport"
+            elif types & {"subway_station", "light_rail_station"}:
+                transit_type = "subway"
+            elif "train_station" in types:
+                transit_type = "train"
+            elif "ferry_terminal" in types:
+                transit_type = "ferry"
+            else:
+                transit_type = "bus"
+            results.append({
+                "place_id": p.get("id", ""),
+                "name": p.get("displayName", {}).get("text", ""),
+                "address": p.get("formattedAddress", ""),
+                "latitude": loc.get("latitude"),
+                "longitude": loc.get("longitude"),
+                "transit_type": transit_type,
+            })
+        return results
+
     # ─── Geocoding (results ARE stored — lat/lng is our data, not Google's) ──
 
     async def geocode(self, address: str) -> GeocodeResult | None:

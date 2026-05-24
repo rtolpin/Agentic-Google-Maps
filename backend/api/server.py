@@ -196,6 +196,23 @@ async def get_place_details(venue_id: str) -> GooglePlaceDetails:
     return details
 
 
+# ─── Transit — nearby stops ──────────────────────────────────────────────────
+
+@app.get("/api/transit/nearby", summary="Nearby transit stops (not cached)")
+async def get_nearby_transit(
+    lat: float, lng: float, radius_m: float = 1000
+) -> list[dict]:
+    """
+    Return nearby subway/bus/train/airport stops from the Google Places API.
+    Results are NOT stored — display on a Google Map per TOS requirements.
+    """
+    maps = GoogleMapsClient()
+    try:
+        return await maps.search_nearby_transit(lat, lng, radius_m)
+    finally:
+        await maps.close()
+
+
 # ─── Google Maps — map markers ────────────────────────────────────────────────
 
 @app.get(
