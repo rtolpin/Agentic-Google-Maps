@@ -462,33 +462,49 @@ export function VenueMap({
     let q = rawQ.trim();
     if (!q) return;
 
-    // "near me" → replace with user's actual location if we have it
-    if (/near me/i.test(q) && userLocationRef.current) {
-      const pos = userLocationRef.current;
-      try {
-        const geocoder = new google.maps.Geocoder();
+    // "near me" → resolve to actual location before searching
+    if (/near me/i.test(q)) {
+      // If we don't have location yet, request it now (waits up to 6s)
+      if (!userLocationRef.current && "geolocation" in navigator) {
         await new Promise<void>((resolve) => {
-          geocoder.geocode({ location: pos }, (results, status) => {
-            if (status === "OK" && results?.[0]) {
-              const sub = results[0].address_components.find((c) =>
-                c.types.includes("neighborhood") || c.types.includes("sublocality_level_1")
-              );
-              const locality = results[0].address_components.find((c) =>
-                c.types.includes("locality")
-              );
-              const nbhd = sub?.long_name || "";
-              const cityName = locality?.long_name || "";
-              const area = nbhd ? `${nbhd}, ${cityName}` : cityName;
-              if (area) {
-                q = q.replace(/near me/gi, `in ${area}`);
-                setDetectedCity(cityName || area);
-                setInputValue(q);
-              }
-            }
-            resolve();
-          });
+          navigator.geolocation.getCurrentPosition(
+            (pos) => {
+              userLocationRef.current = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+              resolve();
+            },
+            () => resolve(), // denied or timeout — fall through
+            { enableHighAccuracy: false, timeout: 6000, maximumAge: 300000 },
+          );
         });
-      } catch (_) { /* fall through with original query */ }
+      }
+
+      if (userLocationRef.current) {
+        const pos = userLocationRef.current;
+        try {
+          const geocoder = new google.maps.Geocoder();
+          await new Promise<void>((resolve) => {
+            geocoder.geocode({ location: pos }, (results, status) => {
+              if (status === "OK" && results?.[0]) {
+                const sub = results[0].address_components.find((c) =>
+                  c.types.includes("neighborhood") || c.types.includes("sublocality_level_1")
+                );
+                const locality = results[0].address_components.find((c) =>
+                  c.types.includes("locality")
+                );
+                const nbhd = sub?.long_name || "";
+                const cityName = locality?.long_name || "";
+                const area = nbhd ? `${nbhd}, ${cityName}` : cityName;
+                if (area) {
+                  q = q.replace(/near me/gi, `in ${area}`);
+                  setDetectedCity(cityName || area);
+                  setInputValue(q);
+                }
+              }
+              resolve();
+            });
+          });
+        } catch (_) { /* fall through */ }
+      }
     }
 
     hasSearchedRef.current = true;
