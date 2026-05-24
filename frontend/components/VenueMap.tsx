@@ -1411,8 +1411,8 @@ export function VenueMap({
                         </div>
                       </div>
 
-                      {/* Tags row */}
-                      <div style={{ display: "flex", gap: 4, marginTop: 8, flexWrap: "wrap" }}>
+                      {/* Tags + directions row */}
+                      <div style={{ display: "flex", gap: 4, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
                         {venue.has_private_room && (
                           <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(16,185,129,0.15)", color: "#34D399", border: "1px solid rgba(16,185,129,0.25)" }}>🚪 Private</span>
                         )}
@@ -1421,6 +1421,17 @@ export function VenueMap({
                         )}
                         {venue.intelligence?.why_card && (
                           <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(139,92,246,0.15)", color: "#C4B5FD", border: "1px solid rgba(139,92,246,0.25)" }}>✨ AI</span>
+                        )}
+                        {(venue.place_id || (venue.latitude && venue.longitude)) && (
+                          <a
+                            href={venue.place_id
+                              ? `https://www.google.com/maps/dir/?api=1&destination_place_id=${venue.place_id}`
+                              : `https://www.google.com/maps/dir/?api=1&destination=${venue.latitude},${venue.longitude}`}
+                            target="_blank" rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            style={{ fontSize: 10, padding: "2px 7px", borderRadius: 20, background: "rgba(52,211,153,0.12)", color: "#34D399", border: "1px solid rgba(52,211,153,0.25)", textDecoration: "none", marginLeft: "auto" }}>
+                            🗺️ Directions
+                          </a>
                         )}
                       </div>
                     </div>
