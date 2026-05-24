@@ -278,6 +278,7 @@ export function VenueMap({
     mapInstanceRef.current.addListener("zoom_changed", () => {
       const zoom = mapInstanceRef.current?.getZoom();
       traceMapInteraction({ action: "zoom", zoomLevel: zoom }).finish();
+      if (hasSearchedRef.current) setShowSearchArea(true);
     });
 
     mapInstanceRef.current.addListener("dragend", () => {
@@ -707,7 +708,7 @@ export function VenueMap({
       )}
 
       {/* ── Search This Area button ── */}
-      {state.status === "done" && state.venues.length > 0 && (
+      {showSearchArea && state.status !== "searching" && state.venues.length > 0 && (
         <div style={{
           position: "absolute",
           top: 260,
