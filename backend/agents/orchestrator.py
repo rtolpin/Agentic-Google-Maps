@@ -346,35 +346,35 @@ def _score_enriched_fallback(enriched: list[dict], intent: VenueIntent) -> list[
         if not name:
             continue
         city = ev.get("city") or intent.city
-        score = 40.0  # base: passed all filters
+        score = 25.0  # base: passed all filters
         if intent.needs_private_room:
             score += 5 if ev.get("has_private_room") else 0
         max_group = ev.get("max_group_size") or 0
         if max_group == 0:
-            score += 10  # unknown — partial credit
+            score += 5  # unknown — minimal partial credit
         elif max_group >= intent.group_size:
             score += 20
         else:
             score += max(0, 20.0 * max_group / max(1, intent.group_size))
-        noise_raw = ev.get("noise_level") or "moderate"
+        noise_raw = ev.get("noise_level") or ""
         noise = noise_raw.value if hasattr(noise_raw, "value") else str(noise_raw)
         if noise_pref == "quiet":
             score += {"very_quiet": 15, "quiet": 12, "moderate": 5}.get(noise, 0)
         elif noise_pref == "lively":
             score += {"loud": 15, "very_loud": 12, "moderate": 7}.get(noise, 3)
         else:
-            score += {"moderate": 12, "quiet": 9, "loud": 9}.get(noise, 6)
+            score += {"moderate": 12, "quiet": 9, "loud": 9}.get(noise, 3)
         birthday_score = min(100, (ev.get("birthday_mentions") or 0) * 10 + (50 if ev.get("birthday_friendly") else 0))
         occ_score = ev.get("special_occasion_score") or 0
         if occasion in ("birthday_dinner", "birthday_party"):
-            score += (birthday_score * 0.20) if birthday_score > 0 else 8
+            score += (birthday_score * 0.25) if birthday_score > 0 else 4
         else:
-            score += (occ_score * 0.20) if occ_score > 0 else 8
+            score += (occ_score * 0.25) if occ_score > 0 else 4
         price = ev.get("price_per_head_usd") or 0
         if price == 0:
-            score += 5  # unknown price — partial credit
+            score += 3  # unknown price — minimal partial credit
         elif price_min <= price <= price_max:
-            score += 10
+            score += 15
         score = min(100.0, max(0.0, score))
         venue_id = (name + city).lower().replace(" ", "_").replace("'", "")
         results.append(ScoredVenue(

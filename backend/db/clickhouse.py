@@ -134,16 +134,17 @@ SELECT
     scraped_at,
     LEAST(100, GREATEST(0,
         -- Base: any venue passing city+cuisine+freshness filters is a real candidate
-        40
+        -- Lowered from 40 so unknown-signal venues don't cluster at 75%
+        25
 
-        -- Group capacity (0-20 pts): partial credit when size unknown (stored as 0)
+        -- Group capacity (0-20 pts): small partial credit when unknown
         + multiIf(
-            max_group_size = 0,        10,
+            max_group_size = 0,        5,
             max_group_size >= {group_size:UInt8}, 20,
             greatest(0, toInt32(20) * max_group_size / greatest(1, toInt32({group_size:UInt8})))
           )
 
-        -- Noise match (0-15 pts)
+        -- Noise match (0-15 pts): unknown noise gives minimal credit
         + multiIf(
             {noise_pref:String} = 'quiet',
                 CASE noise_level
@@ -157,24 +158,26 @@ SELECT
                     WHEN 'very_loud'  THEN 12
                     WHEN 'moderate'   THEN 7
                     ELSE 3 END,
+            -- No noise preference: moderate is ideal, unknown gets minimal credit
             CASE noise_level
                 WHEN 'moderate' THEN 12
                 WHEN 'quiet'    THEN 9
                 WHEN 'loud'     THEN 9
-                ELSE 6 END
+                WHEN ''         THEN 3
+                ELSE 3 END
           )
 
-        -- Occasion fit (0-20 pts): higher weights + partial credit when score is 0
+        -- Occasion fit (0-25 pts): real signal scores well; unknown gets minimal credit
         + multiIf(
             {occasion:String} IN ('birthday_dinner', 'birthday_party'),
-                multiIf(birthday_score > 0, birthday_score * 0.20, 8),
-            multiIf(special_occasion_score > 0, special_occasion_score * 0.20, 8)
+                multiIf(birthday_score > 0, birthday_score * 0.25, 4),
+            multiIf(special_occasion_score > 0, special_occasion_score * 0.25, 4)
           )
 
-        -- Price band match (0-10 pts): partial credit when price unknown
+        -- Price band match (0-15 pts): small partial credit when price unknown
         + multiIf(
-            price_per_head = 0, 5,
-            price_per_head BETWEEN {price_min:UInt16} AND {price_max:UInt16}, 10,
+            price_per_head = 0, 3,
+            price_per_head BETWEEN {price_min:UInt16} AND {price_max:UInt16}, 15,
             0
           )
 
