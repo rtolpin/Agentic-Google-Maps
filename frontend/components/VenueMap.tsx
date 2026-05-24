@@ -691,7 +691,7 @@ export function VenueMap({
       {state.status === "done" && state.venues.length > 0 && (
         <div style={{
           position: "absolute",
-          top: 155,
+          top: 210,
           left: showLeftPanel ? leftPanelW : 0,
           right: 0,
           display: "flex",
