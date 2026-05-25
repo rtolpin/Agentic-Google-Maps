@@ -324,6 +324,30 @@ _CITY_COORDS: dict[str, tuple[float, float, str]] = {
 }
 
 
+def _gps_overridden_by_intent(intent: VenueIntent, user_area: str) -> bool:
+    """
+    True when the query explicitly names a neighborhood or a city that differs
+    from the GPS-derived area.  In that case GPS coordinates should NOT drive
+    query text or locationBias — the user is asking about a specific place.
+
+    Examples:
+      user in Trenton, query "best restaurant Upper East Side" → True
+      user in Hell's Kitchen, query "best restaurant Upper East Side" → True
+      user in NYC, query "best restaurant near me" → False
+    """
+    # Explicit neighborhood always means "search here, not where I am"
+    nbhd = (intent.neighborhood or "").strip()
+    if nbhd and nbhd.lower() not in ("near me", "nearby"):
+        return True
+    # City-level: check if intent city appears in the GPS area
+    city = (intent.city or "").strip()
+    if city in ("Unknown", "") or not user_area:
+        return False
+    city_words = {w.lower() for w in city.replace(",", "").split() if len(w) > 2}
+    area_words = {w.lower() for w in user_area.replace(",", "").split() if len(w) > 2}
+    return city_words.isdisjoint(area_words)
+
+
 def _build_queries(
     intent: VenueIntent,
     user_area: str = "",
@@ -333,13 +357,9 @@ def _build_queries(
     """
     Build up to 8 complementary search queries for maximum local coverage.
 
-    is_gps is True whenever GPS coordinates are available — regardless of whether
-    reverse-geocoding succeeded.  When is_gps=True and user_area is empty (geocode
-    failed), queries use "near me" so they are location-neutral and the caller's
-    locationBias circle (lat/lng + radius) does all the geospatial anchoring.
-    This prevents the LLM's default city ("New York City") from appearing in query
-    text and dominating text-search, which would return wrong-city results that are
-    then wiped by the radius filter.
+    is_gps is True whenever coordinates are available.  When the query explicitly
+    names a neighborhood or different city (_gps_overridden_by_intent), GPS is
+    ignored so "best restaurant Upper East Side" from Trenton searches UES, not Trenton.
     """
     cuisine = intent.cuisine or ""
     city = intent.city
@@ -348,15 +368,17 @@ def _build_queries(
     all_terms = {occasion} | set(signals) | ({cuisine.lower()} if cuisine else set())
 
     # ── Location string resolution ─────────────────────────────────────────
-    # is_gps: True whenever coordinates are known, not just when geocode succeeded.
     is_gps = user_lat is not None and user_lng is not None
-    if user_area:
+    # When the intent names a specific place, ignore GPS and use the intent location.
+    use_gps = is_gps and not _gps_overridden_by_intent(intent, user_area)
+
+    if user_area and use_gps:
         parts = [p.strip() for p in user_area.split(",")]
         # "Maplewood, Essex County, NJ" → primary = "Maplewood NJ", broad = "Essex County NJ"
         primary_loc = f"{parts[0]} {parts[-1]}" if len(parts) >= 2 else parts[0]
         broad_loc   = f"{parts[1]} {parts[-1]}" if len(parts) >= 3 else primary_loc
         location    = primary_loc
-    elif is_gps:
+    elif use_gps:
         # Reverse-geocode failed — use neutral text; locationBias handles anchoring.
         location  = "near me"
         broad_loc = "near me"
@@ -614,30 +636,27 @@ class ScraperAgent:
         city_lng: float | None = None,
     ) -> list[dict]:
         queries = _build_queries(intent, user_area=user_area, user_lat=user_lat, user_lng=user_lng)
-        # Nimble location: derive "Maplewood New Jersey" style from user_area when GPS is set.
-        # When GPS is active but reverse-geocode failed (user_area=""), pass "" rather than
-        # intent.city — intent.city defaults to "New York City" and would bias Nimble to NYC
-        # even for users in Trenton or North Caldwell. locationBias handles geospatial anchoring.
-        if user_area:
+        gps_overridden = _gps_overridden_by_intent(intent, user_area)
+        use_gps = (user_lat is not None and user_lng is not None) and not gps_overridden
+
+        # Nimble location: use GPS area for GPS searches; use intent city when the query
+        # names a specific place different from GPS location (e.g. "UES" from Trenton).
+        if use_gps and user_area:
             area_parts = [p.strip() for p in user_area.split(",")]
             nimble_location = f"{area_parts[0]} {area_parts[-1]}" if len(area_parts) >= 2 else area_parts[0]
-        elif user_lat is not None and user_lng is not None:
+        elif use_gps:
             nimble_location = ""
         else:
             nimble_location = intent.neighborhood or intent.city
+
         all_signals_lower = " ".join([intent.occasion] + (intent.other_signals or [])).lower()
         open_now = any(kw in all_signals_lower for kw in _OPEN_NOW_KEYWORDS)
         is_outdoor = any(kw in all_signals_lower for kw in _OUTDOOR_KEYWORDS)
 
         # Build location restriction — always required to prevent cross-country results.
-        # GPS coordinates take priority; then hardcoded city coords; then live geocoding.
-        # Hardcoded coords ensure a geocoding failure never silently disables restriction.
+        # GPS coordinates take priority unless the query names a different place.
         country_code = ""
-        if user_lat is not None and user_lng is not None:
-            # When the frontend passes a tight radius (e.g. 2000m for "near me"),
-            # honour it so results stay within the user's neighborhood.
-            # Default 5000m (city block scale) instead of 15000m so GPS searches
-            # don't silently expand to cover the whole city.
+        if use_gps:
             radius = max(500.0, min(50000.0, user_radius_m or 5000.0))
             bias: dict | None = {"lat": user_lat, "lng": user_lng, "radius_m": radius}
             country_code = "US"

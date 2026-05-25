@@ -3712,8 +3712,19 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
           </div>
         )}
 
+        {/* Photo */}
+        {placeDetails?.photo_url && (
+          <div style={{ marginTop: 12, marginBottom: 4, borderRadius: 12, overflow: "hidden", maxHeight: 180 }}>
+            <img
+              src={placeDetails.photo_url}
+              alt={venue.name}
+              style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }}
+            />
+          </div>
+        )}
+
         {/* Pills row */}
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10, marginBottom: 16 }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: placeDetails?.photo_url ? 12 : 10, marginBottom: 16 }}>
           <DarkPill color="#818CF8" label={`${Math.round(venue.match_score)}% match`} large />
           {openLabel && <DarkPill color={openLabel.color} label={openLabel.label} />}
           {venue.has_private_room && <DarkPill color="#10B981" label="Private room" />}
