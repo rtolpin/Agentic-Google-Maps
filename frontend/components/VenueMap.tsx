@@ -787,6 +787,7 @@ export function VenueMap({
   const getDirections = useCallback(async (
     venue: { place_id?: string | null; latitude?: number | null; longitude?: number | null; name: string; address?: string | null },
     travelMode: TravelMode,
+    flightOptions?: { date?: string; depIata?: string; arrIata?: string },
   ) => {
     const origin = userLocationRef.current;
     if (!origin) {
@@ -811,6 +812,9 @@ export function VenueMap({
         url.searchParams.set("origin_lng", String(origin.lng));
         url.searchParams.set("dest_lat", String(vLat));
         url.searchParams.set("dest_lng", String(vLng));
+        if (flightOptions?.date) url.searchParams.set("outbound_date", flightOptions.date);
+        if (flightOptions?.depIata) url.searchParams.set("dep_iata", flightOptions.depIata);
+        if (flightOptions?.arrIata) url.searchParams.set("arr_iata", flightOptions.arrIata);
         const resp = await fetch(url.toString());
         if (!resp.ok) {
           const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
@@ -979,6 +983,12 @@ export function VenueMap({
   useEffect(() => {
     if (prevTravelModeRef.current === directionsTravelMode) return;
     prevTravelModeRef.current = directionsTravelMode;
+    if (directionsTravelMode === "FLYING") {
+      // Clear stale routing errors — they don't apply to flight search.
+      // User must explicitly click "Search Flights" to choose date/airports.
+      setDirectionsError(null);
+      return;
+    }
     const selectedVenue = state.venues.find((v) => v.venue_id === state.selectedVenueId) ?? null;
     if (directionsLegRef.current && selectedVenue) {
       getDirections(selectedVenue, directionsTravelMode);
@@ -2767,6 +2777,7 @@ export function VenueMap({
           directionsError={directionsError}
           routeOptions={routeOptions}
           selectedRouteIndex={selectedRouteIndex}
+          userLocation={userLocationRef.current}
         />
       )}
 
@@ -2899,26 +2910,45 @@ function buildInfoWindowContent(
   marker: EnrichedMapMarker,
   details: GooglePlaceDetails | null,
 ): string {
-  const rating = details?.rating ? `⭐ ${details.rating} (${details.user_rating_count?.toLocaleString()})` : "";
-  const open = details?.is_open_now === true ? "🟢 Open now" : details?.is_open_now === false ? "🔴 Closed" : "";
-  const price = marker.price_per_head ? `~$${marker.price_per_head}/head` : "";
-  const room = marker.has_private_room ? "🚪 Private room" : "";
+  const score = Math.round(marker.match_score);
+  // Score colour: green ≥80, amber 60-79, gray <60
+  const scoreColor = score >= 80 ? "#137333" : score >= 60 ? "#B06000" : "#5F6368";
+  const scoreBg    = score >= 80 ? "#E6F4EA" : score >= 60 ? "#FEF3DC" : "#F1F3F4";
+
+  // Rating rendered with a filled star matching Google Maps yellow
+  const ratingHtml = details?.rating
+    ? `<span style="display:inline-flex;align-items:center;gap:2px">
+         <span style="color:#F4B400;font-size:13px;line-height:1">★</span>
+         <span style="font-weight:600;color:#202124">${details.rating}</span>
+         ${details.user_rating_count ? `<span style="color:#70757A">(${details.user_rating_count.toLocaleString()})</span>` : ""}
+       </span>`
+    : "";
+
+  const openHtml = details?.is_open_now === true
+    ? `<span style="color:#137333;font-weight:500">Open</span>`
+    : details?.is_open_now === false
+    ? `<span style="color:#C5221F;font-weight:500">Closed</span>`
+    : "";
+
+  const metaRow = [ratingHtml, openHtml].filter(Boolean).join(`<span style="color:#DADCE0;margin:0 4px">·</span>`);
+
+  const chips: string[] = [];
+  if (marker.price_per_head) chips.push(`~$${marker.price_per_head}/head`);
+  if (marker.has_private_room) chips.push("Private room");
 
   return `
-    <div style="font-family:system-ui;max-width:240px;padding:4px 0">
-      <div style="font-weight:700;font-size:15px;color:#111827;margin-bottom:4px">
+    <div style="font-family:'Google Sans',Roboto,Arial,sans-serif;min-width:190px;max-width:250px;padding:2px 0">
+      <div style="font-size:15px;font-weight:600;color:#202124;line-height:1.35;margin-bottom:${metaRow ? 3 : 8}px;letter-spacing:-0.1px">
         ${escapeHtml(marker.name)}
       </div>
-      <div style="font-size:12px;color:#6B7280;margin-bottom:8px">
-        ${[rating, open].filter(Boolean).join(" · ")}
-      </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">
-        ${[price, room].filter(Boolean).map((t) =>
-          `<span style="background:#F3F4F6;padding:2px 8px;border-radius:12px;font-size:11px;color:#374151">${t}</span>`
-        ).join("")}
-        <span style="background:#EEF2FF;padding:2px 8px;border-radius:12px;font-size:11px;color:#4F46E5;font-weight:600">
-          ${Math.round(marker.match_score)}% match
+      ${metaRow ? `<div style="font-size:12px;color:#70757A;margin-bottom:9px;display:flex;align-items:center;gap:0;flex-wrap:wrap">${metaRow}</div>` : ""}
+      <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
+        <span style="background:${scoreBg};color:${scoreColor};font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;letter-spacing:0.1px">
+          ${score}% match
         </span>
+        ${chips.map(c =>
+          `<span style="background:#F1F3F4;color:#3C4043;font-size:11px;padding:3px 9px;border-radius:20px">${escapeHtml(c)}</span>`
+        ).join("")}
       </div>
     </div>
   `;
@@ -2938,7 +2968,8 @@ interface VenueDetailSidebarProps {
   venue: VenueSignal | null;
   placeDetails: GooglePlaceDetails | null;
   onClose: () => void;
-  onGetDirections: (venue: { place_id?: string | null; latitude?: number | null; longitude?: number | null; name: string; address?: string | null }, mode: TravelMode) => void;
+  onGetDirections: (venue: { place_id?: string | null; latitude?: number | null; longitude?: number | null; name: string; address?: string | null }, mode: TravelMode, flightOptions?: { date?: string; depIata?: string; arrIata?: string }) => void;
+  userLocation?: { lat: number; lng: number } | null;
   onClearDirections: () => void;
   onSelectRoute: (option: RouteOption) => void;
   directionsTravelMode: TravelMode;
@@ -2950,9 +2981,72 @@ interface VenueDetailSidebarProps {
   selectedRouteIndex: number | null;
 }
 
-function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onClearDirections, onSelectRoute, directionsTravelMode, onSetTravelMode, directionsLeg, directionsLoading, directionsError, routeOptions, selectedRouteIndex }: VenueDetailSidebarProps) {
+function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onClearDirections, onSelectRoute, directionsTravelMode, onSetTravelMode, directionsLeg, directionsLoading, directionsError, routeOptions, selectedRouteIndex, userLocation }: VenueDetailSidebarProps) {
   const [sidebarW, setSidebarW] = useState(380);
   const [isFullScreen, setIsFullScreen] = useState(false);
+
+  // ── Flight-specific state ──────────────────────────────────────────────────
+  const defaultFlightDate = () => {
+    const d = new Date(); d.setDate(d.getDate() + 7);
+    return d.toISOString().split("T")[0];
+  };
+  const [flightDate, setFlightDate] = useState<string>(defaultFlightDate);
+  const [depAirports, setDepAirports] = useState<{ iata: string; name: string; latitude: number; longitude: number }[]>([]);
+  const [arrAirports, setArrAirports] = useState<{ iata: string; name: string; latitude: number; longitude: number }[]>([]);
+  const [selectedDepIata, setSelectedDepIata] = useState<string>("");
+  const [selectedArrIata, setSelectedArrIata] = useState<string>("");
+  const [airportsLoading, setAirportsLoading] = useState(false);
+  const [airlineFilter, setAirlineFilter] = useState<Set<string>>(new Set());
+  const [driveToAirport, setDriveToAirport] = useState<{ duration: string; distance: string } | null>(null);
+
+  // Reset airports when venue changes
+  useEffect(() => {
+    setDepAirports([]); setArrAirports([]);
+    setSelectedDepIata(""); setSelectedArrIata("");
+    setDriveToAirport(null);
+  }, [venue?.venue_id]);
+
+  // Fetch nearby airports when FLYING mode is active
+  useEffect(() => {
+    if (directionsTravelMode !== "FLYING" || !venue) return;
+    if (depAirports.length > 0 || arrAirports.length > 0) return;
+    setAirportsLoading(true);
+    const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+    Promise.all([
+      userLocation
+        ? fetch(`${base}/api/airports/nearby?lat=${userLocation.lat}&lng=${userLocation.lng}&n=4`).then(r => r.ok ? r.json() : [])
+        : Promise.resolve([]),
+      (venue.latitude && venue.longitude)
+        ? fetch(`${base}/api/airports/nearby?lat=${venue.latitude}&lng=${venue.longitude}&n=4`).then(r => r.ok ? r.json() : [])
+        : Promise.resolve([]),
+    ]).then(([dep, arr]) => {
+      setDepAirports(dep ?? []);
+      setArrAirports(arr ?? []);
+      if (dep?.[0]) setSelectedDepIata(dep[0].iata);
+      if (arr?.[0]) setSelectedArrIata(arr[0].iata);
+    }).finally(() => setAirportsLoading(false));
+  }, [directionsTravelMode, venue, userLocation, depAirports.length, arrAirports.length]);
+
+  // Reset airline filter when results change
+  useEffect(() => { setAirlineFilter(new Set()); }, [routeOptions]);
+
+  // Compute drive-to-departure-airport after flight results load
+  useEffect(() => {
+    if (!routeOptions || routeOptions[0]?.type !== "flight") { setDriveToAirport(null); return; }
+    const first = routeOptions[0];
+    if (!first.departureLat || !first.departureLng || !userLocation) return;
+    if (typeof window === "undefined" || !window.google?.maps) return;
+    const svc = new window.google.maps.DirectionsService();
+    svc.route(
+      { origin: userLocation, destination: { lat: first.departureLat, lng: first.departureLng! }, travelMode: window.google.maps.TravelMode.DRIVING },
+      (result, status) => {
+        if (status === window.google.maps.DirectionsStatus.OK && result) {
+          const leg = result.routes[0]?.legs[0];
+          if (leg) setDriveToAirport({ duration: leg.duration?.text ?? "", distance: leg.distance?.text ?? "" });
+        }
+      },
+    );
+  }, [routeOptions, userLocation]);
 
   const startRightResize = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -3100,7 +3194,11 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
             </button>
           ) : (
             <button
-              onClick={() => onGetDirections(venue, directionsTravelMode)}
+              onClick={() => onGetDirections(venue, directionsTravelMode,
+                directionsTravelMode === "FLYING"
+                  ? { date: flightDate, depIata: selectedDepIata || undefined, arrIata: selectedArrIata || undefined }
+                  : undefined
+              )}
               disabled={directionsLoading}
               style={{
                 display: "inline-flex", alignItems: "center", gap: 5,
@@ -3198,7 +3296,61 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
             );
           })}
         </div>
-        {directionsError && (
+        {/* Flight options — date picker + airport selectors */}
+        {directionsTravelMode === "FLYING" && (
+          <div style={{ marginBottom: 10 }}>
+            {/* Departure date */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
+              <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, minWidth: 44 }}>Depart</span>
+              <input
+                type="date"
+                value={flightDate}
+                min={new Date().toISOString().split("T")[0]}
+                onChange={e => setFlightDate(e.target.value)}
+                style={{
+                  flex: 1, background: "rgba(0,0,0,0.35)", border: "1px solid rgba(167,139,250,0.4)",
+                  borderRadius: 8, padding: "5px 8px", color: "#E2E8F0", fontSize: 12,
+                  colorScheme: "dark", cursor: "pointer", outline: "none",
+                }}
+              />
+            </div>
+            {airportsLoading ? (
+              <div style={{ fontSize: 11, color: "#64748B" }}>Finding airports…</div>
+            ) : (
+              <>
+                {depAirports.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, minWidth: 44 }}>From</span>
+                    <select value={selectedDepIata} onChange={e => setSelectedDepIata(e.target.value)} style={{
+                      flex: 1, background: "rgba(0,0,0,0.45)", border: "1px solid rgba(167,139,250,0.3)",
+                      borderRadius: 8, padding: "5px 8px", color: "#E2E8F0", fontSize: 11, cursor: "pointer",
+                    }}>
+                      {depAirports.map(a => <option key={a.iata} value={a.iata}>{a.iata} — {a.name}</option>)}
+                    </select>
+                  </div>
+                )}
+                {arrAirports.length > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, minWidth: 44 }}>To</span>
+                    <select value={selectedArrIata} onChange={e => setSelectedArrIata(e.target.value)} style={{
+                      flex: 1, background: "rgba(0,0,0,0.45)", border: "1px solid rgba(167,139,250,0.3)",
+                      borderRadius: 8, padding: "5px 8px", color: "#E2E8F0", fontSize: 11, cursor: "pointer",
+                    }}>
+                      {arrAirports.map(a => <option key={a.iata} value={a.iata}>{a.iata} — {a.name}</option>)}
+                    </select>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Routing errors — suppressed in FLYING mode (not relevant to flight search) */}
+        {directionsError && directionsTravelMode !== "FLYING" && (
+          <div style={{ fontSize: 11, color: "#F87171", marginBottom: 6 }}>⚠️ {directionsError}</div>
+        )}
+        {/* Flight-specific errors */}
+        {directionsError && directionsTravelMode === "FLYING" && !directionsError.includes("No route") && (
           <div style={{ fontSize: 11, color: "#F87171", marginBottom: 6 }}>⚠️ {directionsError}</div>
         )}
 
@@ -3225,14 +3377,48 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
                   <div style={{ fontSize: 13, fontWeight: 700, color: "#E2E8F0", marginBottom: 2, lineHeight: 1.4 }}>
                     ✈️ {f.departureAirport}
                   </div>
-                  <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: dateStr ? 4 : 0 }}>→ {f.arrivalAirport}</div>
+                  <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: (dateStr || driveToAirport) ? 4 : 0 }}>→ {f.arrivalAirport}</div>
                   {dateStr && (
-                    <div style={{ fontSize: 11, color: "#A78BFA", fontWeight: 600 }}>🗓 {dateStr}</div>
+                    <div style={{ fontSize: 11, color: "#A78BFA", fontWeight: 600, marginBottom: driveToAirport ? 4 : 0 }}>🗓 {dateStr}</div>
+                  )}
+                  {driveToAirport && (
+                    <div style={{ fontSize: 11, color: "#34D399", fontWeight: 600 }}>
+                      🚗 {driveToAirport.duration} to airport ({driveToAirport.distance})
+                    </div>
                   )}
                 </div>
               );
             })()}
-            {routeOptions.map((opt, rankIdx) => {
+            {/* Airline filter chips — shown when 2+ airlines present */}
+            {(() => {
+              const airlines = [...new Set(routeOptions.filter(o => o.type === "flight" && o.airline).map(o => (o as { airline: string }).airline))];
+              if (airlines.length < 2) return null;
+              const toggleAirline = (airline: string) => setAirlineFilter(prev => {
+                const next = new Set(prev);
+                if (next.has(airline)) { next.delete(airline); return next.size === 0 ? new Set() : next; }
+                next.add(airline);
+                return next.size === airlines.length ? new Set() : next;
+              });
+              return (
+                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 8 }}>
+                  {airlines.map(airline => {
+                    const active = airlineFilter.size === 0 || airlineFilter.has(airline);
+                    return (
+                      <button key={airline} onClick={() => toggleAirline(airline)} style={{
+                        fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 20, cursor: "pointer",
+                        border: `1px solid ${active ? "rgba(167,139,250,0.6)" : "rgba(255,255,255,0.1)"}`,
+                        background: active ? "rgba(109,40,217,0.3)" : "rgba(255,255,255,0.04)",
+                        color: active ? "#C4B5FD" : "#475569", transition: "all 0.15s",
+                      }}>{airline}</button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+            {(airlineFilter.size > 0
+              ? routeOptions.filter(o => o.type !== "flight" || airlineFilter.has((o as { airline: string }).airline))
+              : routeOptions
+            ).map((opt, rankIdx) => {
               const isSelected = selectedRouteIndex === opt.index;
               const isCheapest = opt.type === "flight" && rankIdx === 0;
               const isNonstop  = opt.type === "flight" && opt.stops === 0;

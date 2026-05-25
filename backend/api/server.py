@@ -230,30 +230,65 @@ async def get_nearby_transit(
 
 # ─── Flight search ────────────────────────────────────────────────────────────
 
+@app.get("/api/airports/nearby", summary="Nearest airports to a coordinate")
+async def get_nearby_airports(lat: float, lng: float, n: int = 4) -> list[dict]:
+    """
+    Return the n nearest airports (no hub-redirect) so the frontend can present
+    an airport-selection dropdown.  Useful for cities like London with multiple airports.
+    """
+    from integrations.serpapi_flights_client import _nearest_airports
+    rows = _nearest_airports(lat, lng, n=min(int(n), 8))
+    return [{"iata": a[0], "name": a[1], "latitude": a[2], "longitude": a[3]} for a in rows]
+
+
 @app.get("/api/flights", summary="Cheapest one-way flight between two locations")
 async def search_flights_route(
     origin_lat: float,
     origin_lng: float,
     dest_lat: float,
     dest_lng: float,
+    outbound_date: str | None = None,
+    dep_iata: str | None = None,
+    arr_iata: str | None = None,
 ) -> dict:
     """
     Find the nearest airports to the given coordinates and return the cheapest
     one-way flight option via Serpapi Google Flights.
     Requires SERPAPI_API_KEY to be set.
+    outbound_date: YYYY-MM-DD; defaults to today + 7 days if omitted.
+    dep_iata / arr_iata: optional IATA overrides (e.g. "LGW" instead of auto-detected "LHR").
     """
-    from datetime import date, timedelta
+    from datetime import date, datetime, timedelta
     from integrations.serpapi_flights_client import (
         SerpApiFlightsClient, _nearest_airport, _AIRPORT_BY_IATA,
     )
 
-    dep_iata, dep_name = _nearest_airport(origin_lat, origin_lng)
-    arr_iata, arr_name = _nearest_airport(dest_lat, dest_lng)
+    if dep_iata:
+        dep_rec = _AIRPORT_BY_IATA.get(dep_iata.upper())
+        dep_name = dep_rec[1] if dep_rec else dep_iata.upper()
+        dep_iata = dep_iata.upper()
+    else:
+        dep_iata, dep_name = _nearest_airport(origin_lat, origin_lng)
+
+    if arr_iata:
+        arr_rec = _AIRPORT_BY_IATA.get(arr_iata.upper())
+        arr_name = arr_rec[1] if arr_rec else arr_iata.upper()
+        arr_iata = arr_iata.upper()
+    else:
+        arr_iata, arr_name = _nearest_airport(dest_lat, dest_lng)
 
     if dep_iata == arr_iata:
         raise HTTPException(status_code=422, detail="Origin and destination are served by the same airport")
 
-    outbound_date = (date.today() + timedelta(days=7)).isoformat()
+    if outbound_date:
+        try:
+            parsed = datetime.strptime(outbound_date, "%Y-%m-%d").date()
+            if parsed < date.today():
+                raise HTTPException(status_code=422, detail="outbound_date must not be in the past")
+        except ValueError:
+            raise HTTPException(status_code=422, detail="outbound_date must be YYYY-MM-DD")
+    else:
+        outbound_date = (date.today() + timedelta(days=7)).isoformat()
 
     try:
         options = await SerpApiFlightsClient().search_flights(dep_iata, arr_iata, outbound_date)

@@ -258,6 +258,18 @@ _SECONDARY_TO_HUB: dict[str, str] = {
 _AIRPORT_BY_IATA: dict[str, tuple[str, str, float, float]] = {a[0]: a for a in _AIRPORT_DB}
 
 
+def _nearest_airports(lat: float, lng: float, n: int = 4) -> list[tuple[str, str, float, float]]:
+    """Return the n nearest airports sorted by distance, without hub redirection."""
+    def _dist(a: tuple) -> float:
+        dlat = math.radians(a[2] - lat)
+        dlng = math.radians(a[3] - lng)
+        h = (math.sin(dlat / 2) ** 2
+             + math.cos(math.radians(lat)) * math.cos(math.radians(a[2]))
+             * math.sin(dlng / 2) ** 2)
+        return math.asin(math.sqrt(h))
+    return sorted(_AIRPORT_DB, key=_dist)[:n]
+
+
 def _nearest_airport(lat: float, lng: float) -> tuple[str, str]:
     """Return (iata, name) of the nearest major international airport.
 
