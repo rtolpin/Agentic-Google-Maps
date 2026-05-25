@@ -184,11 +184,12 @@ SELECT
         -- Private room bonus (0-5 pts)
         + multiIf({needs_private_room:Bool}, has_private_room * 5, 0)
 
-        -- Google Places rating bonus (0-25 pts): continuous linear formula so
-        -- 4.2, 4.5, 4.7, 4.9 all produce distinct scores.
-        -- Stepped thresholds caused everything ≥4.5 to tie at 15 pts.
-        -- formula: rating*8 - 16 → 3.0=8, 4.0=16, 4.5=20, 4.7=21.6, 4.9=23.2, 5.0=24
-        + ROUND(GREATEST(0, LEAST(25, google_rating * 8 - 16)), 0)
+        -- Google Places rating bonus (0-40 pts): higher weight so a 4.9-star
+        -- restaurant scores ~88% even without Claude signals.
+        -- formula: (rating - 2.0) * 13.3, capped 0-40
+        --   3.0→13  3.5→20  4.0→27  4.5→33  4.7→36  4.9→39
+        -- All-default scores: 4.0★=74  4.5★=82  4.7★=85  4.9★=88
+        + ROUND(GREATEST(0.0, LEAST(40.0, (google_rating - 2.0) * 13.3)), 0)
 
         -- Freshness penalty: capped at -5 pts (1 pt per day, max 5 days)
         - LEAST(5, dateDiff('hour', scraped_at, now()) / 24)
