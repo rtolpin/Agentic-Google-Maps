@@ -363,21 +363,19 @@ class GoogleMapsClient:
             d = resp.json()
             loc = d.get("location", {})
 
-            # Resolve the first photo to a CDN URL via skipHttpRedirect=true.
-            # This returns JSON {"photoUri": "https://lh3.googleusercontent.com/..."}
-            # instead of a redirect, which is the correct server-side approach.
+            # Resolve the first photo to a CDN URL.
+            # photo_name looks like "places/PLACE_ID/photos/REF" — use as a
+            # relative path so httpx merges it cleanly with base_url.
+            # skipHttpRedirect=true returns JSON {"photoUri":"https://lh3..."}
+            # instead of a redirect, which is the correct server-side pattern.
             photo_url: str | None = None
             photos = d.get("photos", [])
-            if photos and GOOGLE_MAPS_API_KEY:
+            if photos:
                 photo_name = photos[0].get("name", "")
                 if photo_name:
                     try:
-                        media_url = (
-                            f"{_PLACES_BASE}/{photo_name}/media"
-                            f"?maxWidthPx=400&skipHttpRedirect=true&key={GOOGLE_MAPS_API_KEY}"
-                        )
                         media_resp = await self._places.get(
-                            media_url,
+                            f"/{photo_name}/media?maxWidthPx=400&skipHttpRedirect=true",
                             follow_redirects=True,
                             headers={},  # no X-Goog-FieldMask for media endpoint
                         )
@@ -385,7 +383,7 @@ class GoogleMapsClient:
                             photo_url = media_resp.json().get("photoUri")
                         else:
                             logger.warning(
-                                "photo fetch returned %s for %s",
+                                "photo fetch %s for %s",
                                 media_resp.status_code,
                                 photo_name[:60],
                             )
