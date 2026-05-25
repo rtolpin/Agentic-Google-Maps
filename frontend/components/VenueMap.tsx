@@ -85,6 +85,17 @@ async function loadGoogleMaps(
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+const FLIGHT_THRESHOLD_KM = 500;
+
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2
+    + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 const TRANSIT_ICON: Record<string, string> = {
   subway: "🚇", train: "🚆", bus: "🚌", airport: "✈️", ferry: "⛴️",
 };
@@ -803,6 +814,22 @@ export function VenueMap({
       getDirections(selectedVenue, directionsTravelMode);
     }
   }, [directionsTravelMode, getDirections, state.venues, state.selectedVenueId]);
+
+  // ── Auto-switch to Fly mode for distant venues ──────────────────────────
+  useEffect(() => {
+    if (!state.selectedVenueId) return;
+    const origin = userLocationRef.current;
+    if (!origin) return;
+    const venue = state.venues.find((v) => v.venue_id === state.selectedVenueId);
+    if (!venue?.latitude || !venue?.longitude) return;
+    const distKm = haversineKm(origin.lat, origin.lng, venue.latitude, venue.longitude);
+    if (distKm > FLIGHT_THRESHOLD_KM) {
+      setDirectionsTravelMode("FLYING");
+    } else if (directionsTravelMode === "FLYING") {
+      setDirectionsTravelMode("TRANSIT");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.selectedVenueId]);
 
   // ── SSE event tracing ───────────────────────────────────────────────────
 
