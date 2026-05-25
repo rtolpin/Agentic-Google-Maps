@@ -1451,6 +1451,35 @@ export function VenueMap({
                 <span style={{ fontSize: 12 }}>◀</span>
                 <span>Close Panel</span>
               </button>
+              {isFullScreen && (
+                <button
+                  onClick={() => setIsFullScreen(false)}
+                  title="Exit full screen"
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 6,
+                    padding: "7px 13px", borderRadius: 10,
+                    background: "linear-gradient(135deg, rgba(124,58,237,0.2), rgba(79,70,229,0.15))",
+                    border: "1.5px solid rgba(124,58,237,0.4)",
+                    color: "#C4B5FD",
+                    fontSize: 12, fontWeight: 700, cursor: "pointer",
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
+                    boxShadow: "0 2px 8px rgba(124,58,237,0.2)",
+                    transition: "all 0.15s",
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.background = "linear-gradient(135deg, rgba(124,58,237,0.35), rgba(79,70,229,0.3))";
+                    (e.currentTarget as HTMLButtonElement).style.color = "#fff";
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLButtonElement).style.background = "linear-gradient(135deg, rgba(124,58,237,0.2), rgba(79,70,229,0.15))";
+                    (e.currentTarget as HTMLButtonElement).style.color = "#C4B5FD";
+                  }}
+                >
+                  <span style={{ fontSize: 14, lineHeight: 1 }}>⤡</span>
+                  <span>Exit Full Screen</span>
+                </button>
+              )}
               {state.status === "searching" && (
                 <div style={{ marginLeft: "auto", display: "flex", gap: 3 }}>
                   {[0,1,2].map(i => (
