@@ -565,6 +565,7 @@ class GooglePlaceDetails(BaseModel):
     phone_number: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    photo_url: Optional[str] = None  # short-lived CDN URL, session-only per Google TOS
 
 
 class MapMarker(BaseModel):

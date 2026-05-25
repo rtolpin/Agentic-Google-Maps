@@ -43,7 +43,7 @@ _GEOCODING_BASE = "https://maps.googleapis.com/maps/api/geocode/json"
 _DISPLAY_FIELD_MASK = (
     "id,displayName,formattedAddress,rating,userRatingCount,"
     "priceLevel,regularOpeningHours,websiteUri,nationalPhoneNumber,"
-    "location"
+    "location,photos"
 )
 _FIND_FIELD_MASK = "places.id,places.displayName,places.formattedAddress,places.location"
 _SEARCH_FIELD_MASK = (
@@ -359,6 +359,31 @@ class GoogleMapsClient:
             span.set_tag("place.found", True)
             d = resp.json()
             loc = d.get("location", {})
+
+            # Resolve the first photo to a short-lived CDN URL (no API key in HTML).
+            # The Places API returns photo names like "places/{id}/photos/{ref}".
+            # A HEAD request to the media endpoint issues a redirect to lh3.googleusercontent.com.
+            photo_url: str | None = None
+            photos = d.get("photos", [])
+            if photos and GOOGLE_MAPS_API_KEY:
+                photo_name = photos[0].get("name", "")
+                if photo_name:
+                    try:
+                        media_url = f"{_PLACES_BASE}/{photo_name}/media?maxWidthPx=400&key={GOOGLE_MAPS_API_KEY}"
+                        head = await self._places.get(
+                            media_url,
+                            follow_redirects=False,
+                            headers={},  # no X-Goog-FieldMask for media endpoint
+                        )
+                        # 302 redirect → Location is the CDN URL (no API key needed)
+                        if head.status_code in (301, 302, 303, 307, 308):
+                            photo_url = head.headers.get("location")
+                        elif head.status_code == 200:
+                            # Some deployments return 200 with the image directly; use the URL
+                            photo_url = media_url
+                    except Exception:
+                        pass  # photo is optional — proceed without it
+
             return GooglePlaceDetails(
                 place_id=d.get("id", place_id),
                 name=d.get("displayName", {}).get("text", ""),
@@ -371,6 +396,7 @@ class GoogleMapsClient:
                 phone_number=d.get("nationalPhoneNumber"),
                 latitude=loc.get("latitude"),
                 longitude=loc.get("longitude"),
+                photo_url=photo_url,
             )
 
     # ─── Airport lookup (for flight search) ──────────────────────────────────

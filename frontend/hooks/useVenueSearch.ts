@@ -61,6 +61,7 @@ export interface GooglePlaceDetails {
   phone_number: string | null;
   latitude: number | null;
   longitude: number | null;
+  photo_url: string | null;
 }
 
 export interface MapMarker {

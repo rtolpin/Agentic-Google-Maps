@@ -987,6 +987,8 @@ export function VenueMap({
   // ── Auto-recalculate directions when travel mode changes ────────────────
   const directionsLegRef = useRef(directionsLeg);
   directionsLegRef.current = directionsLeg;
+  const routeOptionsRef = useRef(routeOptions);
+  routeOptionsRef.current = routeOptions;
   const prevTravelModeRef = useRef(directionsTravelMode);
 
   useEffect(() => {
@@ -999,7 +1001,9 @@ export function VenueMap({
       return;
     }
     const selectedVenue = state.venues.find((v) => v.venue_id === state.selectedVenueId) ?? null;
-    if (directionsLegRef.current && selectedVenue) {
+    // Re-route immediately when a route is already shown (directionsLeg set for
+    // single-route results, routeOptions set for multi-route TRANSIT results).
+    if ((directionsLegRef.current || routeOptionsRef.current) && selectedVenue) {
       getDirections(selectedVenue, directionsTravelMode);
     }
   }, [directionsTravelMode, getDirections, state.venues, state.selectedVenueId]);
@@ -2949,8 +2953,14 @@ function buildInfoWindowContent(
   if (marker.price_per_head) chips.push(`~$${marker.price_per_head}/head`);
   if (marker.has_private_room) chips.push("Private room");
 
+  const photoHtml = details?.photo_url
+    ? `<img src="${details.photo_url}" alt="${escapeHtml(marker.name)}"
+         style="width:100%;height:110px;object-fit:cover;border-radius:8px;display:block;margin-bottom:10px" />`
+    : "";
+
   return `
     <div style="font-family:'Google Sans',Roboto,Arial,sans-serif;min-width:190px;max-width:250px;padding:2px 0">
+      ${photoHtml}
       <div style="font-size:15px;font-weight:600;color:#202124;line-height:1.35;margin-bottom:${metaRow ? 3 : 8}px;letter-spacing:-0.1px">
         ${escapeHtml(marker.name)}
       </div>
