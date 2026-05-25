@@ -461,13 +461,16 @@ async def _filter_by_location(
         return venues
 
     filtered = []
+    is_gps_search = user_lat is not None and user_lng is not None
     for v in venues:
         if v.latitude is None or v.longitude is None:
-            # No coordinates: keep for list rendering.
-            # The coordinate branch below handles the actual geographic filtering;
-            # coord-less venues can't be filtered by distance so we keep them and
-            # let the scoring + synthesis step sort relevance.
-            filtered.append(v)
+            # No usable coordinates (stored as 0.0 sentinel or never set).
+            # GPS searches: keep — venue shows in list without a map pin.
+            # Named-city searches: drop — stale ClickHouse entries from
+            # wrong-location scrapes (e.g. a Charlotte Nimble result tagged
+            # city="North Caldwell") would bypass distance filtering entirely.
+            if is_gps_search:
+                filtered.append(v)
             continue
         if _haversine_m(clat, clng, v.latitude, v.longitude) <= max_m:
             filtered.append(v)
