@@ -920,6 +920,9 @@ export function VenueMap({
       setShowSearchArea(false);
       hasSearchedRef.current = true;
 
+      // Clear the address bar now that the map has panned and the search fired
+      if (addressInputRef.current) addressInputRef.current.value = "";
+
       const areaCoords = { lat, lng, radiusM: 10000 };
       // Send the full "best pancakes in North Caldwell" query (not just "best pancakes")
       // so the intent parser extracts the correct city for scraper query building.
@@ -1451,35 +1454,6 @@ export function VenueMap({
                 <span style={{ fontSize: 12 }}>◀</span>
                 <span>Close Panel</span>
               </button>
-              {isFullScreen && (
-                <button
-                  onClick={() => setIsFullScreen(false)}
-                  title="Exit full screen"
-                  style={{
-                    display: "inline-flex", alignItems: "center", gap: 6,
-                    padding: "7px 13px", borderRadius: 10,
-                    background: "linear-gradient(135deg, rgba(124,58,237,0.2), rgba(79,70,229,0.15))",
-                    border: "1.5px solid rgba(124,58,237,0.4)",
-                    color: "#C4B5FD",
-                    fontSize: 12, fontWeight: 700, cursor: "pointer",
-                    whiteSpace: "nowrap",
-                    flexShrink: 0,
-                    boxShadow: "0 2px 8px rgba(124,58,237,0.2)",
-                    transition: "all 0.15s",
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLButtonElement).style.background = "linear-gradient(135deg, rgba(124,58,237,0.35), rgba(79,70,229,0.3))";
-                    (e.currentTarget as HTMLButtonElement).style.color = "#fff";
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLButtonElement).style.background = "linear-gradient(135deg, rgba(124,58,237,0.2), rgba(79,70,229,0.15))";
-                    (e.currentTarget as HTMLButtonElement).style.color = "#C4B5FD";
-                  }}
-                >
-                  <span style={{ fontSize: 14, lineHeight: 1 }}>⤡</span>
-                  <span>Exit Full Screen</span>
-                </button>
-              )}
               {state.status === "searching" && (
                 <div style={{ marginLeft: "auto", display: "flex", gap: 3 }}>
                   {[0,1,2].map(i => (
@@ -2096,7 +2070,7 @@ export function VenueMap({
       {/* ── Locate-me button ── */}
       {mapsReady && (
         <button
-          title="Jump to your location"
+          title="Go to my current location"
           onClick={() => {
             if (userLocationRef.current) {
               mapInstanceRef.current?.setCenter(userLocationRef.current);
@@ -2114,18 +2088,29 @@ export function VenueMap({
             position: "absolute",
             bottom: 120, right: 16,
             zIndex: 10,
-            width: 44, height: 44, borderRadius: 12,
-            background: "rgba(7,11,24,0.9)",
+            height: 40, borderRadius: 20,
+            padding: "0 14px 0 10px",
+            background: "linear-gradient(135deg, #1D4ED8, #2563EB)",
             backdropFilter: "blur(12px)",
-            border: "1.5px solid rgba(255,255,255,0.12)",
-            boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+            border: "1.5px solid rgba(96,165,250,0.5)",
+            boxShadow: "0 4px 16px rgba(37,99,235,0.5)",
             cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: 20,
+            display: "flex", alignItems: "center", gap: 6,
+            color: "#fff", fontSize: 12, fontWeight: 700,
+            whiteSpace: "nowrap",
             transition: "all 0.15s",
           }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.background = "linear-gradient(135deg, #1E40AF, #1D4ED8)";
+            (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 4px 20px rgba(37,99,235,0.7)";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.background = "linear-gradient(135deg, #1D4ED8, #2563EB)";
+            (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 4px 16px rgba(37,99,235,0.5)";
+          }}
         >
-          📍
+          <span style={{ fontSize: 16 }}>📍</span>
+          <span>My Location</span>
         </button>
       )}
 
@@ -2635,28 +2620,28 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
         borderBottom: "1px solid rgba(255,255,255,0.07)",
         flexShrink: 0,
       }}>
-        {/* Buttons row — Full screen | Get Directions | Close */}
+        {/* Buttons row — Full screen | Get Directions | [Exit Full Screen] | Close */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-          {/* Fullscreen toggle */}
-          <button
-            onClick={() => setIsFullScreen((f) => !f)}
-            title={isFullScreen ? "Exit full screen" : "Expand to full screen"}
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 5,
-              padding: "6px 12px", borderRadius: 10, height: 34,
-              background: isFullScreen
-                ? "linear-gradient(135deg, #7C3AED, #4F46E5)"
-                : "linear-gradient(135deg, #1D4ED8, #2563EB)",
-              border: `1.5px solid ${isFullScreen ? "rgba(139,92,246,0.6)" : "rgba(59,130,246,0.5)"}`,
-              color: "#fff", cursor: "pointer",
-              fontSize: 12, fontWeight: 700,
-              boxShadow: isFullScreen ? "0 2px 12px rgba(124,58,237,0.5)" : "0 2px 12px rgba(37,99,235,0.45)",
-              letterSpacing: "0.01em", whiteSpace: "nowrap", transition: "all 0.18s",
-            }}
-          >
-            <span style={{ fontSize: 14, lineHeight: 1 }}>{isFullScreen ? "⤡" : "⤢"}</span>
-            <span>{isFullScreen ? "Exit" : "Full screen"}</span>
-          </button>
+          {/* Full screen button — only shown when NOT in full screen */}
+          {!isFullScreen && (
+            <button
+              onClick={() => setIsFullScreen(true)}
+              title="Expand to full screen"
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 5,
+                padding: "6px 12px", borderRadius: 10, height: 34,
+                background: "linear-gradient(135deg, #1D4ED8, #2563EB)",
+                border: "1.5px solid rgba(59,130,246,0.5)",
+                color: "#fff", cursor: "pointer",
+                fontSize: 12, fontWeight: 700,
+                boxShadow: "0 2px 12px rgba(37,99,235,0.45)",
+                letterSpacing: "0.01em", whiteSpace: "nowrap", transition: "all 0.18s",
+              }}
+            >
+              <span style={{ fontSize: 14, lineHeight: 1 }}>⤢</span>
+              <span>Full screen</span>
+            </button>
+          )}
 
           {/* Get Directions / Clear Route */}
           {directionsLeg ? (
@@ -2699,12 +2684,34 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
             </button>
           )}
 
-          {/* Close — pushed to the right */}
+          {/* Exit Full Screen — shown only when in full screen, pushed to the right */}
+          {isFullScreen && (
+            <button
+              onClick={() => setIsFullScreen(false)}
+              title="Exit full screen"
+              style={{
+                marginLeft: "auto",
+                display: "inline-flex", alignItems: "center", gap: 5,
+                padding: "6px 12px", borderRadius: 10, height: 34,
+                background: "linear-gradient(135deg, #7C3AED, #4F46E5)",
+                border: "1.5px solid rgba(139,92,246,0.6)",
+                color: "#fff", cursor: "pointer",
+                fontSize: 12, fontWeight: 700,
+                boxShadow: "0 2px 12px rgba(124,58,237,0.5)",
+                letterSpacing: "0.01em", whiteSpace: "nowrap", transition: "all 0.18s",
+              }}
+            >
+              <span style={{ fontSize: 14, lineHeight: 1 }}>⤡</span>
+              <span>Exit Full Screen</span>
+            </button>
+          )}
+
+          {/* Close — pushed to the right when not full screen */}
           <button
             onClick={onClose}
             title="Close panel"
             style={{
-              marginLeft: "auto",
+              marginLeft: isFullScreen ? 0 : "auto",
               display: "inline-flex", alignItems: "center", gap: 5,
               padding: "6px 12px", borderRadius: 10, height: 34,
               background: "linear-gradient(135deg, #991B1B, #DC2626)",
