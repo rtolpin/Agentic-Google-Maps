@@ -704,7 +704,7 @@ export function VenueMap({
 
     // "near me" → resolve GPS coords; pass them to backend as locationBias instead of
     // replacing the query text with a broad city name like "Manhattan, New York".
-    let searchCoords: { lat: number; lng: number } | undefined;
+    let searchCoords: { lat: number; lng: number; radiusM?: number } | undefined;
     if (/near me/i.test(q)) {
       // Check localStorage cache first, then request fresh position
       if (!userLocationRef.current) {
