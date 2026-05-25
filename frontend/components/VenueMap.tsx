@@ -683,6 +683,47 @@ export function VenueMap({
     }
   }, []);
 
+  // Build InfoWindow content for a transit stop (no external links — stays in-app)
+  const openTransitInfo = useCallback((stop: TransitStop, marker?: google.maps.marker.AdvancedMarkerElement) => {
+    const icon  = TRANSIT_ICON[stop.transit_type]  ?? "🚏";
+    const color = TRANSIT_COLOR[stop.transit_type] ?? "#94A3B8";
+    const typeLabel = stop.transit_type.charAt(0).toUpperCase() + stop.transit_type.slice(1);
+
+    const userLoc = userLocationRef.current;
+    const distM = userLoc
+      ? Math.round(haversineKm(userLoc.lat, userLoc.lng, stop.latitude, stop.longitude) * 1000)
+      : null;
+    const distStr = distM != null
+      ? distM < 1000 ? `${distM} m walk` : `${(distM / 1000).toFixed(1)} km walk`
+      : null;
+
+    const content = `
+      <div style="font-family:system-ui,sans-serif;padding:6px 2px;min-width:180px;max-width:240px">
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
+          <span style="font-size:20px">${icon}</span>
+          <div>
+            <div style="font-weight:700;font-size:13px;line-height:1.3;color:#0f172a">${stop.name}</div>
+            <span style="display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;background:${color}22;color:${color};border:1px solid ${color}55;margin-top:2px">${typeLabel}</span>
+          </div>
+        </div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:${distStr ? 6 : 0}px;line-height:1.4">
+          ${stop.address.split(",").slice(0, 3).join(", ")}
+        </div>
+        ${distStr ? `<div style="font-size:12px;font-weight:600;color:#2563eb">🚶 ${distStr} from your location</div>` : ""}
+      </div>`;
+
+    if (infoWindowRef.current && mapInstanceRef.current) {
+      infoWindowRef.current.setContent(content);
+      if (marker) {
+        infoWindowRef.current.open({ map: mapInstanceRef.current, anchor: marker });
+      } else {
+        infoWindowRef.current.setPosition({ lat: stop.latitude, lng: stop.longitude });
+        infoWindowRef.current.open(mapInstanceRef.current);
+      }
+    }
+    mapInstanceRef.current?.panTo({ lat: stop.latitude, lng: stop.longitude });
+  }, []);
+
   // Effect 1: build markers (initially hidden) whenever the stops list changes
   useEffect(() => {
     if (!mapsReady || !mapInstanceRef.current || transitStops.length === 0) return;
@@ -692,7 +733,7 @@ export function VenueMap({
 
     transitStops.forEach((stop) => {
       if (!stop.latitude || !stop.longitude) return;
-      const icon = TRANSIT_ICON[stop.transit_type] ?? "🚏";
+      const icon  = TRANSIT_ICON[stop.transit_type]  ?? "🚏";
       const color = TRANSIT_COLOR[stop.transit_type] ?? "#94A3B8";
       const pin = document.createElement("div");
       pin.style.cssText = [
@@ -704,25 +745,13 @@ export function VenueMap({
       pin.textContent = icon;
 
       const marker = new google.maps.marker.AdvancedMarkerElement({
-        map: null, // hidden until showTransit is true
+        map: null,
         position: { lat: stop.latitude, lng: stop.longitude },
         content: pin,
         title: stop.name,
       });
 
-      marker.addListener("click", () => {
-        const iw = new google.maps.InfoWindow({
-          content: `<div style="font-family:sans-serif;padding:4px 2px;min-width:160px">
-            <div style="font-weight:700;font-size:13px;margin-bottom:4px">${icon} ${stop.name}</div>
-            <div style="font-size:11px;color:#666;margin-bottom:8px">${stop.address.split(",").slice(0, 2).join(",")}</div>
-            <a href="https://www.google.com/maps/dir/?api=1&destination_place_id=${stop.place_id}"
-               target="_blank" rel="noopener noreferrer"
-               style="font-size:12px;color:#2563EB;text-decoration:none;font-weight:600">
-              🗺️ Get Directions
-            </a></div>`,
-        });
-        iw.open(mapInstanceRef.current!, marker);
-      });
+      marker.addListener("click", () => openTransitInfo(stop, marker));
 
       transitMarkersRef.current.push(marker);
     });
@@ -1659,22 +1688,41 @@ export function VenueMap({
             <div style={{ fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
               Nearby Transit
             </div>
-            {transitStops.map((stop) => {
-              const icon = TRANSIT_ICON[stop.transit_type] ?? "🚏";
+            {transitStops.map((stop, idx) => {
+              const icon  = TRANSIT_ICON[stop.transit_type]  ?? "🚏";
               const color = TRANSIT_COLOR[stop.transit_type] ?? "#94A3B8";
+              const userLoc = userLocationRef.current;
+              const distM = userLoc
+                ? Math.round(haversineKm(userLoc.lat, userLoc.lng, stop.latitude, stop.longitude) * 1000)
+                : null;
               return (
-                <a
-                  key={stop.place_id}
-                  href={`https://www.google.com/maps/dir/?api=1&destination_place_id=${stop.place_id}`}
-                  target="_blank" rel="noopener noreferrer"
-                  style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.06)", textDecoration: "none" }}
+                <button
+                  key={stop.place_id || idx}
+                  onClick={() => {
+                    const marker = transitMarkersRef.current[idx];
+                    openTransitInfo(stop, marker);
+                  }}
+                  style={{
+                    display: "flex", alignItems: "flex-start", gap: 8,
+                    padding: "7px 4px", width: "100%", textAlign: "left",
+                    borderBottom: "1px solid rgba(255,255,255,0.06)",
+                    background: "none", border: "none", cursor: "pointer",
+                    borderRadius: 6, transition: "background 0.12s",
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.05)")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "none")}
                 >
-                  <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>{icon}</span>
-                  <div>
+                  <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>{icon}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, color, lineHeight: 1.3 }}>{stop.name}</div>
                     <div style={{ fontSize: 10, color: "#475569", marginTop: 2 }}>{stop.address.split(",")[0]}</div>
                   </div>
-                </a>
+                  {distM != null && (
+                    <span style={{ fontSize: 10, color: "#64748B", flexShrink: 0, marginTop: 2 }}>
+                      {distM < 1000 ? `${distM}m` : `${(distM/1000).toFixed(1)}km`}
+                    </span>
+                  )}
+                </button>
               );
             })}
           </div>
