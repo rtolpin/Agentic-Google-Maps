@@ -367,6 +367,7 @@ export function VenueMap({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
   const [detectedCity, setDetectedCity] = useState<string>(""); // from reverse geocoding
+  const [searchWasGpsAnchored, setSearchWasGpsAnchored] = useState(false);
   const [showAllMatches, setShowAllMatches] = useState(false);
   const [modalQuery, setModalQuery] = useState("");
   const [showSearchArea, setShowSearchArea] = useState(false);
@@ -1156,6 +1157,8 @@ export function VenueMap({
     // Suppress stale detectedCity whenever GPS coords are anchoring the search.
     // This prevents a prior "New York" session from hijacking Trenton results.
     const userCityParam = searchCoords ? undefined : (detectedCity || undefined);
+    const gpsAnchored = !!(userLocationRef.current && (isProximityQuery || !hasExplicitCity));
+    setSearchWasGpsAnchored(gpsAnchored);
     try {
       await search(q, userCityParam, searchCoords);
     } finally {
@@ -2395,7 +2398,9 @@ export function VenueMap({
           ════════════════════════════════════════════════════════ */}
       {state.intent && (() => {
         const intent = state.intent!;
-        const city = intent.city;
+        // When the search was GPS-anchored, use the reverse-geocoded city name instead of the
+        // LLM-parsed intent city (which defaults to "New York City" when no city is in the query).
+        const city = searchWasGpsAnchored ? detectedCity : intent.city;
         const occasion = intent.occasion?.replace(/_/g, " ") || "dining";
         const cuisine = intent.cuisine || "restaurant";
         const n = intent.group_size;
