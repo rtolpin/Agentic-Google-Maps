@@ -184,16 +184,11 @@ SELECT
         -- Private room bonus (0-5 pts)
         + multiIf({needs_private_room:Bool}, has_private_room * 5, 0)
 
-        -- Google Places rating bonus (0-15 pts): differentiates venues when
-        -- Claude has no snippet.  A 4.5-star restaurant beats an unreviewed one.
-        + multiIf(
-            google_rating >= 4.5, 15,
-            google_rating >= 4.0, 12,
-            google_rating >= 3.5,  8,
-            google_rating >= 3.0,  4,
-            google_rating  > 0,    1,
-            0
-          )
+        -- Google Places rating bonus (0-25 pts): continuous linear formula so
+        -- 4.2, 4.5, 4.7, 4.9 all produce distinct scores.
+        -- Stepped thresholds caused everything ≥4.5 to tie at 15 pts.
+        -- formula: rating*8 - 16 → 3.0=8, 4.0=16, 4.5=20, 4.7=21.6, 4.9=23.2, 5.0=24
+        + ROUND(GREATEST(0, LEAST(25, google_rating * 8 - 16)), 0)
 
         -- Freshness penalty: capped at -5 pts (1 pt per day, max 5 days)
         - LEAST(5, dateDiff('hour', scraped_at, now()) / 24)

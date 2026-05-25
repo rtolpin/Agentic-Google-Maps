@@ -473,16 +473,7 @@ def _score_enriched_fallback(enriched: list[dict], intent: VenueIntent) -> list[
         # Google Places rating bonus (0-15 pts) — differentiates venues even when
         # Claude extraction has no snippet to work with
         rating = ev.get("google_rating") or 0.0
-        if rating >= 4.5:
-            score += 15
-        elif rating >= 4.0:
-            score += 12
-        elif rating >= 3.5:
-            score += 8
-        elif rating >= 3.0:
-            score += 4
-        elif rating > 0:
-            score += 1
+        score += round(max(0.0, min(25.0, rating * 8 - 16)), 1)
 
         score = min(100.0, max(0.0, score))
         venue_id = (name + city).lower().replace(" ", "_").replace("'", "")
