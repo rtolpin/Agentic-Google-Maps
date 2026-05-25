@@ -101,6 +101,28 @@ interface TransitStop {
   transit_type: "subway" | "train" | "bus" | "airport" | "ferry";
 }
 
+type TravelMode = "DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING" | "FLYING";
+
+interface FlightInfo {
+  price: number | null;
+  stops: number;
+  airline: string;
+  flightNumber: string;
+  departureAirport: string;
+  arrivalAirport: string;
+  durationStr: string;
+}
+
+interface DirectionsLeg {
+  distance: string;
+  duration: string;
+  flight?: FlightInfo;
+}
+
+type RouteOption =
+  | { type: "directions"; index: number; duration: string; distance: string; summary: string }
+  | { type: "flight"; index: number; price: number | null; durationStr: string; stops: number; airline: string; flightNumber: string; departureAirport: string; arrivalAirport: string };
+
 // ─── Spatial query categories ─────────────────────────────────────────────
 
 export type PlaceCategory =
@@ -249,10 +271,13 @@ export function VenueMap({
   const [transitLoading, setTransitLoading] = useState(false);
   const transitMarkersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
   const directionsRendererRef = useRef<google.maps.DirectionsRenderer | null>(null);
-  const [directionsTravelMode, setDirectionsTravelMode] = useState<"DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING">("TRANSIT");
-  const [directionsLeg, setDirectionsLeg] = useState<{ distance: string; duration: string } | null>(null);
+  const directionsResultRef = useRef<google.maps.DirectionsResult | null>(null);
+  const [directionsTravelMode, setDirectionsTravelMode] = useState<TravelMode>("TRANSIT");
+  const [directionsLeg, setDirectionsLeg] = useState<DirectionsLeg | null>(null);
   const [directionsLoading, setDirectionsLoading] = useState(false);
   const [directionsError, setDirectionsError] = useState<string | null>(null);
+  const [routeOptions, setRouteOptions] = useState<RouteOption[] | null>(null);
+  const [selectedRouteIndex, setSelectedRouteIndex] = useState<number | null>(null);
 
   const addressInputRef = useRef<HTMLInputElement>(null);
   const [hasAddressText, setHasAddressText] = useState(false);
@@ -607,19 +632,79 @@ export function VenueMap({
   const clearDirections = useCallback(() => {
     directionsRendererRef.current?.setMap(null);
     directionsRendererRef.current = null;
+    directionsResultRef.current = null;
     setDirectionsLeg(null);
     setDirectionsError(null);
+    setRouteOptions(null);
+    setSelectedRouteIndex(null);
   }, []);
 
   const getDirections = useCallback(async (
     venue: { place_id?: string | null; latitude?: number | null; longitude?: number | null; name: string; address?: string | null },
-    travelMode: "DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING",
+    travelMode: TravelMode,
   ) => {
     const origin = userLocationRef.current;
     if (!origin) {
       setDirectionsError("Enable location access in your browser to get directions");
       return;
     }
+
+    // ── Flight search branch ───────────────────────────────────────────────
+    if (travelMode === "FLYING") {
+      const vLat = venue.latitude;
+      const vLng = venue.longitude;
+      if (!vLat || !vLng) {
+        setDirectionsError("Venue coordinates unavailable for flight search");
+        return;
+      }
+      setDirectionsError(null);
+      setDirectionsLoading(true);
+      clearDirections();
+      try {
+        const url = new URL(`${API_BASE}/api/flights`);
+        url.searchParams.set("origin_lat", String(origin.lat));
+        url.searchParams.set("origin_lng", String(origin.lng));
+        url.searchParams.set("dest_lat", String(vLat));
+        url.searchParams.set("dest_lng", String(vLng));
+        const resp = await fetch(url.toString());
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({ detail: `HTTP ${resp.status}` }));
+          throw new Error((err as { detail?: string }).detail ?? `HTTP ${resp.status}`);
+        }
+        const data = await resp.json() as {
+          options: Array<{
+            price?: number; duration_str?: string; stops?: number;
+            airline?: string; flight_number?: string;
+            departure_airport_display?: string; arrival_airport_display?: string;
+          }>;
+        };
+        const opts: RouteOption[] = (data.options ?? []).map((o, i) => ({
+          type: "flight" as const,
+          index: i,
+          price: o.price ?? null,
+          durationStr: o.duration_str ?? "",
+          stops: o.stops ?? 0,
+          airline: o.airline ?? "",
+          flightNumber: o.flight_number ?? "",
+          departureAirport: o.departure_airport_display ?? "",
+          arrivalAirport: o.arrival_airport_display ?? "",
+        }));
+        setRouteOptions(opts);
+        if (opts.length === 1) {
+          setSelectedRouteIndex(0);
+          const o = opts[0];
+          if (o.type === "flight") {
+            setDirectionsLeg({ distance: "", duration: "", flight: { price: o.price, stops: o.stops, airline: o.airline, flightNumber: o.flightNumber, departureAirport: o.departureAirport, arrivalAirport: o.arrivalAirport, durationStr: o.durationStr } });
+          }
+        }
+      } catch (e: unknown) {
+        setDirectionsError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setDirectionsLoading(false);
+      }
+      return;
+    }
+
     if (!mapInstanceRef.current) return;
 
     // Build the best available destination: Place ID → lat/lng → text query
@@ -654,7 +739,7 @@ export function VenueMap({
       origin,
       destination,
       travelMode: google.maps.TravelMode[travelMode],
-      provideRouteAlternatives: false,
+      provideRouteAlternatives: true,
       ...(travelMode === "TRANSIT"
         ? { transitOptions: { departureTime: new Date() } }
         : {}),
@@ -663,12 +748,21 @@ export function VenueMap({
     try {
       const result = await service.route(request);
       renderer.setDirections(result);
-      const leg = result.routes[0]?.legs[0];
-      if (leg) {
-        setDirectionsLeg({
-          distance: leg.distance?.text ?? "",
-          duration: leg.duration?.text ?? "",
-        });
+      directionsResultRef.current = result;
+
+      const opts: RouteOption[] = result.routes.map((route, i) => ({
+        type: "directions" as const,
+        index: i,
+        duration: route.legs[0]?.duration?.text ?? "",
+        distance: route.legs[0]?.distance?.text ?? "",
+        summary: route.summary || `Route ${i + 1}`,
+      }));
+      setRouteOptions(opts);
+
+      if (opts.length === 1) {
+        setSelectedRouteIndex(0);
+        const leg = result.routes[0]?.legs[0];
+        if (leg) setDirectionsLeg({ distance: leg.distance?.text ?? "", duration: leg.duration?.text ?? "" });
       }
     } catch (e: unknown) {
       clearDirections();
@@ -684,6 +778,31 @@ export function VenueMap({
       setDirectionsLoading(false);
     }
   }, [clearDirections]);
+
+  const selectRoute = useCallback((option: RouteOption) => {
+    setSelectedRouteIndex(option.index);
+    if (option.type === "directions") {
+      directionsRendererRef.current?.setOptions({ routeIndex: option.index });
+      const leg = directionsResultRef.current?.routes[option.index]?.legs[0];
+      if (leg) setDirectionsLeg({ distance: leg.distance?.text ?? "", duration: leg.duration?.text ?? "" });
+    } else {
+      setDirectionsLeg({ distance: "", duration: "", flight: { price: option.price, stops: option.stops, airline: option.airline, flightNumber: option.flightNumber, departureAirport: option.departureAirport, arrivalAirport: option.arrivalAirport, durationStr: option.durationStr } });
+    }
+  }, []);
+
+  // ── Auto-recalculate directions when travel mode changes ────────────────
+  const directionsLegRef = useRef(directionsLeg);
+  directionsLegRef.current = directionsLeg;
+  const prevTravelModeRef = useRef(directionsTravelMode);
+
+  useEffect(() => {
+    if (prevTravelModeRef.current === directionsTravelMode) return;
+    prevTravelModeRef.current = directionsTravelMode;
+    const selectedVenue = state.venues.find((v) => v.venue_id === state.selectedVenueId) ?? null;
+    if (directionsLegRef.current && selectedVenue) {
+      getDirections(selectedVenue, directionsTravelMode);
+    }
+  }, [directionsTravelMode, getDirections, state.venues, state.selectedVenueId]);
 
   // ── SSE event tracing ───────────────────────────────────────────────────
 
@@ -2345,11 +2464,14 @@ export function VenueMap({
           }}
           onGetDirections={getDirections}
           onClearDirections={clearDirections}
+          onSelectRoute={selectRoute}
           directionsTravelMode={directionsTravelMode}
           onSetTravelMode={setDirectionsTravelMode}
           directionsLeg={directionsLeg}
           directionsLoading={directionsLoading}
           directionsError={directionsError}
+          routeOptions={routeOptions}
+          selectedRouteIndex={selectedRouteIndex}
         />
       )}
 
@@ -2521,16 +2643,19 @@ interface VenueDetailSidebarProps {
   venue: VenueSignal | null;
   placeDetails: GooglePlaceDetails | null;
   onClose: () => void;
-  onGetDirections: (venue: { place_id?: string | null; latitude?: number | null; longitude?: number | null; name: string; address?: string | null }, mode: "DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING") => void;
+  onGetDirections: (venue: { place_id?: string | null; latitude?: number | null; longitude?: number | null; name: string; address?: string | null }, mode: TravelMode) => void;
   onClearDirections: () => void;
-  directionsTravelMode: "DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING";
-  onSetTravelMode: (m: "DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING") => void;
-  directionsLeg: { distance: string; duration: string } | null;
+  onSelectRoute: (option: RouteOption) => void;
+  directionsTravelMode: TravelMode;
+  onSetTravelMode: (m: TravelMode) => void;
+  directionsLeg: DirectionsLeg | null;
   directionsLoading: boolean;
   directionsError?: string | null;
+  routeOptions: RouteOption[] | null;
+  selectedRouteIndex: number | null;
 }
 
-function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onClearDirections, directionsTravelMode, onSetTravelMode, directionsLeg, directionsLoading, directionsError }: VenueDetailSidebarProps) {
+function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onClearDirections, onSelectRoute, directionsTravelMode, onSetTravelMode, directionsLeg, directionsLoading, directionsError, routeOptions, selectedRouteIndex }: VenueDetailSidebarProps) {
   const [sidebarW, setSidebarW] = useState(380);
   const [isFullScreen, setIsFullScreen] = useState(false);
 
@@ -2643,8 +2768,8 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
             </button>
           )}
 
-          {/* Get Directions / Clear Route */}
-          {directionsLeg ? (
+          {/* Get Directions / Search Flights / Clear */}
+          {(directionsLeg || routeOptions) ? (
             <button
               onClick={onClearDirections}
               style={{
@@ -2659,7 +2784,7 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
               }}
             >
               <span style={{ fontSize: 13 }}>✕</span>
-              <span>Clear Route</span>
+              <span>{directionsTravelMode === "FLYING" ? "Clear Flight" : "Clear Route"}</span>
             </button>
           ) : (
             <button
@@ -2679,8 +2804,8 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
                 opacity: directionsLoading ? 0.7 : 1,
               }}
             >
-              <span style={{ fontSize: 13 }}>{directionsLoading ? "⏳" : "🗺️"}</span>
-              <span>{directionsLoading ? "Routing…" : "Get Directions"}</span>
+              <span style={{ fontSize: 13 }}>{directionsLoading ? "⏳" : directionsTravelMode === "FLYING" ? "✈️" : "🗺️"}</span>
+              <span>{directionsLoading ? (directionsTravelMode === "FLYING" ? "Searching…" : "Routing…") : directionsTravelMode === "FLYING" ? "Search Flights" : "Get Directions"}</span>
             </button>
           )}
 
@@ -2745,15 +2870,69 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
               {icon} {label}
             </button>
           ))}
-          {directionsLeg && (
-            <span style={{ fontSize: 12, color: "#34D399", fontWeight: 700, marginLeft: 6 }}>
-              {directionsLeg.duration} · {directionsLeg.distance}
-            </span>
-          )}
           {directionsError && (
             <span style={{ fontSize: 11, color: "#F87171", marginLeft: 4 }}>⚠️ {directionsError}</span>
           )}
         </div>
+
+        {/* Route / flight options picker */}
+        {routeOptions && routeOptions.length > 0 && (
+          <div style={{ marginBottom: 10 }}>
+            {routeOptions[0].type === "flight" && (
+              <div style={{ fontSize: 11, color: "#475569", marginBottom: 6 }}>
+                ✈️ {routeOptions[0].departureAirport} → {routeOptions[0].arrivalAirport}
+              </div>
+            )}
+            {routeOptions.map((opt) => {
+              const isSelected = selectedRouteIndex === opt.index;
+              return (
+                <button
+                  key={opt.index}
+                  onClick={() => onSelectRoute(opt)}
+                  style={{
+                    display: "flex", width: "100%", alignItems: "center",
+                    gap: 8, padding: "8px 12px", borderRadius: 9,
+                    marginBottom: 4, cursor: "pointer", border: "none",
+                    background: isSelected ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.04)",
+                    outline: isSelected ? "1.5px solid rgba(16,185,129,0.5)" : "1px solid rgba(255,255,255,0.08)",
+                  }}
+                >
+                  {isSelected && <span style={{ fontSize: 10, color: "#34D399" }}>✓</span>}
+                  {opt.type === "directions" ? (
+                    <>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: isSelected ? "#34D399" : "#A5B4FC", minWidth: 60 }}>
+                        {opt.duration}
+                      </span>
+                      <span style={{ fontSize: 12, color: "#94A3B8" }}>{opt.distance}</span>
+                      {opt.summary && (
+                        <span style={{ fontSize: 11, color: "#475569", marginLeft: "auto" }}>via {opt.summary}</span>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: isSelected ? "#34D399" : "#A5B4FC", minWidth: 60 }}>
+                        {opt.durationStr}
+                      </span>
+                      <span style={{ fontSize: 11, color: opt.stops === 0 ? "#34D399" : "#94A3B8" }}>
+                        {opt.stops === 0 ? "Nonstop" : `${opt.stops} stop${opt.stops > 1 ? "s" : ""}`}
+                      </span>
+                      {opt.airline && (
+                        <span style={{ fontSize: 11, color: "#64748B" }}>
+                          {opt.airline}{opt.flightNumber ? ` ${opt.flightNumber}` : ""}
+                        </span>
+                      )}
+                      {opt.price != null && (
+                        <span style={{ fontSize: 12, fontWeight: 700, color: "#34D399", marginLeft: "auto" }}>
+                          ${opt.price}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Name — full width below buttons, no overlap risk */}
         <h2 style={{
@@ -2965,12 +3144,12 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
 
 // ─── Directions panel ────────────────────────────────────────────────────
 
-type TravelMode = "DRIVING" | "TRANSIT" | "WALKING" | "BICYCLING";
 const TRAVEL_MODES: { mode: TravelMode; icon: string; label: string }[] = [
   { mode: "TRANSIT",   icon: "🚇", label: "Transit"  },
   { mode: "DRIVING",   icon: "🚗", label: "Drive"    },
   { mode: "WALKING",   icon: "🚶", label: "Walk"     },
   { mode: "BICYCLING", icon: "🚲", label: "Bike"     },
+  { mode: "FLYING",    icon: "✈️",  label: "Fly"      },
 ];
 
 function DirectionsPanel({
@@ -2981,7 +3160,7 @@ function DirectionsPanel({
   onSetMode: (m: TravelMode) => void;
   onGet: (v: { place_id?: string | null; latitude?: number | null; longitude?: number | null; name: string; address?: string | null }, m: TravelMode) => void;
   onClear: () => void;
-  leg: { distance: string; duration: string } | null;
+  leg: DirectionsLeg | null;
   loading: boolean;
   error?: string | null;
   small?: boolean;

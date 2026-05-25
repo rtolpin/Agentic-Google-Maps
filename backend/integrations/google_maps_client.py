@@ -373,6 +373,41 @@ class GoogleMapsClient:
                 longitude=loc.get("longitude"),
             )
 
+    # ─── Airport lookup (for flight search) ──────────────────────────────────
+
+    async def find_nearest_airport(self, lat: float, lng: float) -> dict | None:
+        """Find the nearest airport within 150 km of the given coordinates."""
+        body = {
+            "locationRestriction": {
+                "circle": {
+                    "center": {"latitude": lat, "longitude": lng},
+                    "radius": 150000.0,
+                }
+            },
+            "includedTypes": ["international_airport", "airport"],
+            "maxResultCount": 5,
+            "rankPreference": "DISTANCE",
+        }
+        try:
+            resp = await self._places.post(
+                "/places:searchNearby",
+                json=body,
+                headers={"X-Goog-FieldMask": "places.id,places.displayName,places.formattedAddress,places.location"},
+            )
+            resp.raise_for_status()
+            places = resp.json().get("places", [])
+        except Exception:
+            return None
+        if not places:
+            return None
+        p = places[0]
+        return {
+            "name": p.get("displayName", {}).get("text", ""),
+            "address": p.get("formattedAddress", ""),
+            "latitude": p.get("location", {}).get("latitude"),
+            "longitude": p.get("location", {}).get("longitude"),
+        }
+
     # ─── Map marker assembly ──────────────────────────────────────────────────
 
     @staticmethod

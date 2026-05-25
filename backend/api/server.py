@@ -213,6 +213,54 @@ async def get_nearby_transit(
         await maps.close()
 
 
+# ─── Flight search ────────────────────────────────────────────────────────────
+
+@app.get("/api/flights", summary="Cheapest one-way flight between two locations")
+async def search_flights_route(
+    origin_lat: float,
+    origin_lng: float,
+    dest_lat: float,
+    dest_lng: float,
+) -> dict:
+    """
+    Find the nearest airports to the given coordinates and return the cheapest
+    one-way flight option via Serpapi Google Flights.
+    Requires SERPAPI_API_KEY to be set.
+    """
+    from integrations.serpapi_flights_client import SerpApiFlightsClient, _extract_iata
+
+    async with GoogleMapsClient() as gmc:
+        origin_airport, dest_airport = await asyncio.gather(
+            gmc.find_nearest_airport(origin_lat, origin_lng),
+            gmc.find_nearest_airport(dest_lat, dest_lng),
+        )
+
+    if not origin_airport:
+        raise HTTPException(status_code=422, detail="No airport found near your location")
+    if not dest_airport:
+        raise HTTPException(status_code=422, detail="No airport found near the destination")
+
+    dep_iata = _extract_iata(origin_airport["name"])
+    arr_iata = _extract_iata(dest_airport["name"])
+
+    if not dep_iata:
+        raise HTTPException(status_code=422, detail=f"Could not determine airport code for: {origin_airport['name']}")
+    if not arr_iata:
+        raise HTTPException(status_code=422, detail=f"Could not determine airport code for: {dest_airport['name']}")
+    if dep_iata == arr_iata:
+        raise HTTPException(status_code=422, detail="Origin and destination are served by the same airport")
+
+    options = await SerpApiFlightsClient().search_flights(dep_iata, arr_iata)
+    if not options:
+        raise HTTPException(status_code=404, detail=f"No flights found from {dep_iata} to {arr_iata}")
+
+    for opt in options:
+        opt["departure_airport_display"] = origin_airport["name"]
+        opt["arrival_airport_display"] = dest_airport["name"]
+
+    return {"options": options}
+
+
 # ─── Google Maps — map markers ────────────────────────────────────────────────
 
 @app.get(
