@@ -12,7 +12,6 @@ from datetime import date, timedelta
 
 import httpx
 
-SERPAPI_KEY = os.environ.get("SERPAPI_API_KEY", "")
 _SERPAPI_BASE = "https://serpapi.com/search.json"
 
 # IATA code lookup keyed by partial airport name fragment (lowercase)
@@ -408,10 +407,12 @@ class SerpApiFlightsClient:
         """
         Search for one-way flights between two IATA airport codes.
         Returns up to max_options sorted by price (cheapest first).
-        Returns empty list if no flights found or key not configured.
+        Raises ValueError if SERPAPI_API_KEY is not configured.
+        Returns empty list if the API returns no flights.
         """
-        if not SERPAPI_KEY:
-            return []
+        api_key = os.environ.get("SERPAPI_API_KEY", "")
+        if not api_key:
+            raise ValueError("SERPAPI_API_KEY is not set — add it to your environment variables")
         if not outbound_date:
             outbound_date = (date.today() + timedelta(days=7)).isoformat()
 
@@ -426,7 +427,7 @@ class SerpApiFlightsClient:
                     "type": "2",        # one-way
                     "currency": "USD",
                     "hl": "en",
-                    "api_key": SERPAPI_KEY,
+                    "api_key": api_key,
                 },
             )
             resp.raise_for_status()

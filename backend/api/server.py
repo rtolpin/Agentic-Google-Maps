@@ -235,7 +235,10 @@ async def search_flights_route(
     if dep_iata == arr_iata:
         raise HTTPException(status_code=422, detail="Origin and destination are served by the same airport")
 
-    options = await SerpApiFlightsClient().search_flights(dep_iata, arr_iata)
+    try:
+        options = await SerpApiFlightsClient().search_flights(dep_iata, arr_iata)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     if not options:
         raise HTTPException(status_code=404, detail=f"No flights found from {dep_iata} to {arr_iata}")
 
