@@ -1057,6 +1057,9 @@ export function VenueMap({
           font-family: system-ui, -apple-system, sans-serif !important;
           overflow: hidden !important;
           padding: 4px 0 !important;
+          min-width: 480px !important;
+          width: max-content !important;
+          max-width: 640px !important;
         }
         .pac-item {
           background: transparent !important;
@@ -1069,6 +1072,7 @@ export function VenueMap({
           align-items: center !important;
           gap: 8px !important;
           transition: background 0.12s ease !important;
+          white-space: nowrap !important;
         }
         .pac-item:hover, .pac-item-selected {
           background: rgba(59,130,246,0.18) !important;
