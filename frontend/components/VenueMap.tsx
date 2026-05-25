@@ -1683,6 +1683,8 @@ export function VenueMap({
             background: "rgba(15,23,42,0.95)", backdropFilter: "blur(12px)",
             border: "1px solid rgba(255,255,255,0.1)", borderRadius: 14,
             padding: "10px 14px", maxWidth: 260, maxHeight: 280, overflowY: "auto",
+            scrollbarWidth: "thin" as React.CSSProperties["scrollbarWidth"],
+            scrollBehavior: "smooth",
             boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
           }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 8 }}>
@@ -2581,6 +2583,8 @@ export function VenueMap({
               return (
             <div style={{
               flex: 1, minHeight: 0, overflowY: "auto", padding: "16px 20px 20px",
+            scrollBehavior: "smooth",
+            scrollbarWidth: "thin" as React.CSSProperties["scrollbarWidth"],
               display: "grid",
               gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
               gridAutoRows: 110,
@@ -2961,6 +2965,23 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
 
   return (
     <>
+    <style>{`
+      .sidebar-scroll {
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255,255,255,0.15) transparent;
+        -webkit-overflow-scrolling: touch;
+        scroll-behavior: smooth;
+      }
+      .sidebar-scroll::-webkit-scrollbar { width: 4px; }
+      .sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+      .sidebar-scroll::-webkit-scrollbar-thumb {
+        background: rgba(255,255,255,0.15);
+        border-radius: 4px;
+      }
+      .sidebar-scroll::-webkit-scrollbar-thumb:hover {
+        background: rgba(255,255,255,0.3);
+      }
+    `}</style>
     {/* Backdrop when fullscreen */}
     {isFullScreen && (
       <div
@@ -3267,7 +3288,7 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
       </div>
 
       {/* Scrollable body */}
-      <div style={{ flex: 1, overflowY: "auto", padding: isFullScreen ? "24px 32px 36px" : "16px 18px 28px" }}>
+      <div className="sidebar-scroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: isFullScreen ? "24px 32px 36px" : "16px 18px 28px" }}>
         {isFullScreen ? (
           /* ── Two-column layout in fullscreen ── */
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 28, alignItems: "start" }}>
