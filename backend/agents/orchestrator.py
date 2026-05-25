@@ -477,10 +477,14 @@ def _score_enriched_fallback(enriched: list[dict], intent: VenueIntent) -> list[
         score += round(max(0.0, min(40.0, (rating - 2.0) * 13.3)), 1)
 
         # Cuisine keyword match bonus (0-15 pts): venues whose name or snippet
-        # explicitly mention the searched food type rank above generic alternatives.
+        # mention the searched food item OR its broader category get a boost.
+        # "Pancake House" matches "pancakes"; a "breakfast diner" matches via category.
         if intent.cuisine:
+            from agents.scraper_agent import _FOOD_TO_CATEGORY
             cuisine_kw = intent.cuisine.lower()
-            if cuisine_kw in name.lower() or cuisine_kw in (ev.get("snippet") or "").lower():
+            food_cat = _FOOD_TO_CATEGORY.get(cuisine_kw, "")
+            text = name.lower() + " " + (ev.get("snippet") or "").lower()
+            if cuisine_kw in text or (food_cat and food_cat in text):
                 score += 15
 
         score = min(100.0, max(0.0, score))

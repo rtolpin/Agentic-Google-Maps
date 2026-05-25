@@ -121,6 +121,117 @@ _OPEN_NOW_KEYWORDS = {"open now", "open right now", "currently open"}
 # which would return 0 results when searched outside business hours.
 _OPEN_TODAY_KEYWORDS = {"open today", "open this weekend", "open this week"}
 
+# Maps specific food items to their restaurant-category search term.
+# Used in query building to add a broader category query alongside the
+# specific-dish query — e.g. "pancakes" → also search "breakfast restaurant".
+# This catches places that serve the dish but don't have it in their name.
+_FOOD_TO_CATEGORY: dict[str, str] = {
+    # Breakfast / brunch
+    "pancakes": "breakfast",
+    "waffles": "breakfast",
+    "french toast": "breakfast",
+    "eggs benedict": "breakfast",
+    "omelette": "breakfast",
+    "omelettes": "breakfast",
+    "crepes": "breakfast",
+    "granola": "breakfast",
+    "acai bowl": "breakfast",
+    "bagels": "bagel shop",
+    "donuts": "bakery",
+    "doughnuts": "bakery",
+    "pastries": "bakery",
+    "croissants": "bakery",
+    # Pizza / Italian
+    "pizza": "pizzeria",
+    "pasta": "italian",
+    "lasagna": "italian",
+    "risotto": "italian",
+    "carbonara": "italian",
+    "tiramisu": "italian",
+    # Japanese
+    "sushi": "japanese",
+    "sashimi": "japanese",
+    "ramen": "ramen shop",
+    "udon": "japanese",
+    "tempura": "japanese",
+    "yakitori": "japanese",
+    "izakaya": "japanese",
+    "omakase": "japanese",
+    # Chinese
+    "dumplings": "chinese",
+    "dim sum": "chinese",
+    "bao": "chinese",
+    "fried rice": "chinese",
+    "peking duck": "chinese",
+    "hot pot": "chinese",
+    # Korean
+    "korean bbq": "korean",
+    "bibimbap": "korean",
+    "bulgogi": "korean",
+    "kimchi": "korean",
+    # Vietnamese
+    "pho": "vietnamese",
+    "banh mi": "vietnamese",
+    "spring rolls": "vietnamese",
+    # Mexican
+    "tacos": "mexican",
+    "burritos": "mexican",
+    "enchiladas": "mexican",
+    "quesadillas": "mexican",
+    "tamales": "mexican",
+    "nachos": "mexican",
+    "guacamole": "mexican",
+    # American / BBQ
+    "burgers": "burger joint",
+    "cheeseburger": "burger joint",
+    "wings": "american",
+    "chicken wings": "american",
+    "fried chicken": "american",
+    "bbq": "barbecue",
+    "ribs": "barbecue",
+    "brisket": "barbecue",
+    "pulled pork": "barbecue",
+    "steak": "steakhouse",
+    "cheesesteak": "american",
+    # Seafood
+    "seafood": "seafood",
+    "lobster": "seafood",
+    "oysters": "seafood",
+    "clams": "seafood",
+    "crab": "seafood",
+    "fish and chips": "seafood",
+    # Indian / South Asian
+    "curry": "indian",
+    "biryani": "indian",
+    "tikka masala": "indian",
+    "naan": "indian",
+    "samosas": "indian",
+    # Middle Eastern / Mediterranean
+    "falafel": "middle eastern",
+    "shawarma": "middle eastern",
+    "kebab": "middle eastern",
+    "hummus": "mediterranean",
+    "gyros": "greek",
+    "pita": "mediterranean",
+    # Sandwiches / Deli
+    "sandwiches": "deli",
+    "pastrami": "deli",
+    "hoagies": "deli",
+    # Healthy / other
+    "salad": "healthy",
+    "smoothies": "juice bar",
+    "acai": "healthy",
+    "poke": "hawaiian",
+    "ice cream": "ice cream",
+    "gelato": "ice cream",
+    "frozen yogurt": "ice cream",
+    "churros": "dessert",
+    "crepe": "french",
+    "fondue": "european",
+    "wonton": "chinese",
+    "noodles": "asian",
+}
+
 
 _CLAUDE_EXTRACTION_LIMIT = 20  # venues that get full Claude signal extraction
 _MAX_VENUES = 20               # return up to 20 recommendations
@@ -358,11 +469,20 @@ def _build_queries(intent: VenueIntent, user_area: str = "") -> list[str]:
 
     # ── Restaurants — 8 queries for GPS, 5 for named-city ────────────────
     cuisine_tag = f" {cuisine}" if cuisine else ""
+    # For specific food items, look up a broader category to widen coverage.
+    # "pancakes" → "breakfast", "tacos" → "mexican", "sushi" → "japanese", etc.
+    # This catches venues that serve the dish but don't use the dish name in their listing.
+    food_cat = _FOOD_TO_CATEGORY.get(cuisine.lower(), "") if cuisine else ""
+    # Only use category tag when it differs from the cuisine (avoid "pizza pizza restaurant")
+    cat_query_3 = (
+        f"best {food_cat} restaurant {location}" if food_cat and food_cat != cuisine.lower()
+        else f"popular{cuisine_tag} dining {location}"
+    )
     if is_gps:
         return [
-            f"best {occasion}{cuisine_tag} restaurant {location}",
+            f"best{cuisine_tag} {location}",
             f"{cuisine_tag} restaurant {location}".strip(),
-            f"special occasion{cuisine_tag} restaurant {location}",
+            cat_query_3,
             f"top rated{cuisine_tag} restaurant {location}",
             f"{cuisine_tag} restaurant {broad_loc}".strip(),
             f"local{cuisine_tag} restaurant near me".strip(),
@@ -370,9 +490,9 @@ def _build_queries(intent: VenueIntent, user_area: str = "") -> list[str]:
             f"restaurant{cuisine_tag} near me".strip(),
         ]
     return [
-        f"best {occasion}{cuisine_tag} restaurant {location}",
-        f"{cuisine_tag} restaurant group dining {location}",
-        f"special occasion{cuisine_tag} restaurant {location}",
+        f"best{cuisine_tag} restaurant {location}",
+        f"{cuisine_tag} restaurant {location}".strip(),
+        cat_query_3,
         f"top rated{cuisine_tag} restaurant {location}",
         f"popular{cuisine_tag} restaurant {location}",
     ]
