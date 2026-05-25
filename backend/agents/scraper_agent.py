@@ -240,10 +240,35 @@ _MAX_VENUES = 20               # return up to 20 recommendations
 # never silently disables the location restriction.
 # (lat, lng, ISO-3166-1 alpha-2 country code)
 _CITY_COORDS: dict[str, tuple[float, float, str]] = {
-    "New York City":  (40.7128, -74.0060, "US"),
-    "New York":       (40.7128, -74.0060, "US"),
-    "NYC":            (40.7128, -74.0060, "US"),
-    "Manhattan":      (40.7831, -73.9712, "US"),
+    "New York City":  (40.7549, -73.9840, "US"),  # Midtown — central for restaurant searches
+    "New York":       (40.7549, -73.9840, "US"),
+    "NYC":            (40.7549, -73.9840, "US"),
+    "Manhattan":      (40.7549, -73.9840, "US"),
+    # NYC neighborhoods — used for tight-radius bias when intent.neighborhood is set
+    "Midtown":              (40.7549, -73.9840, "US"),
+    "Midtown Manhattan":    (40.7549, -73.9840, "US"),
+    "Midtown East":         (40.7549, -73.9745, "US"),
+    "Midtown West":         (40.7580, -73.9855, "US"),
+    "Hell's Kitchen":       (40.7638, -73.9918, "US"),
+    "Chelsea":              (40.7465, -74.0014, "US"),
+    "Flatiron":             (40.7410, -73.9897, "US"),
+    "Gramercy":             (40.7379, -73.9840, "US"),
+    "Greenwich Village":    (40.7336, -74.0027, "US"),
+    "West Village":         (40.7358, -74.0036, "US"),
+    "East Village":         (40.7265, -73.9857, "US"),
+    "SoHo":                 (40.7233, -74.0030, "US"),
+    "Tribeca":              (40.7163, -74.0086, "US"),
+    "Lower Manhattan":      (40.7074, -74.0113, "US"),
+    "Financial District":   (40.7074, -74.0113, "US"),
+    "Upper East Side":      (40.7736, -73.9566, "US"),
+    "Upper West Side":      (40.7870, -73.9754, "US"),
+    "Harlem":               (40.8116, -73.9465, "US"),
+    "Astoria":              (40.7721, -73.9302, "US"),
+    "Long Island City":     (40.7448, -73.9483, "US"),
+    "Williamsburg":         (40.7081, -73.9571, "US"),
+    "Bushwick":             (40.6942, -73.9213, "US"),
+    "Park Slope":           (40.6710, -73.9814, "US"),
+    "DUMBO":                (40.7033, -73.9893, "US"),
     "Brooklyn":       (40.6782, -73.9442, "US"),
     "Queens":         (40.7282, -73.7949, "US"),
     "Bronx":          (40.8448, -73.8648, "US"),
@@ -618,8 +643,16 @@ class ScraperAgent:
             country_code = "US"
         elif intent.city not in ("Unknown", ""):
             bias = None
+            # Neighborhood takes priority with a tight radius for precise results.
+            # "best restaurant midtown" should bias to Midtown (40.75), not NYC center.
+            if intent.neighborhood:
+                for nbhd_key in (intent.neighborhood, f"{intent.neighborhood} Manhattan"):
+                    if nbhd_key in _CITY_COORDS:
+                        clat, clng, country_code = _CITY_COORDS[nbhd_key]
+                        bias = {"lat": clat, "lng": clng, "radius_m": 5000.0}
+                        break
             city_key = intent.city.strip()
-            if city_key in _CITY_COORDS:
+            if bias is None and city_key in _CITY_COORDS:
                 city_radius = 80000.0 if is_outdoor else 30000.0
                 clat, clng, country_code = _CITY_COORDS[city_key]
                 bias = {"lat": clat, "lng": clng, "radius_m": city_radius}
