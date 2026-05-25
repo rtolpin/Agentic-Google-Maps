@@ -1970,7 +1970,7 @@ export function VenueMap({
         return chips.length === 0 ? null : (
           <div style={{
             position: "absolute",
-            top: (mapsReady && state.status !== "searching") ? 224 : 188,
+            top: (mapsReady && state.status !== "searching") ? 252 : 188,
             left: showLeftPanel ? leftPanelW + 16 : 16,
             right: 16,
             zIndex: 10,
