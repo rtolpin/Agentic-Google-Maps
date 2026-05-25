@@ -1016,9 +1016,18 @@ export function VenueMap({
 
   // Matches any query that implies "use my current location" so we resolve GPS
   // instead of falling back to a stale detectedCity.
-  // Covers: "near me", "nearby", "near here", "within 5 miles", "within 2 km",
+  // Covers: "near me", "nearby", "near here", "within 5/five miles", "of me",
   //         "around me", "around here", "close to me", "in my area"
-  const PROXIMITY_RE = /(near me|near here|nearby|within\s+\d+\s*(mile|km|meter|mi)\w*|around me|around here|close to me|in my area)/i;
+  const _NUM_WORDS = "one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty";
+  const _DIST_PAT  = `within\\s+(\\d+(?:\\.\\d+)?|${_NUM_WORDS})\\s*(mile|km|meter|mi)\\w*`;
+  const PROXIMITY_RE = new RegExp(
+    `(near me|near here|nearby|of me|${_DIST_PAT}|around me|around here|close to me|in my area)`,
+    "i",
+  );
+  const _WORD_DIST: Record<string, number> = {
+    one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8,
+    nine: 9, ten: 10, fifteen: 15, twenty: 20, thirty: 30,
+  };
 
   const handleSearch = useCallback(async (rawQ: string) => {
     let q = rawQ.trim();
@@ -1058,11 +1067,12 @@ export function VenueMap({
       if (userLocationRef.current) {
         const userLoc = userLocationRef.current;
 
-        // Extract explicit radius from "within N miles/km" — convert to metres
-        const distMatch = q.match(/within\s+(\d+(?:\.\d+)?)\s*(mile|km|mi)\w*/i);
+        // Extract explicit radius from "within N/five miles/km" — convert to metres
+        const distMatch = q.match(new RegExp(`within\\s+(\\d+(?:\\.\\d+)?|${_NUM_WORDS})\\s*(mile|km|mi)\\w*`, "i"));
         let radiusM = 2000;
         if (distMatch) {
-          const n = parseFloat(distMatch[1]);
+          const raw = distMatch[1].toLowerCase();
+          const n = _WORD_DIST[raw] ?? parseFloat(raw);
           const unit = distMatch[2].toLowerCase();
           radiusM = unit.startsWith("km") ? n * 1000 : n * 1609;
         }
@@ -1159,7 +1169,7 @@ export function VenueMap({
 
     // Strip proximity phrases and any previously injected "in [location]" suffix
     const baseQuery = rawQ
-      .replace(/\s*(near me|near here|nearby|within\s+\d+\s*(mile|km|mi)\w*|around me|around here|close to me|in my area)\s*/gi, " ")
+      .replace(/\s*(near me|near here|nearby|of me|within\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty)\s*(mile|km|mi)\w*|around me|around here|close to me|in my area)\s*/gi, " ")
       .replace(/\s+in\s+[^,]+(,\s*[^,]+)*$/i, "")
       .trim();
 
@@ -1212,7 +1222,7 @@ export function VenueMap({
 
     const rawQ = inputValue || CATEGORIES[activeCategory].defaultQuery || "places near me";
     const baseQuery = rawQ
-      .replace(/\s*(near me|near here|nearby|within\s+\d+\s*(mile|km|mi)\w*|around me|around here|close to me|in my area)\s*/gi, " ")
+      .replace(/\s*(near me|near here|nearby|of me|within\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty)\s*(mile|km|mi)\w*|around me|around here|close to me|in my area)\s*/gi, " ")
       .replace(/\s+in\s+[^,]+(,\s*[^,]+)*$/i, "")
       .trim();
 
