@@ -490,15 +490,51 @@ def _build_queries(
         else f"popular{cuisine_tag} dining {location}"
     )
     if is_gps:
+        # `category` = the cuisine ("sushi") or "restaurant" when none given.
+        # `cat_with_rest` adds "restaurant" after a specific cuisine so queries always
+        # contain a dining-category word — prevents "best North Caldwell NJ" from
+        # returning nail salons, gyms, etc. alongside actual restaurants.
+        category = cuisine if cuisine else "restaurant"
+        cat_with_rest = f"{cuisine} restaurant" if cuisine else "restaurant"
+
+        # Three location cases:
+        # 1. has_broad: neighborhood + county both known → cover both granularities
+        # 2. local-only: city/state known but no county → saturate with local queries
+        # 3. near-me: reverse-geocode failed → pure proximity queries with phrase variety
+        has_broad = broad_loc != location and location != "near me"
+        if has_broad:
+            return [
+                f"best {cat_with_rest} {location}",
+                f"top rated {cat_with_rest} {location}",
+                cat_query_3,
+                f"best {cat_with_rest} {broad_loc}",
+                f"top rated {cat_with_rest} {broad_loc}",
+                f"local {category} near me",
+                f"popular{cuisine_tag} restaurant {location}",
+                f"{category} near me",
+            ]
+        if location != "near me":
+            # local-only: good city name but no county fallback
+            return [
+                f"best {cat_with_rest} {location}",
+                f"top rated {cat_with_rest} {location}",
+                cat_query_3,
+                f"highly rated {cat_with_rest} {location}",
+                f"popular{cuisine_tag} restaurant {location}",
+                f"{cat_with_rest} {location}",
+                f"local {category} near me",
+                f"{category} near me",
+            ]
+        # near-me: vary phrasing so Google returns diverse results across ranking signals
         return [
-            f"best{cuisine_tag} {location}",
-            f"{cuisine_tag} restaurant {location}".strip(),
+            f"best {cat_with_rest} near me",
+            f"top rated {cat_with_rest} near me",
             cat_query_3,
-            f"top rated{cuisine_tag} restaurant {location}",
-            f"{cuisine_tag} restaurant {broad_loc}".strip(),
-            f"local{cuisine_tag} restaurant near me".strip(),
-            f"popular{cuisine_tag} dining {location}",
-            f"restaurant{cuisine_tag} near me".strip(),
+            f"highly rated {cat_with_rest} near me",
+            f"popular {category} near me",
+            f"local {category} near me",
+            f"good {cat_with_rest} near me",
+            f"{category} near me",
         ]
     return [
         f"best{cuisine_tag} restaurant {location}",
@@ -537,10 +573,15 @@ class ScraperAgent:
         city_lng: float | None = None,
     ) -> list[dict]:
         queries = _build_queries(intent, user_area=user_area, user_lat=user_lat, user_lng=user_lng)
-        # Nimble location: derive "Maplewood New Jersey" style from user_area when GPS is set
+        # Nimble location: derive "Maplewood New Jersey" style from user_area when GPS is set.
+        # When GPS is active but reverse-geocode failed (user_area=""), pass "" rather than
+        # intent.city — intent.city defaults to "New York City" and would bias Nimble to NYC
+        # even for users in Trenton or North Caldwell. locationBias handles geospatial anchoring.
         if user_area:
             area_parts = [p.strip() for p in user_area.split(",")]
             nimble_location = f"{area_parts[0]} {area_parts[-1]}" if len(area_parts) >= 2 else area_parts[0]
+        elif user_lat is not None and user_lng is not None:
+            nimble_location = ""
         else:
             nimble_location = intent.neighborhood or intent.city
         all_signals_lower = " ".join([intent.occasion] + (intent.other_signals or [])).lower()
@@ -640,16 +681,30 @@ class ScraperAgent:
         # Drop any venue whose types are exclusively from this set AND contain
         # none of the dining types below.
         _NON_DINING_TYPES = frozenset({
+            # Retail
             "liquor_store", "grocery_or_supermarket", "supermarket",
-            "convenience_store", "gas_station", "car_wash", "car_dealer",
-            "car_repair", "parking", "hardware_store", "home_goods_store",
+            "convenience_store", "hardware_store", "home_goods_store",
             "furniture_store", "electronics_store", "clothing_store",
-            "shoe_store", "jewelry_store", "pharmacy", "bank", "atm",
-            "insurance_agency", "real_estate_agency", "lawyer", "accounting",
-            "doctor", "dentist", "hospital", "veterinary_care", "laundry",
-            "storage", "moving_company", "locksmith", "plumber", "electrician",
+            "shoe_store", "jewelry_store", "pharmacy", "flooring_store",
+            "appliance_store", "pet_store", "bicycle_store", "book_store",
+            "car_dealer", "department_store", "shopping_mall",
+            # Auto
+            "gas_station", "car_wash", "car_repair", "parking",
+            # Beauty / personal care — nail salons, spas, hair salons
+            "beauty_salon", "nail_salon", "hair_care", "spa",
+            "barber_shop", "hair_salon",
+            # Health / medical
+            "doctor", "dentist", "hospital", "veterinary_care",
+            "physiotherapist", "health",
+            # Finance / legal / real estate
+            "bank", "atm", "insurance_agency", "real_estate_agency",
+            "lawyer", "accounting",
+            # Contractors / tradespeople
+            "locksmith", "plumber", "electrician",
             "roofing_contractor", "general_contractor", "painter",
-            "flooring_store", "appliance_store",
+            "moving_company",
+            # Other services
+            "laundry", "storage",
         })
         _DINING_TYPES = frozenset({
             "restaurant", "bar", "cafe", "food", "meal_takeaway",
