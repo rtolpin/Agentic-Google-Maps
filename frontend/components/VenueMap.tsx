@@ -842,6 +842,66 @@ export function VenueMap({
     setAiSuggestions(generateFollowUps(baseQuery, activeCategory));
   }, [inputValue, search, userId, activeCategory]);
 
+  // Geocode the typed address, pan the map, then search that area for venues.
+  const handleAddressGoAndSearch = useCallback(async () => {
+    if (!addressInputValue.trim() || !mapInstanceRef.current) return;
+
+    const rawQ = inputValue || CATEGORIES[activeCategory].defaultQuery || "places near me";
+    const baseQuery = rawQ
+      .replace(/\s*near me\s*/gi, " ")
+      .replace(/\s+in\s+[^,]+(,\s*[^,]+)*$/i, "")
+      .trim();
+
+    const geocoder = new google.maps.Geocoder();
+    geocoder.geocode({ address: addressInputValue }, async (results, status) => {
+      if (status !== "OK" || !results?.[0]?.geometry?.location) {
+        // Geocoding failed — pass the typed text as a city string fallback
+        setInputValue(`${baseQuery} in ${addressInputValue}`);
+        setQuery(`${baseQuery} in ${addressInputValue}`);
+        hasSearchedRef.current = true;
+        const span = traceSearch({ query: baseQuery, userId });
+        try { await search(baseQuery, addressInputValue); } finally { span.finish(); }
+        setAiSuggestions(generateFollowUps(baseQuery, activeCategory));
+        return;
+      }
+
+      const loc = results[0].geometry.location;
+      const lat = loc.lat();
+      const lng = loc.lng();
+
+      mapInstanceRef.current!.panTo({ lat, lng });
+      mapInstanceRef.current!.setZoom(14);
+
+      const components = results[0].address_components;
+      const neighborhood = components.find((c: google.maps.GeocoderAddressComponent) =>
+        c.types.includes("neighborhood") || c.types.includes("sublocality_level_1")
+      )?.long_name || "";
+      const locality = components.find((c: google.maps.GeocoderAddressComponent) =>
+        c.types.includes("locality")
+      )?.long_name || "";
+      const admin = components.find((c: google.maps.GeocoderAddressComponent) =>
+        c.types.includes("administrative_area_level_2") || c.types.includes("administrative_area_level_1")
+      )?.long_name || "";
+      const displayCity = locality || admin || addressInputValue;
+      const displayArea = neighborhood ? `${neighborhood}, ${displayCity}` : displayCity;
+
+      setDetectedCity(displayCity);
+      setInputValue(`${baseQuery} in ${displayArea}`);
+      setQuery(`${baseQuery} in ${displayArea}`);
+      setShowSearchArea(false);
+      hasSearchedRef.current = true;
+
+      const areaCoords = { lat, lng, radiusM: 10000 };
+      const span = traceSearch({ query: baseQuery, userId });
+      try {
+        await search(baseQuery, displayCity, areaCoords);
+      } finally {
+        span.finish();
+      }
+      setAiSuggestions(generateFollowUps(baseQuery, activeCategory));
+    });
+  }, [addressInputValue, inputValue, activeCategory, search, userId]);
+
   const handleCategorySwitch = useCallback((cat: PlaceCategory) => {
     setActiveCategory(cat);
     traceMapInteraction({ action: "category_switch", category: cat }).finish();
@@ -1028,7 +1088,7 @@ export function VenueMap({
           right: 0,
           display: "flex",
           justifyContent: "center",
-          alignItems: "center",
+          alignItems: "flex-end",
           gap: 8,
           zIndex: 12,
           pointerEvents: "none",
@@ -1061,6 +1121,7 @@ export function VenueMap({
                 ref={addressInputRef}
                 value={addressInputValue}
                 onChange={(e) => setAddressInputValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleAddressGoAndSearch(); }}
                 placeholder="Address, neighborhood, or city…"
                 style={{
                   flex: 1, minWidth: 0,
@@ -1079,23 +1140,31 @@ export function VenueMap({
             </div>
           </div>
 
-          {/* Search This Area */}
+          {/* Go To This Area & Search */}
           <button
-            onClick={handleSearchThisArea}
+            onClick={handleAddressGoAndSearch}
+            disabled={!addressInputValue.trim()}
             style={{
               pointerEvents: "auto",
               display: "inline-flex", alignItems: "center", gap: 8,
-              padding: "10px 20px", borderRadius: 24,
-              background: "linear-gradient(135deg, #1D4ED8, #7C3AED)",
-              border: "1.5px solid rgba(167,139,250,0.7)",
+              padding: "11px 22px", borderRadius: 24,
+              background: addressInputValue.trim()
+                ? "linear-gradient(135deg, #2563EB, #1D4ED8)"
+                : "rgba(37,99,235,0.35)",
+              border: `1.5px solid ${addressInputValue.trim() ? "#3B82F6" : "rgba(59,130,246,0.3)"}`,
               color: "#fff", fontSize: 13, fontWeight: 800,
-              cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
-              boxShadow: "0 4px 20px rgba(124,58,237,0.55), 0 2px 8px rgba(0,0,0,0.4)",
+              cursor: addressInputValue.trim() ? "pointer" : "default",
+              whiteSpace: "nowrap", flexShrink: 0,
+              boxShadow: addressInputValue.trim()
+                ? "0 4px 22px rgba(37,99,235,0.6), 0 2px 8px rgba(0,0,0,0.4)"
+                : "none",
               letterSpacing: "0.02em",
+              opacity: addressInputValue.trim() ? 1 : 0.55,
+              transition: "all 0.18s ease",
             }}
           >
-            <span style={{ fontSize: 15 }}>🔍</span>
-            Search This Area
+            <span style={{ fontSize: 15 }}>📍</span>
+            Go To This Area &amp; Search
           </button>
         </div>
       )}
