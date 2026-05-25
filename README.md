@@ -17,13 +17,15 @@ Instead of returning a pile of pins, The Right Spot understands *intent* — and
 | `"quiet cafe for deep work in SoHo"` | Venues scored by WiFi quality, noise level, and time-of-day crowd data |
 | `"hiking trails near me"` | Real trail recommendations anchored to your GPS position, not a city name |
 | `"first date spot in a new city"` | Atmospheric matches: dimly lit, conversational noise level, impressive but not intimidating |
-| `"best restaurant near me"` | GPS-biased search with a 5 km location circle — results within walking distance |
+| `"best restaurant near me"` | GPS-biased search with a 15 km radius — falls back to map center if location permission is denied |
 | `"public libraries near me"` | Non-restaurant venue types routed to the correct Google Places query |
 | `"offices to scout near Midtown"` | Neighborhood clustering with transit scores and coworking density |
+| *Type "montclair" in the address bar* | Autocomplete suggests as you type; one click pans the map and searches within 10 km |
 
 ### Map Features
+- **Go To This Area & Search** — type any address, neighborhood, or city in the address bar; Google Places Autocomplete suggests as you type; hitting the button geocodes the input, pans the map, and runs a fresh 10 km radius search anchored to that location
 - **Search This Area** — drag or zoom the map, hit the button and the search re-runs anchored to the visible viewport (radius derived from zoom level)
-- **User location dot** — GPS position persisted in `localStorage` (30 min TTL) so the dot survives page refreshes
+- **User location dot** — GPS position persisted in `localStorage` (30 min TTL) so the dot survives page refreshes; "near me" falls back to map center if location permission is denied
 - **Intent chips** — parsed occasion, cuisine, noise preference, and price band shown as tappable refinement chips below the search bar
 - **All Matches modal** — "View All ↗" opens a searchable, filterable grid of every result; deduplicates venues by name in case ClickHouse `ReplacingMergeTree` hasn't merged yet
 - **Resizable panels** — left AI panel and right venue detail sidebar are both drag-resizable; left panel is collapsible
@@ -43,6 +45,12 @@ Instead of returning a pile of pins, The Right Spot understands *intent* — and
 - **Toggle on/off** — markers are created once and shown/hidden with `marker.map` assignment (no DOM teardown = no flashing)
 - **Loading skeleton** — animated skeleton rows appear while the API call is in-flight so the UI never looks frozen
 - **Transit stop filtering** — backend scraper agent blocks transit stations (`subway_station`, `train_station`, `bus_stop`, etc.) from being ingested as venue results
+
+### 🏘️ Suburb & Rural Search
+- **GPS reverse geocoding** — when coordinates are present the backend reverse-geocodes them to derive the exact town, county, and state, overriding the LLM's city default so searches for North Caldwell, Maplewood, or any suburb return local results instead of the nearest major city
+- **Hyper-local query building** — up to 8 parallel Google Places queries are generated using the GPS-derived area string (e.g. "North Caldwell New Jersey", "Essex County New Jersey") rather than a broad city name
+- **Google rating in scoring** — `google_rating` is stored in ClickHouse and adds 0–15 pts to each venue's match score, spreading results across a realistic range even when Claude has no review snippet to extract signals from
+- **In-memory fallback scoring** — if ClickHouse has no cached venues for a new location, the orchestrator scores the freshly scraped results in memory (including the rating bonus) so the first search in any area always returns results
 
 ---
 
@@ -72,13 +80,14 @@ ScraperAgent  ValidatorAgent  GlobalIntelligenceAgent
 ┌───────────────────────────────────┐
 │       ClickHouse Scoring          │  ← Multi-factor ranking
 │  ReplacingMergeTree venue_signals │    base 25 + capacity + noise +
-│                                   │    occasion fit + price band
+│                                   │    occasion fit + price band +
+│                                   │    Google rating bonus (0-15 pts)
 └──────────┬────────────────────────┘
            │
            ▼
 ┌───────────────────────────────────┐
 │     Claude Synthesis              │  ← Why-card, scenario, sensitivity bars
-│  (prompt caching: ephemeral)      │    for top 5 venues
+│  (prompt caching: ephemeral)      │    for top 10 venues
 └──────────┬────────────────────────┘
            │
     ┌──────┴──────────────────┐
