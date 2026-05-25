@@ -27,10 +27,13 @@ PRICING NOTE:
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from typing import Any, Optional
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from tracing import http_span
 from models.models import GeocodeResult, GooglePlaceDetails, GooglePriceLevel, MapMarker, ScoredVenue
@@ -360,29 +363,34 @@ class GoogleMapsClient:
             d = resp.json()
             loc = d.get("location", {})
 
-            # Resolve the first photo to a short-lived CDN URL (no API key in HTML).
-            # The Places API returns photo names like "places/{id}/photos/{ref}".
-            # A HEAD request to the media endpoint issues a redirect to lh3.googleusercontent.com.
+            # Resolve the first photo to a CDN URL via skipHttpRedirect=true.
+            # This returns JSON {"photoUri": "https://lh3.googleusercontent.com/..."}
+            # instead of a redirect, which is the correct server-side approach.
             photo_url: str | None = None
             photos = d.get("photos", [])
             if photos and GOOGLE_MAPS_API_KEY:
                 photo_name = photos[0].get("name", "")
                 if photo_name:
                     try:
-                        media_url = f"{_PLACES_BASE}/{photo_name}/media?maxWidthPx=400&key={GOOGLE_MAPS_API_KEY}"
-                        head = await self._places.get(
+                        media_url = (
+                            f"{_PLACES_BASE}/{photo_name}/media"
+                            f"?maxWidthPx=400&skipHttpRedirect=true&key={GOOGLE_MAPS_API_KEY}"
+                        )
+                        media_resp = await self._places.get(
                             media_url,
-                            follow_redirects=False,
+                            follow_redirects=True,
                             headers={},  # no X-Goog-FieldMask for media endpoint
                         )
-                        # 302 redirect → Location is the CDN URL (no API key needed)
-                        if head.status_code in (301, 302, 303, 307, 308):
-                            photo_url = head.headers.get("location")
-                        elif head.status_code == 200:
-                            # Some deployments return 200 with the image directly; use the URL
-                            photo_url = media_url
-                    except Exception:
-                        pass  # photo is optional — proceed without it
+                        if media_resp.status_code == 200:
+                            photo_url = media_resp.json().get("photoUri")
+                        else:
+                            logger.warning(
+                                "photo fetch returned %s for %s",
+                                media_resp.status_code,
+                                photo_name[:60],
+                            )
+                    except Exception as exc:
+                        logger.warning("photo fetch error: %s", exc)
 
             return GooglePlaceDetails(
                 place_id=d.get("id", place_id),
