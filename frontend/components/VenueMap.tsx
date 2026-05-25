@@ -700,7 +700,15 @@ export function VenueMap({
       ? Math.round(haversineKm(userLoc.lat, userLoc.lng, stop.latitude, stop.longitude) * 1000)
       : null;
     const distStr = distM != null
-      ? distM < 1000 ? `${distM} m walk` : `${(distM / 1000).toFixed(1)} km walk`
+      ? distM < 1000
+        ? `${distM} m`
+        : (() => {
+            const km = distM / 1000;
+            const mi = km / 1.60934;
+            const kmStr = km < 10 ? km.toFixed(1) : Math.round(km).toLocaleString();
+            const miStr = mi < 10 ? mi.toFixed(1) : Math.round(mi).toLocaleString();
+            return `${miStr} mi (${kmStr} km)`;
+          })()
       : null;
 
     const content = `
