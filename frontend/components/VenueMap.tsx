@@ -1033,53 +1033,64 @@ export function VenueMap({
     let q = rawQ.trim();
     if (!q) return;
 
-    // Proximity phrase → resolve GPS coords; pass them to backend as locationBias instead of
-    // replacing the query text with a broad city name like "Manhattan, New York".
+    const isProximityQuery = PROXIMITY_RE.test(q);
+
+    // Detect an explicitly named target city so we don't GPS-override intentional
+    // cross-city searches like "sushi in Tokyo" or "restaurants in London".
+    // Exclude "within …" (proximity distance) and articles ("in a/the/my …").
+    const qForCityCheck = q.replace(/\bwithin\b\s+\S+\s+(mile|km|mi)\w*/gi, "");
+    const hasExplicitCity = !isProximityQuery &&
+      /\bin\s+(?!a\b|an\b|the\b|my\b|this\b|that\b|any\b|some\b)\S/i.test(qForCityCheck);
+
     let searchCoords: { lat: number; lng: number; radiusM?: number } | undefined;
-    if (PROXIMITY_RE.test(q)) {
-      // Check localStorage cache first, then request fresh position
-      if (!userLocationRef.current) {
-        try {
-          const cached = localStorage.getItem("trs_user_location");
-          if (cached) {
-            const { lat, lng, ts } = JSON.parse(cached);
-            if (Date.now() - ts < 30 * 60 * 1000) {
-              userLocationRef.current = { lat, lng };
-            }
-          }
-        } catch (_) {}
-      }
-      if (!userLocationRef.current && "geolocation" in navigator) {
-        await new Promise<void>((resolve) => {
-          navigator.geolocation.getCurrentPosition(
-            (pos) => {
-              const userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-              userLocationRef.current = userPos;
-              try { localStorage.setItem("trs_user_location", JSON.stringify({ ...userPos, ts: Date.now() })); } catch (_) {}
-              resolve();
-            },
-            () => resolve(),
-            { enableHighAccuracy: false, timeout: 6000, maximumAge: 300000 },
-          );
-        });
-      }
 
-      if (userLocationRef.current) {
-        const userLoc = userLocationRef.current;
-
-        // Extract explicit radius from "within N/five miles/km" — convert to metres
-        const distMatch = q.match(new RegExp(`within\\s+(\\d+(?:\\.\\d+)?|${_NUM_WORDS})\\s*(mile|km|mi)\\w*`, "i"));
-        let radiusM = 2000;
-        if (distMatch) {
-          const raw = distMatch[1].toLowerCase();
-          const n = _WORD_DIST[raw] ?? parseFloat(raw);
-          const unit = distMatch[2].toLowerCase();
-          radiusM = unit.startsWith("km") ? n * 1000 : n * 1609;
+    // ── 1. Load GPS from cache (cheap, no permission prompt) ──────────────────
+    if (!userLocationRef.current) {
+      try {
+        const cached = localStorage.getItem("trs_user_location");
+        if (cached) {
+          const { lat, lng, ts } = JSON.parse(cached);
+          if (Date.now() - ts < 30 * 60 * 1000) userLocationRef.current = { lat, lng };
         }
-        searchCoords = { ...userLoc, radiusM };
+      } catch (_) {}
+    }
 
-        // Await reverse geocode so we can inject the neighborhood into the query
-        // BEFORE it reaches the LLM — identical to the user typing it explicitly.
+    // ── 2. Request fresh GPS only for explicit proximity phrases ──────────────
+    if (isProximityQuery && !userLocationRef.current && "geolocation" in navigator) {
+      await new Promise<void>((resolve) => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const userPos = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+            userLocationRef.current = userPos;
+            try { localStorage.setItem("trs_user_location", JSON.stringify({ ...userPos, ts: Date.now() })); } catch (_) {}
+            resolve();
+          },
+          () => resolve(),
+          { enableHighAccuracy: false, timeout: 6000, maximumAge: 300000 },
+        );
+      });
+    }
+
+    // ── 3. Build searchCoords whenever GPS is available and applicable ─────────
+    // This fires for: explicit proximity phrases AND any query that lacks an explicit
+    // city name — so "best sushi" in Trenton never defaults to stale NYC coords.
+    if (userLocationRef.current && (isProximityQuery || !hasExplicitCity)) {
+      const userLoc = userLocationRef.current;
+
+      // Extract explicit radius from "within N/five miles/km" — convert to metres
+      const distMatch = q.match(new RegExp(`within\\s+(\\d+(?:\\.\\d+)?|${_NUM_WORDS})\\s*(mile|km|mi)\\w*`, "i"));
+      let radiusM = isProximityQuery ? 2000 : 8000; // wider default for general queries
+      if (distMatch) {
+        const raw = distMatch[1].toLowerCase();
+        const n = _WORD_DIST[raw] ?? parseFloat(raw);
+        const unit = distMatch[2].toLowerCase();
+        radiusM = unit.startsWith("km") ? n * 1000 : n * 1609;
+      }
+      searchCoords = { ...userLoc, radiusM };
+
+      // Reverse geocode + query injection only for proximity phrases so we don't
+      // silently rewrite "best sushi" into "best sushi in North Caldwell" every time.
+      if (isProximityQuery) {
         await new Promise<void>((resolve) => {
           try {
             const geocoder = new google.maps.Geocoder();
@@ -1098,11 +1109,7 @@ export function VenueMap({
                 const name = (isUsableNeighborhood(nbhdName) ? nbhdName : null)
                   ?? locality?.long_name ?? area?.long_name ?? "";
                 if (name) {
-                  // Rewrite query to inject resolved location, e.g.
-                  // "restaurant within 5 miles" → "restaurant within 5 miles in North Caldwell"
-                  if (!q.toLowerCase().includes(" in ")) {
-                    q = `${q} in ${name}`;
-                  }
+                  if (!q.toLowerCase().includes(" in ")) q = `${q} in ${name}`;
                   setInputValue(q);
                   setDetectedCity(name);
                 }
@@ -1111,12 +1118,11 @@ export function VenueMap({
             });
           } catch (_) { resolve(); }
         });
-      } else if (mapInstanceRef.current) {
-        // GPS unavailable — fall back to map center with a slightly wider radius
-        // since the map center is less precise than a GPS fix.
-        const center = mapInstanceRef.current.getCenter();
-        if (center) searchCoords = { lat: center.lat(), lng: center.lng(), radiusM: 3000 };
       }
+    } else if (!userLocationRef.current && mapInstanceRef.current) {
+      // No GPS at all — fall back to map center
+      const center = mapInstanceRef.current.getCenter();
+      if (center) searchCoords = { lat: center.lat(), lng: center.lng(), radiusM: 3000 };
     }
 
     hasSearchedRef.current = true;
@@ -1129,9 +1135,9 @@ export function VenueMap({
     const detected = classifyQueryCategory(q);
     if (detected !== "all") setActiveCategory(detected);
 
-    // For proximity queries, omit user_city — the backend uses the GPS coords directly,
-    // avoiding stale detectedCity from a prior search in a different area.
-    const userCityParam = PROXIMITY_RE.test(q) ? undefined : (detectedCity || undefined);
+    // Suppress stale detectedCity whenever GPS coords are anchoring the search.
+    // This prevents a prior "New York" session from hijacking Trenton results.
+    const userCityParam = searchCoords ? undefined : (detectedCity || undefined);
     try {
       await search(q, userCityParam, searchCoords);
     } finally {
