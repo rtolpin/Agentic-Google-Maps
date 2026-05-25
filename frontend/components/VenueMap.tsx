@@ -743,11 +743,19 @@ export function VenueMap({
               const locality = results[0].address_components.find((c) =>
                 c.types.includes("locality")
               );
-              const cityName = locality?.long_name || "";
+              const area = results[0].address_components.find((c) =>
+                c.types.includes("administrative_area_level_2") || c.types.includes("administrative_area_level_1")
+              );
+              const cityName = locality?.long_name || area?.long_name || "";
               if (cityName) setDetectedCity(cityName);
             }
           });
         } catch (_) { /* fall through */ }
+      } else if (mapInstanceRef.current) {
+        // GPS unavailable (denied/timed out) — use map center so "near me" still works
+        // if the user has already panned to their area.
+        const center = mapInstanceRef.current.getCenter();
+        if (center) searchCoords = { lat: center.lat(), lng: center.lng() };
       }
     }
 
@@ -761,8 +769,11 @@ export function VenueMap({
     const detected = classifyQueryCategory(q);
     if (detected !== "all") setActiveCategory(detected);
 
+    // For "near me" queries, omit user_city — the backend reverse-geocodes the GPS
+    // coords itself, avoiding stale detectedCity from a prior search in a different area.
+    const userCityParam = /near me/i.test(q) ? undefined : (detectedCity || undefined);
     try {
-      await search(q, detectedCity || undefined, searchCoords);
+      await search(q, userCityParam, searchCoords);
     } finally {
       mapSpan.finish();
       span.finish();
