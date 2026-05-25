@@ -129,7 +129,13 @@ Output ONLY valid JSON with exactly these keys:
   "suggestions": [string]       // exactly 4 follow-up questions the user might ask
 }
 
-CRITICAL — grounding rule: never invent or assert specific menu items, dishes, or prices
+LOCATION GROUNDING (critical): The venue's `address` field is the authoritative source
+for its actual city and neighbourhood. Use the city/area from `address` when writing
+why_card and scenario — do NOT copy the intent's `city` field, which is a search-area
+default and may not match the venue's real location (e.g. the intent may say
+"New York City" but the venue is actually in Trenton, NJ).
+
+CONTENT GROUNDING: Never invent or assert specific menu items, dishes, or prices
 that do not appear in the venue's key_quotes or the user's search query.
 If a specific food item was searched (e.g. "pancakes", "tacos") but does NOT appear in
 the venue's key_quotes, describe the venue's cuisine and atmosphere instead — do NOT
@@ -222,11 +228,26 @@ async def synthesize_venue_intelligence(
             return VenueIntelligence.model_validate(_extract_json(response.content[0].text))
 
 
+def _city_from_address(address: str) -> str:
+    """Extract city from a Google-formatted address like '123 Main St, Trenton, NJ 08611, USA'."""
+    parts = [p.strip() for p in address.split(",")]
+    # Typical US format: street, city, state zip, country — city is parts[1]
+    if len(parts) >= 2:
+        candidate = parts[1].strip()
+        # Reject if it looks like a zip/state ("NJ 08611") or country
+        if candidate and not candidate[:2].isupper() and not candidate[0].isdigit():
+            return candidate
+    return ""
+
+
 def _fallback_intelligence(venue: ScoredVenue, intent: VenueIntent) -> VenueIntelligence:
     """Build a basic intelligence card from venue attributes and key_quotes."""
     occasion = intent.occasion or "your outing"
     cuisine = venue.cuisine or "venue"
-    location = venue.neighborhood or venue.city or "the area"
+    # Prefer neighbourhood, then address-derived city, then stored city.
+    # venue.city may be the intent default ("New York City") rather than the real city.
+    addr_city = _city_from_address(venue.address or "")
+    location = venue.neighborhood or addr_city or venue.city or "the area"
     quotes = venue.key_quotes or []
     noise_desc = {"very_quiet": "very quiet", "quiet": "quiet", "moderate": "lively but comfortable",
                   "loud": "energetic", "very_loud": "very lively"}.get(venue.noise_level, "welcoming")
