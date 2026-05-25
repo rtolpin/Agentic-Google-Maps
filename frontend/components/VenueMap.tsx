@@ -887,8 +887,9 @@ export function VenueMap({
         setInputValue(`${baseQuery} in ${addressText}`);
         setQuery(`${baseQuery} in ${addressText}`);
         hasSearchedRef.current = true;
-        const span = traceSearch({ query: baseQuery, userId });
-        try { await search(baseQuery, addressText); } finally { span.finish(); }
+        const fallbackQuery = `${baseQuery} in ${addressText}`;
+        const span = traceSearch({ query: fallbackQuery, userId });
+        try { await search(fallbackQuery, addressText); } finally { span.finish(); }
         setAiSuggestions(generateFollowUps(baseQuery, activeCategory));
         return;
       }
@@ -920,9 +921,12 @@ export function VenueMap({
       hasSearchedRef.current = true;
 
       const areaCoords = { lat, lng, radiusM: 10000 };
-      const span = traceSearch({ query: baseQuery, userId });
+      // Send the full "best pancakes in North Caldwell" query (not just "best pancakes")
+      // so the intent parser extracts the correct city for scraper query building.
+      const fullQuery = `${baseQuery} in ${displayArea}`;
+      const span = traceSearch({ query: fullQuery, userId });
       try {
-        await search(baseQuery, displayCity, areaCoords);
+        await search(fullQuery, displayCity, areaCoords);
       } finally {
         span.finish();
       }
