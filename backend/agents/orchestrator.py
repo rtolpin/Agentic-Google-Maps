@@ -319,8 +319,15 @@ async def orchestrate(
             try:
                 async with GoogleMapsClient() as gc:
                     geo = await gc.geocode(intent.city)
-                if geo and _geocode_matches_city(intent.city, geo.formatted_address):
-                    city_geocode = (geo.latitude, geo.longitude)
+                    if geo and _geocode_matches_city(intent.city, geo.formatted_address):
+                        city_geocode = (geo.latitude, geo.longitude)
+                    elif not city_geocode:
+                        # First attempt returned a non-matching result (e.g. "North Caldwell"
+                        # → "N. Caldwell St, Charlotte, NC").  Retry with ", USA" qualifier —
+                        # this resolves US suburb names that are also street names elsewhere.
+                        geo2 = await gc.geocode(f"{intent.city}, USA")
+                        if geo2 and _geocode_matches_city(intent.city, geo2.formatted_address):
+                            city_geocode = (geo2.latitude, geo2.longitude)
             except Exception:
                 pass
 
@@ -481,9 +488,9 @@ async def _filter_by_location(
             try:
                 async with GoogleMapsClient() as gc:
                     geo = await gc.geocode(intent.city)
-                if not geo:
-                    return []
-                if not _geocode_matches_city(intent.city, geo.formatted_address):
+                    if not geo or not _geocode_matches_city(intent.city, geo.formatted_address):
+                        geo = await gc.geocode(f"{intent.city}, USA")
+                if not geo or not _geocode_matches_city(intent.city, geo.formatted_address):
                     return []
                 clat, clng = geo.latitude, geo.longitude
             except Exception:

@@ -570,12 +570,12 @@ class ScraperAgent:
                 try:
                     async with GoogleMapsClient() as geocoder:
                         geo = await geocoder.geocode(intent.city)
-                    if geo:
                         city_words = intent.city.lower().split()
-                        addr_lower = geo.formatted_address.lower()
-                        if all(w in addr_lower for w in city_words):
+                        if not geo or not all(w in geo.formatted_address.lower() for w in city_words):
+                            # Retry with USA qualifier for suburbs that geocode to wrong places
+                            geo = await geocoder.geocode(f"{intent.city}, USA")
+                        if geo and all(w in geo.formatted_address.lower() for w in city_words):
                             bias = {"lat": geo.latitude, "lng": geo.longitude, "radius_m": city_radius}
-                        # else: geocode returned wrong place — text-only search (bias stays None)
                 except Exception:
                     pass
         else:
