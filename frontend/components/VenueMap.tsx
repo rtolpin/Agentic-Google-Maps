@@ -2551,6 +2551,12 @@ export function VenueMap({
         <button
           title="Go to my current location"
           onClick={() => {
+            // Clear the address bar and reset navigation state so subsequent
+            // searches anchor to GPS, not the previously browsed city.
+            if (addressInputRef.current) addressInputRef.current.value = "";
+            setHasAddressText(false);
+            setShowSearchArea(false);
+            mapNavigatedRef.current = false;
             if (userLocationRef.current) {
               mapInstanceRef.current?.setCenter(userLocationRef.current);
               mapInstanceRef.current?.setZoom(14);
