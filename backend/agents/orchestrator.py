@@ -63,7 +63,9 @@ JSON schema (use null for unknown fields except city):
 IMPORTANT: city must NEVER be null or "Unknown". If the query says "in the city", "near me",
 or contains a city name anywhere (including appended at the end like "in New York City"), extract it.
 If the query mentions a known city or major metro in any form (NYC, LA, SF, Chicago, etc.), normalize it
-to the full name. If truly no city can be inferred, default to "New York City".
+to the full name. For suburbs and small towns (e.g. "North Caldwell", "Maplewood", "Hoboken",
+"Montclair", "Ridgewood"), always extract the exact town name as city — do NOT substitute a
+nearby major city. If truly no city can be inferred, default to "New York City".
 
 neighborhood: Extract sub-city areas like "Upper East Side", "SoHo", "Williamsburg", "Brooklyn",
 "DUMBO", "Mission District", "Lower East Side", "West Village", "Chelsea", "Midtown", "FiDi",
@@ -326,7 +328,7 @@ async def orchestrate(
         # Step 4 — persist signals (thread pool; non-critical path)
         with db_span("therightspot.upsert_venues", "venue_signals", city=intent.city,
                      row_count=len(enriched_venues)):
-            await asyncio.to_thread(_ch.upsert_venue_signals, enriched_venues, intent.city)
+            await asyncio.to_thread(_ch.upsert_venue_signals, enriched_venues, intent.city, intent.cuisine or "")
 
         # Step 5 — score venues
         yield {"event": "status", "data": "Ranking matches..."}
@@ -470,10 +472,16 @@ def _score_enriched_fallback(enriched: list[dict], intent: VenueIntent) -> list[
         elif price_min <= price <= price_max:
             score += 15
 
-        # Google Places rating bonus (0-15 pts) — differentiates venues even when
-        # Claude extraction has no snippet to work with
+        # Google Places rating bonus (0-40 pts)
         rating = ev.get("google_rating") or 0.0
         score += round(max(0.0, min(40.0, (rating - 2.0) * 13.3)), 1)
+
+        # Cuisine keyword match bonus (0-15 pts): venues whose name or snippet
+        # explicitly mention the searched food type rank above generic alternatives.
+        if intent.cuisine:
+            cuisine_kw = intent.cuisine.lower()
+            if cuisine_kw in name.lower() or cuisine_kw in (ev.get("snippet") or "").lower():
+                score += 15
 
         score = min(100.0, max(0.0, score))
         venue_id = (name + city).lower().replace(" ", "_").replace("'", "")

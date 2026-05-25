@@ -343,7 +343,10 @@ def _build_queries(intent: VenueIntent, user_area: str = "") -> list[str]:
     if not venue_type:
         venue_type = occasion if any(t in occasion for t in _PUBLIC_VENUES) else "restaurant"
 
-    if venue_type != "restaurant" and venue_type not in {"dining", "dinner", "lunch", "brunch", "breakfast"}:
+    # Only use the non-restaurant path when no cuisine is set.  If cuisine is
+    # specified (even a specific dish like "pancakes" or "tacos"), the restaurant
+    # query branch below produces better Google Places results.
+    if not cuisine and venue_type != "restaurant" and venue_type not in {"dining", "dinner", "lunch", "brunch", "breakfast"}:
         base = [
             f"{venue_type} {location}",
             f"best {venue_type} near {location}",

@@ -197,7 +197,7 @@ SELECT
 FROM rightspot.venue_signals
 FINAL
 WHERE (city = {city:String} OR {city:String} = 'Unknown')
-  AND (cuisine = {cuisine:String} OR {cuisine:String} = '')
+  AND (cuisine = {cuisine:String} OR {cuisine:String} = '' OR cuisine = '')
   AND scraped_at >= now() - INTERVAL 7 DAY
   AND name != ''
 ORDER BY match_score DESC
@@ -267,10 +267,12 @@ class ClickHouseClient:
 
     # ── Write path ────────────────────────────────────────────────────────────
 
-    def upsert_venue_signals(self, venues: list[dict], city: str) -> None:
+    def upsert_venue_signals(self, venues: list[dict], city: str, cuisine: str = "") -> None:
         """
         Insert freshly scraped venue signals.
         Serialization delegates to VenueSignal.to_ch_row() — no hardcoded field lists.
+        cuisine: intent cuisine string (e.g. "pancakes") — applied to venues that have
+        no extracted cuisine so they are discoverable on repeat searches.
         """
         if not venues:
             return
@@ -280,8 +282,10 @@ class ClickHouseClient:
             try:
                 if not raw.get("name"):
                     continue  # skip nameless venues — they produce blank cards
-                # Enrich with city so venue_id is scoped correctly
+                # Enrich with city and searched cuisine so venue_id is scoped correctly
+                # and the ClickHouse cache can surface these results on repeat searches.
                 raw["city"] = raw.get("city") or city
+                raw["cuisine"] = raw.get("cuisine") or cuisine
                 # EnrichedVenue uses Optional[NoiseLevel] (can be None); VenueSignal
                 # requires NoiseLevel.  Coerce None → default so model_validate succeeds.
                 for enum_field, default in (
