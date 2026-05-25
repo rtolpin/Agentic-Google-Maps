@@ -334,6 +334,12 @@ export interface VenueMapProps {
 const fmt = (s: string | null | undefined) =>
   (s ?? "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 
+// Reject intersection-style names Google returns as "neighborhood" (e.g. "Greenwood & Hamilton").
+// These are useless as search locations — fall through to city/county level instead.
+function isUsableNeighborhood(name: string): boolean {
+  return !name.includes("&") && !/^\d/.test(name) && name.length > 0;
+}
+
 // ─── Component ────────────────────────────────────────────────────────────
 
 export function VenueMap({
@@ -1070,14 +1076,17 @@ export function VenueMap({
             geocoder.geocode({ location: userLoc }, (results, status) => {
               if (status === "OK" && results?.[0]) {
                 const comps = results[0].address_components;
-                const nbhd = comps.find((c) =>
+                const rawNbhd = comps.find((c) =>
                   c.types.includes("neighborhood") || c.types.includes("sublocality_level_1")
                 );
                 const locality = comps.find((c) => c.types.includes("locality"));
                 const area = comps.find((c) =>
                   c.types.includes("administrative_area_level_2") || c.types.includes("administrative_area_level_1")
                 );
-                const name = nbhd?.long_name || locality?.long_name || area?.long_name || "";
+                // Skip intersection-style neighborhood names (e.g. "Greenwood & Hamilton")
+                const nbhdName = rawNbhd?.long_name ?? "";
+                const name = (isUsableNeighborhood(nbhdName) ? nbhdName : null)
+                  ?? locality?.long_name ?? area?.long_name ?? "";
                 if (name) {
                   // Rewrite query to inject resolved location, e.g.
                   // "restaurant within 5 miles" → "restaurant within 5 miles in North Caldwell"
@@ -1168,7 +1177,8 @@ export function VenueMap({
             const admin = results[0].address_components.find((c) =>
               c.types.includes("administrative_area_level_2") || c.types.includes("administrative_area_level_1")
             );
-            const neighborhood = sub?.long_name || "";
+            const rawNbhd = sub?.long_name || "";
+            const neighborhood = isUsableNeighborhood(rawNbhd) ? rawNbhd : "";
             displayCity = locality?.long_name || admin?.long_name || "";
             const fullArea = neighborhood ? `${neighborhood}, ${displayCity}` : displayCity;
             if (fullArea) {
@@ -1228,9 +1238,10 @@ export function VenueMap({
       mapInstanceRef.current!.setZoom(14);
 
       const components = results[0].address_components;
-      const neighborhood = components.find((c: google.maps.GeocoderAddressComponent) =>
+      const rawNbhd = components.find((c: google.maps.GeocoderAddressComponent) =>
         c.types.includes("neighborhood") || c.types.includes("sublocality_level_1")
       )?.long_name || "";
+      const neighborhood = isUsableNeighborhood(rawNbhd) ? rawNbhd : "";
       const locality = components.find((c: google.maps.GeocoderAddressComponent) =>
         c.types.includes("locality")
       )?.long_name || "";
