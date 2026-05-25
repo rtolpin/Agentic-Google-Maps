@@ -227,26 +227,10 @@ async def search_flights_route(
     one-way flight option via Serpapi Google Flights.
     Requires SERPAPI_API_KEY to be set.
     """
-    from integrations.serpapi_flights_client import SerpApiFlightsClient, _get_iata_for_area
+    from integrations.serpapi_flights_client import SerpApiFlightsClient, _nearest_airport
 
-    async with GoogleMapsClient() as gmc:
-        origin_area, dest_area = await asyncio.gather(
-            gmc.reverse_geocode(origin_lat, origin_lng),
-            gmc.reverse_geocode(dest_lat, dest_lng),
-        )
-
-    origin_airport = _get_iata_for_area(origin_area)
-    dest_airport   = _get_iata_for_area(dest_area)
-
-    if not origin_airport:
-        city = origin_area.get("city") or origin_area.get("state") or "your location"
-        raise HTTPException(status_code=422, detail=f"No major airport found near {city}")
-    if not dest_airport:
-        city = dest_area.get("city") or dest_area.get("state") or "the destination"
-        raise HTTPException(status_code=422, detail=f"No major airport found near {city}")
-
-    dep_iata, dep_name = origin_airport
-    arr_iata, arr_name = dest_airport
+    dep_iata, dep_name = _nearest_airport(origin_lat, origin_lng)
+    arr_iata, arr_name = _nearest_airport(dest_lat, dest_lng)
 
     if dep_iata == arr_iata:
         raise HTTPException(status_code=422, detail="Origin and destination are served by the same airport")
