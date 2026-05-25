@@ -443,6 +443,25 @@ export function VenueMap({
       if (hasSearchedRef.current) setShowSearchArea(true);
     });
 
+    // Auto-refresh transit when map is panned >400 m while transit is showing
+    mapInstanceRef.current.addListener("idle", () => {
+      const map = mapInstanceRef.current;
+      if (!map) return;
+      const prev = transitCenterRef.current;
+      if (!prev) return; // transit was never fetched
+      const c = map.getCenter();
+      if (!c) return;
+      const distKm = haversineKm(prev.lat, prev.lng, c.lat(), c.lng());
+      if (distKm > 0.4) {
+        // Map has moved — re-fetch transit silently for the new center
+        // showTransit state is read via closure; only re-fetch if transit is visible
+        setShowTransit((current) => {
+          if (current) fetchTransit(true);
+          return current;
+        });
+      }
+    });
+
     // ── User location dot ─────────────────────────────────────────────────────
     // Persist location to localStorage (30 min TTL) so refreshes don't require
     // a new geolocation request — browsers throttle repeated requests.
@@ -632,22 +651,31 @@ export function VenueMap({
   //   1. Create markers (hidden) when stops are fetched — runs once per fetch
   //   2. Toggle marker.map to show/hide — no DOM teardown, no flash
 
-  const transitFetchingRef = useRef(false); // guards against double-clicks
+  const transitFetchingRef = useRef(false);
+  const transitCenterRef  = useRef<{ lat: number; lng: number } | null>(null);
 
-  const fetchTransit = useCallback(async () => {
-    if (transitFetchingRef.current) return; // already in-flight
-    const loc = userLocationRef.current ?? (mapInstanceRef.current ? {
-      lat: mapInstanceRef.current.getCenter()!.lat(),
-      lng: mapInstanceRef.current.getCenter()!.lng(),
-    } : null);
-    if (!loc) return;
+  const fetchTransit = useCallback(async (silent = false) => {
+    if (transitFetchingRef.current) return;
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    const center = map.getCenter();
+    if (!center) return;
+    const loc = { lat: center.lat(), lng: center.lng() };
+
+    // zoom-adaptive radius: wider view → larger search radius
+    const zoom = map.getZoom() ?? 14;
+    const radiusM = zoom >= 16 ? 600 : zoom >= 14 ? 1200 : zoom >= 12 ? 2000 : 3000;
+
     transitFetchingRef.current = true;
-    setTransitLoading(true);
+    if (!silent) setTransitLoading(true);
     try {
-      const resp = await fetch(`${API_BASE}/api/transit/nearby?lat=${loc.lat}&lng=${loc.lng}&radius_m=1500`);
+      const resp = await fetch(
+        `${API_BASE}/api/transit/nearby?lat=${loc.lat}&lng=${loc.lng}&radius_m=${radiusM}`
+      );
       if (resp.ok) {
         setTransitStops(await resp.json());
         setShowTransit(true);
+        transitCenterRef.current = loc;
       }
     } finally {
       setTransitLoading(false);
@@ -1551,31 +1579,36 @@ export function VenueMap({
       }}>
         <button
           onClick={() => {
-            if (transitLoading) return; // ignore clicks while fetching
+            if (transitLoading) return;
             if (showTransit) {
               setShowTransit(false);
-            } else if (transitStops.length > 0) {
-              setShowTransit(true); // re-show cached stops instantly
+              transitCenterRef.current = null; // reset so next click re-fetches
             } else {
-              fetchTransit(); // first load — fetchTransit sets showTransit on success
+              fetchTransit(); // always fetch fresh for current map center
             }
           }}
           style={{
             display: "inline-flex", alignItems: "center", gap: 7,
             padding: "9px 16px", borderRadius: 22,
             background: showTransit
-              ? "linear-gradient(135deg, #F59E0B, #EF4444)"
+              ? "linear-gradient(135deg, #0EA5E9, #6366F1)"
               : "rgba(15,23,42,0.92)",
             border: showTransit
-              ? "1.5px solid rgba(245,158,11,0.8)"
+              ? "1.5px solid rgba(99,102,241,0.7)"
               : "1.5px solid rgba(255,255,255,0.15)",
             color: "#fff", fontSize: 13, fontWeight: 700,
-            cursor: "pointer", whiteSpace: "nowrap",
-            boxShadow: "0 4px 16px rgba(0,0,0,0.45)",
+            cursor: transitLoading ? "wait" : "pointer", whiteSpace: "nowrap",
+            boxShadow: showTransit ? "0 4px 16px rgba(99,102,241,0.45)" : "0 4px 16px rgba(0,0,0,0.45)",
             backdropFilter: "blur(8px)",
+            transition: "all 0.2s",
           }}
         >
-          🚇 {showTransit ? "Hide Transit" : "Nearby Transit"}
+          {transitLoading ? "⏳" : "🚇"}
+          {transitLoading
+            ? " Searching this area…"
+            : showTransit
+              ? ` ${transitStops.length} stops · Hide`
+              : " Nearby Transit"}
         </button>
 
         {/* Loading card — shown while fetching */}
