@@ -416,7 +416,11 @@ class ScraperAgent:
         # Hardcoded coords ensure a geocoding failure never silently disables restriction.
         country_code = ""
         if user_lat is not None and user_lng is not None:
-            radius = max(500.0, min(50000.0, user_radius_m or 15000.0))
+            # When the frontend passes a tight radius (e.g. 2000m for "near me"),
+            # honour it so results stay within the user's neighborhood.
+            # Default 5000m (city block scale) instead of 15000m so GPS searches
+            # don't silently expand to cover the whole city.
+            radius = max(500.0, min(50000.0, user_radius_m or 5000.0))
             bias: dict | None = {"lat": user_lat, "lng": user_lng, "radius_m": radius}
             country_code = "US"
         elif intent.city not in ("Unknown", ""):

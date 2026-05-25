@@ -734,28 +734,36 @@ export function VenueMap({
       }
 
       if (userLocationRef.current) {
-        searchCoords = userLocationRef.current;
+        // Tight 2 km radius — keeps results within the user's own neighborhood
+        // (Upper East Side, Upper West Side, etc.) rather than the whole city.
+        // The backend reverse-geocodes these coords to extract the neighborhood name
+        // and builds queries like "best restaurant Upper East Side New York".
+        searchCoords = { ...userLocationRef.current, radiusM: 2000 };
         // Geocode in background to update detectedCity for display (does NOT replace query text)
         try {
           const geocoder = new google.maps.Geocoder();
-          geocoder.geocode({ location: searchCoords }, (results, status) => {
+          geocoder.geocode({ location: userLocationRef.current }, (results, status) => {
             if (status === "OK" && results?.[0]) {
+              const neighborhood = results[0].address_components.find((c) =>
+                c.types.includes("neighborhood") || c.types.includes("sublocality_level_1")
+              );
               const locality = results[0].address_components.find((c) =>
                 c.types.includes("locality")
               );
               const area = results[0].address_components.find((c) =>
                 c.types.includes("administrative_area_level_2") || c.types.includes("administrative_area_level_1")
               );
-              const cityName = locality?.long_name || area?.long_name || "";
+              // Prefer neighborhood name for display (e.g. "Upper East Side") over city
+              const cityName = neighborhood?.long_name || locality?.long_name || area?.long_name || "";
               if (cityName) setDetectedCity(cityName);
             }
           });
         } catch (_) { /* fall through */ }
       } else if (mapInstanceRef.current) {
-        // GPS unavailable (denied/timed out) — use map center so "near me" still works
-        // if the user has already panned to their area.
+        // GPS unavailable — fall back to map center with a slightly wider radius
+        // since the map center is less precise than a GPS fix.
         const center = mapInstanceRef.current.getCenter();
-        if (center) searchCoords = { lat: center.lat(), lng: center.lng() };
+        if (center) searchCoords = { lat: center.lat(), lng: center.lng(), radiusM: 3000 };
       }
     }
 
