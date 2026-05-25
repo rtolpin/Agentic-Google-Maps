@@ -497,31 +497,47 @@ def _build_queries(
         category = cuisine if cuisine else "restaurant"
         cat_with_rest = f"{cuisine} restaurant" if cuisine else "restaurant"
 
+        # For directional place names (North/South/East/West + base name), build an
+        # area-cluster query by stripping the prefix.  "North Caldwell NJ" →
+        # "Caldwell area NJ" so Google finds Caldwell, West Caldwell, Fairfield, etc.
+        # For non-directional names (Trenton, Brooklyn) the area_loc stays the same.
+        _DIR_PREFIXES = ("north ", "south ", "east ", "west ")
+        area_loc = location
+        if location.lower() != "near me":
+            parts_loc = location.rsplit(" ", 1)
+            if len(parts_loc) == 2 and parts_loc[1].isupper() and len(parts_loc[1]) == 2:
+                base_name, state = parts_loc
+                for pfx in _DIR_PREFIXES:
+                    if base_name.lower().startswith(pfx):
+                        stripped = base_name[len(pfx):]
+                        area_loc = f"{stripped} area {state}"
+                        break
+
         # Three location cases:
-        # 1. has_broad: neighborhood + county both known → cover both granularities
-        # 2. local-only: city/state known but no county → saturate with local queries
+        # 1. has_broad: neighborhood + county both known → use near-location + area + county
+        # 2. local-only: city/state known but no county → use near-location + area queries
         # 3. near-me: reverse-geocode failed → pure proximity queries with phrase variety
         has_broad = broad_loc != location and location != "near me"
         if has_broad:
             return [
                 f"best {cat_with_rest} {location}",
-                f"top rated {cat_with_rest} {location}",
+                f"best {cat_with_rest} near {location}",
                 cat_query_3,
-                f"best {cat_with_rest} {broad_loc}",
-                f"top rated {cat_with_rest} {broad_loc}",
+                f"top rated {cat_with_rest} near {location}",
+                f"best {cat_with_rest} {area_loc}" if area_loc != location else f"best {cat_with_rest} {broad_loc}",
+                f"popular {cat_with_rest} near {location}",
                 f"local {category} near me",
-                f"popular{cuisine_tag} restaurant {location}",
                 f"{category} near me",
             ]
         if location != "near me":
-            # local-only: good city name but no county fallback
+            # local-only: good city name but no county fallback — rely on near-location queries
             return [
                 f"best {cat_with_rest} {location}",
-                f"top rated {cat_with_rest} {location}",
+                f"best {cat_with_rest} near {location}",
                 cat_query_3,
+                f"top rated {cat_with_rest} near {location}",
+                f"best {cat_with_rest} {area_loc}" if area_loc != location else f"popular {cat_with_rest} near {location}",
                 f"highly rated {cat_with_rest} {location}",
-                f"popular{cuisine_tag} restaurant {location}",
-                f"{cat_with_rest} {location}",
                 f"local {category} near me",
                 f"{category} near me",
             ]
