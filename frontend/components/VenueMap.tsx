@@ -2970,6 +2970,119 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+// ─── Custom flight date picker ────────────────────────────────────────────
+
+const _MONTHS = ["January","February","March","April","May","June",
+                 "July","August","September","October","November","December"];
+const _DOW = ["Su","Mo","Tu","We","Th","Fr","Sa"];
+
+function FlightDatePicker({ value, min, onChange }: {
+  value: string; min: string; onChange: (v: string) => void;
+}) {
+  const parse = (s: string) => { const [y,m,d] = s.split("-").map(Number); return {y, m: m-1, d}; };
+  const sel = parse(value);
+  const minP = parse(min);
+  const [open, setOpen] = useState(false);
+  const [vm, setVm] = useState(sel.m);
+  const [vy, setVy] = useState(sel.y);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const isDisabled = (y: number, m: number, d: number) =>
+    y < minP.y || (y === minP.y && m < minP.m) || (y === minP.y && m === minP.m && d < minP.d);
+  const isSelected = (y: number, m: number, d: number) => y === sel.y && m === sel.m && d === sel.d;
+  const isToday = (y: number, m: number, d: number) => {
+    const t = new Date(); return y === t.getFullYear() && m === t.getMonth() && d === t.getDate();
+  };
+  const select = (y: number, m: number, d: number) => {
+    if (isDisabled(y, m, d)) return;
+    onChange(`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`);
+    setOpen(false);
+  };
+  const prevMonth = () => vm === 0 ? (setVm(11), setVy(vy-1)) : setVm(vm-1);
+  const nextMonth = () => vm === 11 ? (setVm(0), setVy(vy+1)) : setVm(vm+1);
+
+  const firstDow = new Date(vy, vm, 1).getDay();
+  const daysInMonth = new Date(vy, vm+1, 0).getDate();
+  const daysInPrev = new Date(vy, vm, 0).getDate();
+  const cells: {y:number;m:number;d:number;cur:boolean}[] = [];
+  for (let i = firstDow-1; i >= 0; i--)
+    cells.push({y: vm===0?vy-1:vy, m: vm===0?11:vm-1, d: daysInPrev-i, cur: false});
+  for (let d = 1; d <= daysInMonth; d++)
+    cells.push({y: vy, m: vm, d, cur: true});
+  let nx = 1;
+  while (cells.length % 7 !== 0)
+    cells.push({y: vm===11?vy+1:vy, m: vm===11?0:vm+1, d: nx++, cur: false});
+
+  const displayDate = value
+    ? new Date(value + "T12:00:00").toLocaleDateString("en-US", {month:"short", day:"numeric", year:"numeric"})
+    : "Select date";
+
+  return (
+    <div ref={ref} style={{position:"relative", flex:1}}>
+      <button onClick={() => setOpen(o => !o)} style={{
+        width:"100%", display:"flex", alignItems:"center", justifyContent:"space-between",
+        background:"rgba(0,0,0,0.35)", border:`1px solid ${open ? "rgba(167,139,250,0.7)" : "rgba(167,139,250,0.4)"}`,
+        borderRadius:8, padding:"6px 10px", color:"#E2E8F0", fontSize:12, cursor:"pointer", outline:"none",
+        transition:"border-color 0.15s",
+      }}>
+        <span>{displayDate}</span>
+        <span style={{color:"#A78BFA", fontSize:11, marginLeft:4}}>▾</span>
+      </button>
+
+      {open && (
+        <div style={{
+          position:"absolute", top:"calc(100% + 5px)", left:0, zIndex:10000, minWidth:260,
+          background:"#0F1929", border:"1.5px solid rgba(167,139,250,0.45)",
+          borderRadius:14, padding:"14px 12px 12px",
+          boxShadow:"0 12px 40px rgba(0,0,0,0.7), 0 0 0 1px rgba(167,139,250,0.1)",
+        }}>
+          {/* Month / year nav */}
+          <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12}}>
+            <button onClick={prevMonth} style={{background:"rgba(167,139,250,0.1)", border:"1px solid rgba(167,139,250,0.25)", borderRadius:7, color:"#A78BFA", cursor:"pointer", fontSize:16, width:28, height:28, display:"flex", alignItems:"center", justifyContent:"center"}}>‹</button>
+            <span style={{fontSize:13, fontWeight:700, color:"#E2E8F0", letterSpacing:"0.01em"}}>{_MONTHS[vm]} {vy}</span>
+            <button onClick={nextMonth} style={{background:"rgba(167,139,250,0.1)", border:"1px solid rgba(167,139,250,0.25)", borderRadius:7, color:"#A78BFA", cursor:"pointer", fontSize:16, width:28, height:28, display:"flex", alignItems:"center", justifyContent:"center"}}>›</button>
+          </div>
+          {/* Day-of-week headers */}
+          <div style={{display:"grid", gridTemplateColumns:"repeat(7,1fr)", marginBottom:4}}>
+            {_DOW.map(d => <div key={d} style={{textAlign:"center", fontSize:10, fontWeight:700, color:"#475569", padding:"2px 0"}}>{d}</div>)}
+          </div>
+          {/* Day cells */}
+          <div style={{display:"grid", gridTemplateColumns:"repeat(7,1fr)", gap:2}}>
+            {cells.map((c, i) => {
+              const dis = isDisabled(c.y, c.m, c.d);
+              const sel2 = isSelected(c.y, c.m, c.d);
+              const tod = isToday(c.y, c.m, c.d);
+              return (
+                <button key={i} onClick={() => select(c.y, c.m, c.d)} disabled={dis} style={{
+                  height:34, border:"none", borderRadius:8, fontSize:12, cursor: dis ? "default" : "pointer",
+                  fontWeight: sel2 ? 700 : 400,
+                  background: sel2 ? "linear-gradient(135deg,#4F46E5,#7C3AED)" : tod ? "rgba(167,139,250,0.12)" : "transparent",
+                  color: sel2 ? "#fff" : dis ? "#1E293B" : !c.cur ? "#334155" : tod ? "#A78BFA" : "#94A3B8",
+                  outline: tod && !sel2 ? "1.5px solid rgba(167,139,250,0.5)" : "none",
+                  outlineOffset: "-1px",
+                  transition:"background 0.1s, color 0.1s",
+                }}>{c.d}</button>
+              );
+            })}
+          </div>
+          {/* Footer shortcuts */}
+          <div style={{display:"flex", justifyContent:"flex-end", marginTop:10, gap:8}}>
+            <button onClick={() => { const d = new Date(); d.setDate(d.getDate()+7); select(d.getFullYear(), d.getMonth(), d.getDate()); }} style={{background:"none", border:"none", color:"#7C3AED", fontSize:11, fontWeight:600, cursor:"pointer", padding:"2px 4px"}}>+7 days</button>
+            <button onClick={() => { const d = new Date(); d.setMonth(d.getMonth()+1); select(d.getFullYear(), d.getMonth(), d.getDate()); }} style={{background:"none", border:"none", color:"#7C3AED", fontSize:11, fontWeight:600, cursor:"pointer", padding:"2px 4px"}}>+1 month</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Venue detail sidebar ─────────────────────────────────────────────────
 
 interface VenueDetailSidebarProps {
@@ -3310,16 +3423,10 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
             {/* Departure date */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
               <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, minWidth: 44 }}>Depart</span>
-              <input
-                type="date"
+              <FlightDatePicker
                 value={flightDate}
                 min={new Date().toISOString().split("T")[0]}
-                onChange={e => setFlightDate(e.target.value)}
-                style={{
-                  flex: 1, background: "rgba(0,0,0,0.35)", border: "1px solid rgba(167,139,250,0.4)",
-                  borderRadius: 8, padding: "5px 8px", color: "#E2E8F0", fontSize: 12,
-                  colorScheme: "dark", cursor: "pointer", outline: "none",
-                }}
+                onChange={setFlightDate}
               />
             </div>
             {airportsLoading ? (
