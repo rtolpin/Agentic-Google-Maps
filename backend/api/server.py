@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -73,6 +74,17 @@ app.add_middleware(
 @app.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     return HealthResponse()
+
+
+@app.get("/api/env-check")
+async def env_check() -> dict:
+    """Diagnostic: which of our expected env vars are present (values never shown)."""
+    keys = [
+        "ANTHROPIC_API_KEY", "SERPAPI_API_KEY", "NIMBLE_API_KEY",
+        "GOOGLE_MAPS_API_KEY", "CLICKHOUSE_HOST", "REDIS_URL",
+        "SENSO_API_KEY", "DD_API_KEY",
+    ]
+    return {k: bool(os.environ.get(k)) for k in keys}
 
 
 # ─── Search (SSE) ─────────────────────────────────────────────────────────────
