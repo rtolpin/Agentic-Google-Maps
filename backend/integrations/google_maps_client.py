@@ -377,6 +377,7 @@ class GoogleMapsClient:
 
     async def find_nearest_airport(self, lat: float, lng: float) -> dict | None:
         """Find the nearest airport within 150 km of the given coordinates."""
+        # Try nearby search with airport type first
         body = {
             "locationRestriction": {
                 "circle": {
@@ -384,7 +385,7 @@ class GoogleMapsClient:
                     "radius": 150000.0,
                 }
             },
-            "includedTypes": ["international_airport", "airport"],
+            "includedTypes": ["airport"],
             "maxResultCount": 5,
             "rankPreference": "DISTANCE",
         }
@@ -397,9 +398,23 @@ class GoogleMapsClient:
             resp.raise_for_status()
             places = resp.json().get("places", [])
         except Exception:
-            return None
+            places = []
+
+        # Fall back to text search if nearby search returned nothing
         if not places:
+            try:
+                results = await self.search_venues(
+                    "international airport",
+                    max_results=3,
+                    location_bias={"lat": lat, "lng": lng, "radius_m": 150000},
+                )
+                if results:
+                    r = results[0]
+                    return {"name": r["name"], "address": r["address"], "latitude": r["latitude"], "longitude": r["longitude"]}
+            except Exception:
+                pass
             return None
+
         p = places[0]
         return {
             "name": p.get("displayName", {}).get("text", ""),
