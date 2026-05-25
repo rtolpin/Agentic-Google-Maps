@@ -3159,9 +3159,14 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
           <div style={{ fontSize: 11, color: "#F87171", marginBottom: 6 }}>⚠️ {directionsError}</div>
         )}
 
+      </div>
+
+      {/* Scrollable body — includes route/flight options, venue name, and content */}
+      <div className="sidebar-scroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: isFullScreen ? "24px 32px 36px" : "16px 18px 28px" }}>
+
         {/* Route / flight options picker */}
         {routeOptions && routeOptions.length > 0 && (
-          <div style={{ marginBottom: 10 }}>
+          <div style={{ marginBottom: 14 }}>
             {routeOptions[0].type === "flight" && (() => {
               const f = routeOptions[0];
               const dateStr = f.outboundDate
@@ -3254,9 +3259,9 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
           </div>
         )}
 
-        {/* Name — full width below buttons, no overlap risk */}
+        {/* Name */}
         <h2 style={{
-          margin: 0, fontSize: 22, fontWeight: 800, color: "#F1F5F9", lineHeight: 1.25,
+          margin: "0 0 0 0", fontSize: 22, fontWeight: 800, color: "#F1F5F9", lineHeight: 1.25,
           letterSpacing: "-0.3px",
           display: "inline-block",
           background: "rgba(16,185,129,0.15)",
@@ -3275,7 +3280,7 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
         )}
 
         {/* Pills row */}
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10, marginBottom: 16 }}>
           <DarkPill color="#818CF8" label={`${Math.round(venue.match_score)}% match`} large />
           {openLabel && <DarkPill color={openLabel.color} label={openLabel.label} />}
           {venue.has_private_room && <DarkPill color="#10B981" label="Private room" />}
@@ -3285,10 +3290,6 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
           )}
         </div>
 
-      </div>
-
-      {/* Scrollable body */}
-      <div className="sidebar-scroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: isFullScreen ? "24px 32px 36px" : "16px 18px 28px" }}>
         {isFullScreen ? (
           /* ── Two-column layout in fullscreen ── */
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 28, alignItems: "start" }}>
