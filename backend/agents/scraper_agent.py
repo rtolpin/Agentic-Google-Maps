@@ -522,6 +522,8 @@ class ScraperAgent:
         user_lng: float | None = None,
         user_radius_m: float | None = None,
         user_area: str = "",
+        city_lat: float | None = None,
+        city_lng: float | None = None,
     ) -> list[dict]:
         queries = _build_queries(intent, user_area=user_area)
         # Nimble location: derive "Maplewood New Jersey" style from user_area when GPS is set
@@ -553,9 +555,13 @@ class ScraperAgent:
                 city_radius = 80000.0 if is_outdoor else 30000.0
                 clat, clng, country_code = _CITY_COORDS[city_key]
                 bias = {"lat": clat, "lng": clng, "radius_m": city_radius}
+            elif city_lat is not None and city_lng is not None:
+                # Use the pre-geocoded coordinates from the orchestrator — avoids a
+                # second independent geocoding call that could return different results.
+                city_radius = 80000.0 if is_outdoor else 20000.0
+                bias = {"lat": city_lat, "lng": city_lng, "radius_m": city_radius}
             else:
-                # Suburb / small town — 20 km bias keeps Google Places local while
-                # still covering adjacent towns (e.g. West Caldwell for North Caldwell).
+                # Last-resort: geocode independently (orchestrator geocode must have failed).
                 city_radius = 80000.0 if is_outdoor else 20000.0
                 try:
                     async with GoogleMapsClient() as geocoder:

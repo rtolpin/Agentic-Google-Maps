@@ -304,6 +304,21 @@ async def orchestrate(
 
         yield {"event": "intent", "data": intent.model_dump()}
 
+        # Step 1b — geocode unknown cities ONCE so both the scraper and the location
+        # filter use identical coordinates.  Without this, two independent geocoding
+        # calls can diverge (or one fails) causing cross-state venues to appear on
+        # repeat searches when the ClickHouse cache is warm.
+        city_geocode: tuple[float, float] | None = None
+        if user_lat is None and intent.city not in ("Unknown", "") \
+                and intent.city.strip() not in _CITY_COORDS:
+            try:
+                async with GoogleMapsClient() as gc:
+                    geo = await gc.geocode(intent.city)
+                if geo:
+                    city_geocode = (geo.latitude, geo.longitude)
+            except Exception:
+                pass
+
         # Step 2 — warm cache check (non-blocking thread)
         with db_span("therightspot.cache_check", "venue_signals", city=intent.city):
             cached_venues = await asyncio.to_thread(
@@ -312,7 +327,13 @@ async def orchestrate(
 
         # Step 3 — dispatch sub-agents in parallel
         yield {"event": "status", "data": "Searching across sources..."}
-        scrape_task = asyncio.create_task(ScraperAgent().run(intent, user_lat=user_lat, user_lng=user_lng, user_radius_m=user_radius_m, user_area=user_area))
+        scrape_task = asyncio.create_task(ScraperAgent().run(
+            intent,
+            user_lat=user_lat, user_lng=user_lng,
+            user_radius_m=user_radius_m, user_area=user_area,
+            city_lat=city_geocode[0] if city_geocode else None,
+            city_lng=city_geocode[1] if city_geocode else None,
+        ))
         validate_task = asyncio.create_task(ValidatorAgent().run(intent))
         global_task = asyncio.create_task(GlobalIntelligenceAgent().run(intent))
 
@@ -347,7 +368,7 @@ async def orchestrate(
         # "all ClickHouse results were stale" correctly triggers the in-memory fallback.
         scored_venues = await _filter_by_location(
             scored_venues, intent, user_lat=user_lat, user_lng=user_lng,
-            user_radius_m=user_radius_m,
+            user_radius_m=user_radius_m, city_geocode=city_geocode,
         )
 
         # Fallback: no valid results in ClickHouse → score fresh scraper data in-memory
@@ -355,7 +376,7 @@ async def orchestrate(
             scored_venues = _score_enriched_fallback(enriched_venues, intent)
             scored_venues = await _filter_by_location(
                 scored_venues, intent, user_lat=user_lat, user_lng=user_lng,
-                user_radius_m=user_radius_m,
+                user_radius_m=user_radius_m, city_geocode=city_geocode,
             )
 
         root.set_tag("search.venues_scored", len(scored_venues))
@@ -404,10 +425,15 @@ async def _filter_by_location(
     user_lat: float | None,
     user_lng: float | None,
     user_radius_m: float | None,
+    city_geocode: tuple[float, float] | None = None,
 ) -> list[ScoredVenue]:
-    """Remove venues whose coordinates fall outside the expected search area."""
-    is_suburb = False  # suburb/small-town mode: tighter radius + address fallback
+    """Remove venues whose coordinates fall outside the expected search area.
 
+    city_geocode: pre-computed (lat, lng) for the intent city, geocoded ONCE
+    in the orchestrator so the scraper and both filter calls share the same anchor.
+    Passing it here avoids a second independent geocoding call that could fail or
+    return different coordinates and let cross-state venues through.
+    """
     if user_lat is not None and user_lng is not None:
         clat, clng = user_lat, user_lng
         max_m = max(500.0, min(50000.0, user_radius_m or 5000.0)) * 2
@@ -416,25 +442,21 @@ async def _filter_by_location(
         if city_key in _CITY_COORDS:
             clat, clng, _ = _CITY_COORDS[city_key]
             max_m = 35_000.0  # major city — generous metro radius
+        elif city_geocode is not None:
+            # Use the pre-geocoded coordinates — no second API call needed.
+            clat, clng = city_geocode
+            max_m = 20_000.0  # 20 km: covers adjacent towns, excludes distant cities
         else:
-            # Suburb / small town — geocode but use a tight 15 km radius.
-            # On geocoding failure, fall back to address-string matching rather
-            # than failing open (which previously returned all venues unfiltered).
-            is_suburb = True
-            city_l = city_key.lower()
+            # No pre-geocoded coords available — geocode as last resort.
             try:
                 async with GoogleMapsClient() as gc:
                     geo = await gc.geocode(intent.city)
                 if not geo:
-                    # Geocoding returned nothing — trust the scraper's query-text
-                    # anchoring and return all venues rather than zeroing out results.
-                    return venues
+                    return venues  # can't anchor — trust scraper's query-text
                 clat, clng = geo.latitude, geo.longitude
             except Exception:
-                # Geocoding failed (rate-limit, network, etc.) — same: trust scraper.
-                return venues
-            max_m = 20_000.0  # 20 km: tight enough to exclude distant cities, wide
-                               # enough to cover adjacent towns (West Caldwell → 5 km)
+                return venues  # geocoding failed — trust scraper
+            max_m = 20_000.0
     else:
         return venues
 
