@@ -32,11 +32,21 @@ Instead of returning a pile of pins, The Right Spot understands *intent* — and
 
 ### 🗺️ Directions (In-Map Routing)
 - **Get Directions button** — appears in the venue detail sidebar header; renders the route directly on the map using Google Maps `DirectionsService` + `DirectionsRenderer` (no redirect to a separate app)
-- **Four travel modes** — Transit 🚇, Drive 🚗, Walk 🚶, Bike 🚲 — selectable inline; result shows duration and distance (e.g. *25 min · 2.1 km*)
+- **Five travel modes** — Transit 🚇, Drive 🚗, Walk 🚶, Bike 🚲, Fly ✈️ — modern segmented control with color-coded gradient buttons and glow effects
+- **Multiple route alternatives** — Drive, Transit, Walk, and Bike modes return up to 3 alternative routes; tap any option in the sidebar to switch the rendered polyline and update the duration/distance display
+- **Auto-recalculate on mode switch** — switching travel modes immediately re-runs directions for the currently selected venue with no extra tap required
 - **Smart destination fallback** — uses Google Place ID when available, falls back to lat/lng coordinates, then to venue name + address as a text query — so directions always work even for venues without stored coordinates
 - **Clear Route** — button toggles to "Clear Route" once a route is active; clears the polyline from the map
 - **External directions chip** — each venue card in the left panel has a "🗺️ Directions" chip that opens Google Maps with the destination pre-filled (Place ID → coordinates → name/address text query)
 - **GPS error handling** — if location permission is denied, an inline error prompts the user to enable it instead of silently failing
+
+### ✈️ Flight Search
+- **Auto-Fly mode** — when you select a venue more than 500 km from your current location, the travel mode automatically switches to Fly; switching back to a ground mode resets it to Transit
+- **Serpapi Google Flights** — the `✈️ Fly` mode calls the `/api/flights` backend endpoint, which queries the Serpapi Google Flights API for real one-way fare data
+- **Up to 3 flight options** — results are sorted cheapest-first; each card shows price, total flight duration, number of stops, airline, flight number, and departure/arrival airport names
+- **Pick your flight** — tap any flight option in the sidebar to make it the active selection, exactly like picking a driving route alternative
+- **Smart hub routing** — the backend uses a 130-airport Haversine database and automatically redirects secondary airports to the correct international hub (e.g. LGA → JFK, LCY → LHR, MDW → ORD, DCA → IAD) so searches from city-center coordinates always resolve to a hub with long-haul service
+- **Requires `SERPAPI_API_KEY`** — get a free key at [serpapi.com](https://serpapi.com); flight search is gracefully disabled if the key is absent
 
 ### 🚇 Nearby Transit
 - **Nearby Transit button** — floating button on the map fetches airports, subway stations, bus stops, train stations, and ferry terminals within 1.5 km of the current map center using the Google Places Nearby Search API
@@ -132,6 +142,7 @@ The Right Spot mirrors Google Maps' own multi-tier data architecture:
 ![Anthropic](https://img.shields.io/badge/Anthropic-Claude_AI-CC785C?style=flat)
 ![Nimble](https://img.shields.io/badge/Nimble-SERP_API-00C49F?style=flat)
 ![Senso](https://img.shields.io/badge/Senso.ai-GEO-6366F1?style=flat)
+![Serpapi](https://img.shields.io/badge/Serpapi-Google_Flights-4285F4?style=flat)
 ![Datadog](https://img.shields.io/badge/Datadog-APM-632CA6?style=flat&logo=datadog&logoColor=white)
 
 ---
@@ -152,9 +163,10 @@ agentic-engineering-hack/
 │   ├── db/
 │   │   └── clickhouse.py          # MergeTree schema + multi-factor scoring query
 │   ├── integrations/
-│   │   ├── google_maps_client.py  # Places API (real-time, TOS compliant, locationBias)
-│   │   ├── nimble_client.py       # Nimble google_maps + google_search engines
-│   │   └── senso_client.py        # Senso knowledge base client
+│   │   ├── google_maps_client.py      # Places API (real-time, TOS compliant, locationBias)
+│   │   ├── nimble_client.py           # Nimble google_maps + google_search engines
+│   │   ├── serpapi_flights_client.py  # Serpapi Google Flights (✈️ Fly mode, 130-airport DB)
+│   │   └── senso_client.py            # Senso knowledge base client
 │   ├── models/
 │   │   └── models.py              # All Pydantic v2 domain types
 │   ├── schemas/
@@ -229,6 +241,9 @@ ANTHROPIC_API_KEY=sk-ant-...       # console.anthropic.com
 NIMBLE_API_KEY=...                  # nimbleway.com → Dashboard (optional — falls back to Google Places only)
 SENSO_API_KEY=tgr_...              # app.senso.ai → Settings
 
+# Flight search (✈️ Fly mode)
+SERPAPI_API_KEY=...                 # serpapi.com → Dashboard (optional — Fly mode disabled if absent)
+
 # Google Maps
 GOOGLE_MAPS_API_KEY=AIza...        # console.cloud.google.com
 GOOGLE_MAPS_MAP_ID=...             # Google Maps Platform → Map Management
@@ -278,7 +293,8 @@ Type anything — `"quiet cafe for deep work"`, `"hiking near downtown"`, `"firs
 | **Anthropic Claude** | Intent parsing, signal extraction, synthesis | [console.anthropic.com](https://console.anthropic.com) |
 | **Nimble SERP** | Google Maps data extraction + review snippets | [nimbleway.com](https://nimbleway.com) |
 | **Senso.ai** | GEO publishing + AI citation tracking | [app.senso.ai](https://app.senso.ai) |
-| **Google Maps** | Map rendering + real-time place details | [console.cloud.google.com](https://console.cloud.google.com) |
+| **Google Maps** | Map rendering + real-time place details + directions | [console.cloud.google.com](https://console.cloud.google.com) |
+| **Serpapi** | Google Flights data for the ✈️ Fly travel mode | [serpapi.com](https://serpapi.com) |
 | **Datadog** | APM tracing (optional for local dev) | [app.datadoghq.com](https://app.datadoghq.com) |
 
 ---
