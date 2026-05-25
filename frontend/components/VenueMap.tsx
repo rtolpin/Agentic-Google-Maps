@@ -734,31 +734,38 @@ export function VenueMap({
       }
 
       if (userLocationRef.current) {
-        // Tight 2 km radius — keeps results within the user's own neighborhood
-        // (Upper East Side, Upper West Side, etc.) rather than the whole city.
-        // The backend reverse-geocodes these coords to extract the neighborhood name
-        // and builds queries like "best restaurant Upper East Side New York".
-        searchCoords = { ...userLocationRef.current, radiusM: 2000 };
-        // Geocode in background to update detectedCity for display (does NOT replace query text)
-        try {
-          const geocoder = new google.maps.Geocoder();
-          geocoder.geocode({ location: userLocationRef.current }, (results, status) => {
-            if (status === "OK" && results?.[0]) {
-              const neighborhood = results[0].address_components.find((c) =>
-                c.types.includes("neighborhood") || c.types.includes("sublocality_level_1")
-              );
-              const locality = results[0].address_components.find((c) =>
-                c.types.includes("locality")
-              );
-              const area = results[0].address_components.find((c) =>
-                c.types.includes("administrative_area_level_2") || c.types.includes("administrative_area_level_1")
-              );
-              // Prefer neighborhood name for display (e.g. "Upper East Side") over city
-              const cityName = neighborhood?.long_name || locality?.long_name || area?.long_name || "";
-              if (cityName) setDetectedCity(cityName);
-            }
-          });
-        } catch (_) { /* fall through */ }
+        const userLoc = userLocationRef.current;
+        searchCoords = { ...userLoc, radiusM: 2000 };
+
+        // Await reverse geocode so we can inject the neighborhood into the query
+        // BEFORE it reaches the LLM.  "best restaurant near me" becomes
+        // "best restaurant near me in Upper East Side" automatically — identical
+        // to the user typing the neighborhood explicitly.
+        await new Promise<void>((resolve) => {
+          try {
+            const geocoder = new google.maps.Geocoder();
+            geocoder.geocode({ location: userLoc }, (results, status) => {
+              if (status === "OK" && results?.[0]) {
+                const comps = results[0].address_components;
+                const nbhd = comps.find((c) =>
+                  c.types.includes("neighborhood") || c.types.includes("sublocality_level_1")
+                );
+                const locality = comps.find((c) => c.types.includes("locality"));
+                const area = comps.find((c) =>
+                  c.types.includes("administrative_area_level_2") || c.types.includes("administrative_area_level_1")
+                );
+                const name = nbhd?.long_name || locality?.long_name || area?.long_name || "";
+                if (name) {
+                  // Rewrite query: "best restaurant near me" → "best restaurant near me in Upper East Side"
+                  q = q.replace(/\bnear me\b/i, `near me in ${name}`);
+                  setInputValue(q);
+                  setDetectedCity(name);
+                }
+              }
+              resolve();
+            });
+          } catch (_) { resolve(); }
+        });
       } else if (mapInstanceRef.current) {
         // GPS unavailable — fall back to map center with a slightly wider radius
         // since the map center is less precise than a GPS fix.
