@@ -308,6 +308,10 @@ async def orchestrate(
                     neighborhood = geo_parts.get("neighborhood", "")
                     county       = geo_parts.get("county", "")
                     state        = geo_parts.get("state", "")
+                    # Discard intersection-style names like "Greenwood & Hamilton"
+                    # — Google Places returns 0 results when they appear in queries.
+                    if neighborhood and ("&" in neighborhood or neighborhood[0].isdigit()):
+                        neighborhood = ""
                     primary      = neighborhood or city_name
                     area_parts   = [p for p in [primary, county, state] if p]
                     user_area    = ", ".join(area_parts)
