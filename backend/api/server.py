@@ -227,26 +227,27 @@ async def search_flights_route(
     one-way flight option via Serpapi Google Flights.
     Requires SERPAPI_API_KEY to be set.
     """
-    from integrations.serpapi_flights_client import SerpApiFlightsClient, _extract_iata
+    from integrations.serpapi_flights_client import SerpApiFlightsClient, _get_iata_for_area
 
     async with GoogleMapsClient() as gmc:
-        origin_airport, dest_airport = await asyncio.gather(
-            gmc.find_nearest_airport(origin_lat, origin_lng),
-            gmc.find_nearest_airport(dest_lat, dest_lng),
+        origin_area, dest_area = await asyncio.gather(
+            gmc.reverse_geocode(origin_lat, origin_lng),
+            gmc.reverse_geocode(dest_lat, dest_lng),
         )
 
+    origin_airport = _get_iata_for_area(origin_area)
+    dest_airport   = _get_iata_for_area(dest_area)
+
     if not origin_airport:
-        raise HTTPException(status_code=422, detail="No airport found near your location")
+        city = origin_area.get("city") or origin_area.get("state") or "your location"
+        raise HTTPException(status_code=422, detail=f"No major airport found near {city}")
     if not dest_airport:
-        raise HTTPException(status_code=422, detail="No airport found near the destination")
+        city = dest_area.get("city") or dest_area.get("state") or "the destination"
+        raise HTTPException(status_code=422, detail=f"No major airport found near {city}")
 
-    dep_iata = _extract_iata(origin_airport["name"])
-    arr_iata = _extract_iata(dest_airport["name"])
+    dep_iata, dep_name = origin_airport
+    arr_iata, arr_name = dest_airport
 
-    if not dep_iata:
-        raise HTTPException(status_code=422, detail=f"Could not determine airport code for: {origin_airport['name']}")
-    if not arr_iata:
-        raise HTTPException(status_code=422, detail=f"Could not determine airport code for: {dest_airport['name']}")
     if dep_iata == arr_iata:
         raise HTTPException(status_code=422, detail="Origin and destination are served by the same airport")
 
@@ -255,8 +256,8 @@ async def search_flights_route(
         raise HTTPException(status_code=404, detail=f"No flights found from {dep_iata} to {arr_iata}")
 
     for opt in options:
-        opt["departure_airport_display"] = origin_airport["name"]
-        opt["arrival_airport_display"] = dest_airport["name"]
+        opt["departure_airport_display"] = dep_name
+        opt["arrival_airport_display"]   = arr_name
 
     return {"options": options}
 

@@ -118,6 +118,99 @@ def _extract_iata(airport_name: str) -> str | None:
     return None
 
 
+# City name (lowercase) → (IATA code, display airport name)
+_CITY_AIRPORT: dict[str, tuple[str, str]] = {
+    "new york city": ("JFK", "John F. Kennedy International Airport"),
+    "new york":      ("JFK", "John F. Kennedy International Airport"),
+    "manhattan":     ("JFK", "John F. Kennedy International Airport"),
+    "brooklyn":      ("JFK", "John F. Kennedy International Airport"),
+    "queens":        ("JFK", "John F. Kennedy International Airport"),
+    "the bronx":     ("JFK", "John F. Kennedy International Airport"),
+    "newark":        ("EWR", "Newark Liberty International Airport"),
+    "hoboken":       ("EWR", "Newark Liberty International Airport"),
+    "jersey city":   ("EWR", "Newark Liberty International Airport"),
+    "london":        ("LHR", "London Heathrow Airport"),
+    "city of london":("LHR", "London Heathrow Airport"),
+    "los angeles":   ("LAX", "Los Angeles International Airport"),
+    "chicago":       ("ORD", "O'Hare International Airport"),
+    "san francisco": ("SFO", "San Francisco International Airport"),
+    "miami":         ("MIA", "Miami International Airport"),
+    "atlanta":       ("ATL", "Hartsfield-Jackson Atlanta International Airport"),
+    "seattle":       ("SEA", "Seattle-Tacoma International Airport"),
+    "boston":        ("BOS", "Boston Logan International Airport"),
+    "dallas":        ("DFW", "Dallas/Fort Worth International Airport"),
+    "houston":       ("IAH", "George Bush Intercontinental Airport"),
+    "denver":        ("DEN", "Denver International Airport"),
+    "las vegas":     ("LAS", "Harry Reid International Airport"),
+    "phoenix":       ("PHX", "Phoenix Sky Harbor International Airport"),
+    "philadelphia":  ("PHL", "Philadelphia International Airport"),
+    "washington":    ("IAD", "Washington Dulles International Airport"),
+    "arlington":     ("DCA", "Ronald Reagan Washington National Airport"),
+    "minneapolis":   ("MSP", "Minneapolis-Saint Paul International Airport"),
+    "detroit":       ("DTW", "Detroit Metropolitan Wayne County Airport"),
+    "portland":      ("PDX", "Portland International Airport"),
+    "san diego":     ("SAN", "San Diego International Airport"),
+    "salt lake city":("SLC", "Salt Lake City International Airport"),
+    "orlando":       ("MCO", "Orlando International Airport"),
+    "charlotte":     ("CLT", "Charlotte Douglas International Airport"),
+    "paris":         ("CDG", "Charles de Gaulle Airport"),
+    "amsterdam":     ("AMS", "Amsterdam Schiphol Airport"),
+    "frankfurt":     ("FRA", "Frankfurt Airport"),
+    "madrid":        ("MAD", "Adolfo Suárez Madrid–Barajas Airport"),
+    "barcelona":     ("BCN", "Barcelona–El Prat Airport"),
+    "rome":          ("FCO", "Leonardo da Vinci–Fiumicino Airport"),
+    "milan":         ("MXP", "Milan Malpensa Airport"),
+    "zurich":        ("ZRH", "Zurich Airport"),
+    "vienna":        ("VIE", "Vienna International Airport"),
+    "munich":        ("MUC", "Munich Airport"),
+    "brussels":      ("BRU", "Brussels Airport"),
+    "lisbon":        ("LIS", "Lisbon Humberto Delgado Airport"),
+    "copenhagen":    ("CPH", "Copenhagen Airport"),
+    "stockholm":     ("ARN", "Stockholm Arlanda Airport"),
+    "oslo":          ("OSL", "Oslo Gardermoen Airport"),
+    "helsinki":      ("HEL", "Helsinki-Vantaa Airport"),
+    "tokyo":         ("NRT", "Narita International Airport"),
+    "osaka":         ("KIX", "Kansai International Airport"),
+    "beijing":       ("PEK", "Beijing Capital International Airport"),
+    "shanghai":      ("PVG", "Shanghai Pudong International Airport"),
+    "hong kong":     ("HKG", "Hong Kong International Airport"),
+    "singapore":     ("SIN", "Singapore Changi Airport"),
+    "dubai":         ("DXB", "Dubai International Airport"),
+    "sydney":        ("SYD", "Sydney Kingsford Smith Airport"),
+    "melbourne":     ("MEL", "Melbourne Airport"),
+    "toronto":       ("YYZ", "Toronto Pearson International Airport"),
+    "vancouver":     ("YVR", "Vancouver International Airport"),
+    "montreal":      ("YUL", "Montréal-Trudeau International Airport"),
+    "seoul":         ("ICN", "Incheon International Airport"),
+    "bangkok":       ("BKK", "Suvarnabhumi Airport"),
+    "kuala lumpur":  ("KUL", "Kuala Lumpur International Airport"),
+    "delhi":         ("DEL", "Indira Gandhi International Airport"),
+    "mumbai":        ("BOM", "Chhatrapati Shivaji Maharaj International Airport"),
+    "johannesburg":  ("JNB", "O.R. Tambo International Airport"),
+    "cape town":     ("CPT", "Cape Town International Airport"),
+    "cairo":         ("CAI", "Cairo International Airport"),
+    "doha":          ("DOH", "Hamad International Airport"),
+    "abu dhabi":     ("AUH", "Abu Dhabi International Airport"),
+}
+
+
+def _get_iata_for_area(area: dict) -> tuple[str, str] | None:
+    """
+    Return (iata_code, airport_name) from a reverse_geocode area dict.
+    Checks city → neighborhood → county in order; partial-match fallback.
+    """
+    for field in ("city", "neighborhood", "county", "state"):
+        val = (area.get(field) or "").lower().strip()
+        if not val:
+            continue
+        if val in _CITY_AIRPORT:
+            return _CITY_AIRPORT[val]
+        for key, result in _CITY_AIRPORT.items():
+            if key in val or val in key:
+                return result
+    return None
+
+
 def _format_option(candidate: dict, departure_id: str, arrival_id: str) -> dict:
     legs = candidate.get("flights", [{}])
     first_leg = legs[0] if legs else {}
