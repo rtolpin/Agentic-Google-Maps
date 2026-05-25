@@ -325,14 +325,6 @@ async def orchestrate(
             except Exception:
                 pass
 
-        # When GPS coords are present but reverse-geocode failed (user_area still ""),
-        # fall back to "near me" so _build_queries sees is_gps=True and emits
-        # location-neutral queries ("best sushi near me") that let the location bias
-        # do the anchoring — rather than city-name queries ("best sushi New York City")
-        # that Google Places resolves to NYC, then get wiped by the radius filter.
-        if user_lat is not None and user_lng is not None and not user_area:
-            user_area = "near me"
-
         yield {"event": "intent", "data": intent.model_dump()}
 
         # Step 1b — geocode unknown cities ONCE so both the scraper and the location

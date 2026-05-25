@@ -299,15 +299,22 @@ _CITY_COORDS: dict[str, tuple[float, float, str]] = {
 }
 
 
-def _build_queries(intent: VenueIntent, user_area: str = "") -> list[str]:
+def _build_queries(
+    intent: VenueIntent,
+    user_area: str = "",
+    user_lat: float | None = None,
+    user_lng: float | None = None,
+) -> list[str]:
     """
     Build up to 8 complementary search queries for maximum local coverage.
 
-    When user_area is set (GPS-derived reverse geocode, e.g. "Maplewood, Essex County, NJ")
-    queries are hyper-local and do NOT rely on the intent city, ensuring correct results
-    for suburbs, small towns, and rural areas.  The final 2 slots are bare-keyword queries
-    that rely entirely on the locationBias circle — these are the safety net for areas
-    where adding a town name returns zero results.
+    is_gps is True whenever GPS coordinates are available — regardless of whether
+    reverse-geocoding succeeded.  When is_gps=True and user_area is empty (geocode
+    failed), queries use "near me" so they are location-neutral and the caller's
+    locationBias circle (lat/lng + radius) does all the geospatial anchoring.
+    This prevents the LLM's default city ("New York City") from appearing in query
+    text and dominating text-search, which would return wrong-city results that are
+    then wiped by the radius filter.
     """
     cuisine = intent.cuisine or ""
     city = intent.city
@@ -316,14 +323,18 @@ def _build_queries(intent: VenueIntent, user_area: str = "") -> list[str]:
     all_terms = {occasion} | set(signals) | ({cuisine.lower()} if cuisine else set())
 
     # ── Location string resolution ─────────────────────────────────────────
-    # GPS area takes priority — it is always more accurate than the parsed city.
-    is_gps = bool(user_area)
+    # is_gps: True whenever coordinates are known, not just when geocode succeeded.
+    is_gps = user_lat is not None and user_lng is not None
     if user_area:
         parts = [p.strip() for p in user_area.split(",")]
         # "Maplewood, Essex County, NJ" → primary = "Maplewood NJ", broad = "Essex County NJ"
         primary_loc = f"{parts[0]} {parts[-1]}" if len(parts) >= 2 else parts[0]
         broad_loc   = f"{parts[1]} {parts[-1]}" if len(parts) >= 3 else primary_loc
         location    = primary_loc
+    elif is_gps:
+        # Reverse-geocode failed — use neutral text; locationBias handles anchoring.
+        location  = "near me"
+        broad_loc = "near me"
     elif city == "Unknown":
         location  = next((s for s in (intent.other_signals or []) if len(s) > 3), "near me")
         broad_loc = location
@@ -525,7 +536,7 @@ class ScraperAgent:
         city_lat: float | None = None,
         city_lng: float | None = None,
     ) -> list[dict]:
-        queries = _build_queries(intent, user_area=user_area)
+        queries = _build_queries(intent, user_area=user_area, user_lat=user_lat, user_lng=user_lng)
         # Nimble location: derive "Maplewood New Jersey" style from user_area when GPS is set
         if user_area:
             area_parts = [p.strip() for p in user_area.split(",")]
