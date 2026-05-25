@@ -368,6 +368,10 @@ export function VenueMap({
   const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
   const [detectedCity, setDetectedCity] = useState<string>(""); // from reverse geocoding
   const [searchWasGpsAnchored, setSearchWasGpsAnchored] = useState(false);
+  // Set to true when user clicks an autocomplete suggestion and pans the map to a
+  // different city without searching. handleSearch will use the map center instead
+  // of GPS so "best matcha" searches the viewed city, not the GPS city.
+  const mapNavigatedRef = useRef(false);
   const [showAllMatches, setShowAllMatches] = useState(false);
   const [modalQuery, setModalQuery] = useState("");
   const [showSearchArea, setShowSearchArea] = useState(false);
@@ -555,6 +559,9 @@ export function VenueMap({
           mapInstanceRef.current?.setZoom(15);
           setHasAddressText(true);
           setShowSearchArea(true);
+          // User intentionally navigated to a different city — subsequent non-proximity
+          // searches should use this map location, not the GPS city.
+          mapNavigatedRef.current = true;
         });
       } catch (_) { /* Places API not enabled — address bar still works via geocoder on button click */ }
     })();
@@ -1109,38 +1116,68 @@ export function VenueMap({
         const unit = distMatch[2].toLowerCase();
         radiusM = unit.startsWith("km") ? n * 1000 : n * 1609;
       }
-      searchCoords = { ...userLoc, radiusM };
 
-      // Reverse geocode + query injection only for proximity phrases so we don't
-      // silently rewrite "best sushi" into "best sushi in North Caldwell" every time.
-      if (isProximityQuery) {
-        await new Promise<void>((resolve) => {
-          try {
-            const geocoder = new google.maps.Geocoder();
-            geocoder.geocode({ location: userLoc }, (results, status) => {
-              if (status === "OK" && results?.[0]) {
-                const comps = results[0].address_components;
-                const rawNbhd = comps.find((c) =>
-                  c.types.includes("neighborhood") || c.types.includes("sublocality_level_1")
-                );
-                const locality = comps.find((c) => c.types.includes("locality"));
-                const area = comps.find((c) =>
-                  c.types.includes("administrative_area_level_2") || c.types.includes("administrative_area_level_1")
-                );
-                // Skip intersection-style neighborhood names (e.g. "Greenwood & Hamilton")
-                const nbhdName = rawNbhd?.long_name ?? "";
-                const name = (isUsableNeighborhood(nbhdName) ? nbhdName : null)
-                  ?? locality?.long_name ?? area?.long_name ?? "";
-                if (name) {
-                  if (!q.toLowerCase().includes(" in ")) q = `${q} in ${name}`;
-                  setInputValue(q);
-                  setDetectedCity(name);
+      // When the user has navigated the map to a different city via the address bar
+      // autocomplete (mapNavigatedRef = true) and hasn't typed a proximity phrase,
+      // use the map's current center so "best matcha" searches the viewed city
+      // instead of defaulting to the GPS city.
+      // Proximity queries ("near me", "within 2 miles") always anchor to GPS.
+      if (!isProximityQuery && mapNavigatedRef.current && mapInstanceRef.current) {
+        const center = mapInstanceRef.current.getCenter();
+        if (center) {
+          searchCoords = { lat: center.lat(), lng: center.lng(), radiusM };
+          // Reverse geocode the map center so the city chip shows the navigated city,
+          // not the GPS city.
+          await new Promise<void>((resolve) => {
+            try {
+              new google.maps.Geocoder().geocode({ location: center }, (results, status) => {
+                if (status === "OK" && results?.[0]) {
+                  const comps = results[0].address_components;
+                  const locality = comps.find((c) => c.types.includes("locality"));
+                  const area = comps.find((c) =>
+                    c.types.includes("administrative_area_level_2") || c.types.includes("administrative_area_level_1")
+                  );
+                  const city = locality?.long_name || area?.long_name || "";
+                  if (city) setDetectedCity(city);
                 }
-              }
-              resolve();
-            });
-          } catch (_) { resolve(); }
-        });
+                resolve();
+              });
+            } catch (_) { resolve(); }
+          });
+        }
+      } else {
+        searchCoords = { ...userLoc, radiusM };
+        // Reverse geocode + query injection only for proximity phrases so we don't
+        // silently rewrite "best sushi" into "best sushi in North Caldwell" every time.
+        if (isProximityQuery) {
+          await new Promise<void>((resolve) => {
+            try {
+              const geocoder = new google.maps.Geocoder();
+              geocoder.geocode({ location: userLoc }, (results, status) => {
+                if (status === "OK" && results?.[0]) {
+                  const comps = results[0].address_components;
+                  const rawNbhd = comps.find((c) =>
+                    c.types.includes("neighborhood") || c.types.includes("sublocality_level_1")
+                  );
+                  const locality = comps.find((c) => c.types.includes("locality"));
+                  const area = comps.find((c) =>
+                    c.types.includes("administrative_area_level_2") || c.types.includes("administrative_area_level_1")
+                  );
+                  // Skip intersection-style neighborhood names (e.g. "Greenwood & Hamilton")
+                  const nbhdName = rawNbhd?.long_name ?? "";
+                  const name = (isUsableNeighborhood(nbhdName) ? nbhdName : null)
+                    ?? locality?.long_name ?? area?.long_name ?? "";
+                  if (name) {
+                    if (!q.toLowerCase().includes(" in ")) q = `${q} in ${name}`;
+                    setInputValue(q);
+                    setDetectedCity(name);
+                  }
+                }
+                resolve();
+              });
+            } catch (_) { resolve(); }
+          });
+        }
       }
     } else if (!userLocationRef.current && mapInstanceRef.current) {
       // No GPS at all — fall back to map center
@@ -1161,7 +1198,10 @@ export function VenueMap({
     // Suppress stale detectedCity whenever GPS coords are anchoring the search.
     // This prevents a prior "New York" session from hijacking Trenton results.
     const userCityParam = searchCoords ? undefined : (detectedCity || undefined);
-    const gpsAnchored = !!(userLocationRef.current && (isProximityQuery || !hasExplicitCity));
+    // gpsAnchored drives the city chip: true when GPS city should label results.
+    // False when user navigated to a different city — chip uses the geocoded map-center city.
+    const usedMapNavigation = !!(mapNavigatedRef.current && !isProximityQuery);
+    const gpsAnchored = !usedMapNavigation && !!(userLocationRef.current && (isProximityQuery || !hasExplicitCity));
     setSearchWasGpsAnchored(gpsAnchored);
     try {
       await search(q, userCityParam, searchCoords);
