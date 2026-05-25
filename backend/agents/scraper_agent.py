@@ -636,16 +636,40 @@ class ScraperAgent:
             "light_rail_station", "ferry_terminal", "airport", "bus_stop",
         })
 
+        # Non-dining commercial/service types that pollute restaurant searches.
+        # Drop any venue whose types are exclusively from this set AND contain
+        # none of the dining types below.
+        _NON_DINING_TYPES = frozenset({
+            "liquor_store", "grocery_or_supermarket", "supermarket",
+            "convenience_store", "gas_station", "car_wash", "car_dealer",
+            "car_repair", "parking", "hardware_store", "home_goods_store",
+            "furniture_store", "electronics_store", "clothing_store",
+            "shoe_store", "jewelry_store", "pharmacy", "bank", "atm",
+            "insurance_agency", "real_estate_agency", "lawyer", "accounting",
+            "doctor", "dentist", "hospital", "veterinary_care", "laundry",
+            "storage", "moving_company", "locksmith", "plumber", "electrician",
+            "roofing_contractor", "general_contractor", "painter",
+            "flooring_store", "appliance_store",
+        })
+        _DINING_TYPES = frozenset({
+            "restaurant", "bar", "cafe", "food", "meal_takeaway",
+            "meal_delivery", "bakery", "night_club", "coffee_shop",
+        })
+
         def _ingest(batch: Any, source_fallback: str) -> None:
             if isinstance(batch, Exception) or not isinstance(batch, list):
                 return
             for v in batch:
                 if not v.get("name", "").strip():
                     continue  # never ingest nameless venues — they produce blank cards
+                place_types = set(v.get("types", []))
                 # Drop transit infrastructure — Google Places returns subway stations
                 # adjacent to real venues (e.g. "81 St-Museum of Natural History" subway stop)
-                place_types = set(v.get("types", []))
                 if place_types & _TRANSIT_TYPES:
+                    continue
+                # Drop non-dining businesses (liquor stores, contractors, banks, etc.)
+                # only when the venue has NO dining-related type at all.
+                if place_types & _NON_DINING_TYPES and not place_types & _DINING_TYPES:
                     continue
                 pid = v.get("place_id", "")
                 key = pid or v.get("name", "").lower()

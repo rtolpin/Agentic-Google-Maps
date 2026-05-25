@@ -131,9 +131,11 @@ Output ONLY valid JSON with exactly these keys:
 
 LOCATION GROUNDING (critical): The venue's `address` field is the authoritative source
 for its actual city and neighbourhood. Use the city/area from `address` when writing
-why_card and scenario — do NOT copy the intent's `city` field, which is a search-area
-default and may not match the venue's real location (e.g. the intent may say
-"New York City" but the venue is actually in Trenton, NJ).
+why_card and scenario — do NOT copy the intent's `city` field anywhere in your output.
+The intent city is a search-area default that frequently does not match the venue's real
+location (e.g. the intent may say "New York City" but the venue address says Trenton, NJ).
+Never mention "New York City" or any city from the intent unless it also appears in the
+venue's address field.
 
 CONTENT GROUNDING: Never invent or assert specific menu items, dishes, or prices
 that do not appear in the venue's key_quotes or the user's search query.
