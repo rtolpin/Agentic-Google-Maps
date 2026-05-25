@@ -3342,6 +3342,26 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
                 )}
               </>
             )}
+            {/* Search button inline with the controls */}
+            {!airportsLoading && venue && (
+              <button
+                onClick={() => onGetDirections(venue, "FLYING", { date: flightDate, depIata: selectedDepIata || undefined, arrIata: selectedArrIata || undefined })}
+                disabled={directionsLoading}
+                style={{
+                  display: "flex", width: "100%", alignItems: "center", justifyContent: "center",
+                  gap: 6, marginTop: 10, padding: "9px 14px", borderRadius: 10,
+                  background: directionsLoading ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg,#4F46E5,#7C3AED)",
+                  border: "1.5px solid rgba(99,102,241,0.6)", color: "#fff",
+                  cursor: directionsLoading ? "not-allowed" : "pointer",
+                  fontSize: 13, fontWeight: 700,
+                  boxShadow: directionsLoading ? "none" : "0 2px 12px rgba(99,102,241,0.45)",
+                  opacity: directionsLoading ? 0.7 : 1, transition: "all 0.18s",
+                }}
+              >
+                <span style={{ fontSize: 14 }}>{directionsLoading ? "⏳" : "✈️"}</span>
+                <span>{directionsLoading ? "Searching…" : "Search Flights"}</span>
+              </button>
+            )}
           </div>
         )}
 
