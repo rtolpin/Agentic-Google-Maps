@@ -132,7 +132,7 @@ interface DirectionsLeg {
 
 type RouteOption =
   | { type: "directions"; index: number; duration: string; distance: string; summary: string }
-  | { type: "flight"; index: number; price: number | null; durationStr: string; stops: number; airline: string; flightNumber: string; departureAirport: string; arrivalAirport: string };
+  | { type: "flight"; index: number; price: number | null; durationStr: string; stops: number; airline: string; flightNumber: string; departureAirport: string; arrivalAirport: string; departureLat?: number; departureLng?: number; arrivalLat?: number; arrivalLng?: number; outboundDate?: string };
 
 // ─── Spatial query categories ─────────────────────────────────────────────
 
@@ -282,6 +282,7 @@ export function VenueMap({
   const [transitLoading, setTransitLoading] = useState(false);
   const transitMarkersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
   const directionsRendererRef = useRef<google.maps.DirectionsRenderer | null>(null);
+  const flightArcRef = useRef<google.maps.Polyline | null>(null);
   const directionsResultRef = useRef<google.maps.DirectionsResult | null>(null);
   const [directionsTravelMode, setDirectionsTravelMode] = useState<TravelMode>("TRANSIT");
   const [directionsLeg, setDirectionsLeg] = useState<DirectionsLeg | null>(null);
@@ -644,6 +645,8 @@ export function VenueMap({
     directionsRendererRef.current?.setMap(null);
     directionsRendererRef.current = null;
     directionsResultRef.current = null;
+    flightArcRef.current?.setMap(null);
+    flightArcRef.current = null;
     setDirectionsLeg(null);
     setDirectionsError(null);
     setRouteOptions(null);
@@ -687,6 +690,8 @@ export function VenueMap({
             price?: number; duration_str?: string; stops?: number;
             airline?: string; flight_number?: string;
             departure_airport_display?: string; arrival_airport_display?: string;
+            dep_lat?: number; dep_lng?: number; arr_lat?: number; arr_lng?: number;
+            outbound_date?: string;
           }>;
         };
         const opts: RouteOption[] = (data.options ?? []).map((o, i) => ({
@@ -699,8 +704,42 @@ export function VenueMap({
           flightNumber: o.flight_number ?? "",
           departureAirport: o.departure_airport_display ?? "",
           arrivalAirport: o.arrival_airport_display ?? "",
+          departureLat: o.dep_lat,
+          departureLng: o.dep_lng,
+          arrivalLat: o.arr_lat,
+          arrivalLng: o.arr_lng,
+          outboundDate: o.outbound_date,
         }));
         setRouteOptions(opts);
+
+        // Draw great-circle arc between the two airports
+        const first = opts[0];
+        if (first?.type === "flight" && first.departureLat && first.arrivalLat && mapInstanceRef.current) {
+          flightArcRef.current?.setMap(null);
+          const arc = new google.maps.Polyline({
+            path: [
+              { lat: first.departureLat, lng: first.departureLng! },
+              { lat: first.arrivalLat,   lng: first.arrivalLng! },
+            ],
+            geodesic: true,
+            strokeColor: "#A78BFA",
+            strokeOpacity: 0,
+            strokeWeight: 0,
+            icons: [{
+              icon: { path: "M 0,-1 0,1", strokeOpacity: 1, strokeWeight: 3, strokeColor: "#A78BFA", scale: 4 },
+              offset: "0", repeat: "20px",
+            }, {
+              icon: { path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW, strokeColor: "#A78BFA", fillColor: "#A78BFA", fillOpacity: 1, scale: 4 },
+              offset: "50%",
+            }],
+          });
+          arc.setMap(mapInstanceRef.current);
+          flightArcRef.current = arc;
+          const bounds = new google.maps.LatLngBounds();
+          bounds.extend({ lat: first.departureLat, lng: first.departureLng! });
+          bounds.extend({ lat: first.arrivalLat,   lng: first.arrivalLng! });
+          mapInstanceRef.current.fitBounds(bounds, 80);
+        }
         if (opts.length === 1) {
           setSelectedRouteIndex(0);
           const o = opts[0];
@@ -1253,6 +1292,33 @@ export function VenueMap({
         right: 0,
         transition: "left 0.3s ease",
       }} />
+
+      {/* ── Zoom +/- buttons ── */}
+      <div style={{
+        position: "absolute", bottom: 120, right: 12, zIndex: 20,
+        display: "flex", flexDirection: "column", gap: 4,
+      }}>
+        {([{ label: "+", delta: 1 }, { label: "−", delta: -1 }] as const).map(({ label, delta }) => (
+          <button
+            key={label}
+            onClick={() => {
+              const z = mapInstanceRef.current?.getZoom();
+              if (z !== undefined) mapInstanceRef.current?.setZoom(z + delta);
+            }}
+            style={{
+              width: 36, height: 36, borderRadius: 10,
+              background: "rgba(15,23,42,0.85)", backdropFilter: "blur(8px)",
+              border: "1px solid rgba(255,255,255,0.15)",
+              color: "#E2E8F0", fontSize: 20, fontWeight: 300,
+              cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.4)",
+              lineHeight: 1,
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
       {/* ── Loading banner over map ── */}
       {state.status === "searching" && (
@@ -2908,7 +2974,7 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
                 }}
               >
                 <span style={{ fontSize: 18, lineHeight: 1 }}>{icon}</span>
-                <span style={{ fontSize: 10, fontWeight: sel ? 700 : 500, color: sel ? "#fff" : "#475569", letterSpacing: "0.02em" }}>{label}</span>
+                <span style={{ fontSize: 10, fontWeight: sel ? 700 : 600, color: sel ? "#fff" : "#94A3B8", letterSpacing: "0.02em" }}>{label}</span>
               </button>
             );
           })}
@@ -2920,54 +2986,90 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
         {/* Route / flight options picker */}
         {routeOptions && routeOptions.length > 0 && (
           <div style={{ marginBottom: 10 }}>
-            {routeOptions[0].type === "flight" && (
-              <div style={{ fontSize: 11, color: "#475569", marginBottom: 6 }}>
-                ✈️ {routeOptions[0].departureAirport} → {routeOptions[0].arrivalAirport}
-              </div>
-            )}
-            {routeOptions.map((opt) => {
+            {routeOptions[0].type === "flight" && (() => {
+              const f = routeOptions[0];
+              const dateStr = f.outboundDate
+                ? new Date(f.outboundDate + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })
+                : "";
+              return (
+                <div style={{
+                  background: "linear-gradient(135deg, rgba(109,40,217,0.35), rgba(167,139,250,0.15))",
+                  border: "1px solid rgba(167,139,250,0.4)",
+                  borderRadius: 12, padding: "10px 12px", marginBottom: 8,
+                  boxShadow: "0 2px 12px rgba(109,40,217,0.2)",
+                }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#E2E8F0", marginBottom: 2, lineHeight: 1.4 }}>
+                    ✈️ {f.departureAirport}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#94A3B8", marginBottom: dateStr ? 4 : 0 }}>→ {f.arrivalAirport}</div>
+                  {dateStr && (
+                    <div style={{ fontSize: 11, color: "#A78BFA", fontWeight: 600 }}>🗓 {dateStr}</div>
+                  )}
+                </div>
+              );
+            })()}
+            {routeOptions.map((opt, rankIdx) => {
               const isSelected = selectedRouteIndex === opt.index;
+              const isCheapest = opt.type === "flight" && rankIdx === 0;
+              const isNonstop  = opt.type === "flight" && opt.stops === 0;
               return (
                 <button
                   key={opt.index}
                   onClick={() => onSelectRoute(opt)}
                   style={{
                     display: "flex", width: "100%", alignItems: "center",
-                    gap: 8, padding: "8px 12px", borderRadius: 9,
-                    marginBottom: 4, cursor: "pointer", border: "none",
-                    background: isSelected ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.04)",
-                    outline: isSelected ? "1.5px solid rgba(16,185,129,0.5)" : "1px solid rgba(255,255,255,0.08)",
+                    gap: 8, padding: "10px 12px", borderRadius: 10,
+                    marginBottom: 5, cursor: "pointer", border: "none",
+                    background: isSelected
+                      ? "linear-gradient(135deg, rgba(16,185,129,0.2), rgba(52,211,153,0.1))"
+                      : "rgba(255,255,255,0.04)",
+                    outline: isSelected
+                      ? "1.5px solid rgba(52,211,153,0.6)"
+                      : "1px solid rgba(255,255,255,0.08)",
+                    transition: "all 0.15s",
+                    boxSizing: "border-box",
                   }}
                 >
-                  {isSelected && <span style={{ fontSize: 10, color: "#34D399" }}>✓</span>}
+                  {isSelected && <span style={{ fontSize: 12, color: "#34D399", flexShrink: 0 }}>✓</span>}
                   {opt.type === "directions" ? (
                     <>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: isSelected ? "#34D399" : "#A5B4FC", minWidth: 60 }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: isSelected ? "#34D399" : "#A5B4FC", minWidth: 55 }}>
                         {opt.duration}
                       </span>
-                      <span style={{ fontSize: 12, color: "#94A3B8" }}>{opt.distance}</span>
+                      <span style={{ fontSize: 12, color: "#64748B" }}>{opt.distance}</span>
                       {opt.summary && (
-                        <span style={{ fontSize: 11, color: "#475569", marginLeft: "auto" }}>via {opt.summary}</span>
+                        <span style={{ fontSize: 11, color: "#475569", marginLeft: "auto", textAlign: "right" }}>via {opt.summary}</span>
                       )}
                     </>
                   ) : (
                     <>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: isSelected ? "#34D399" : "#A5B4FC", minWidth: 60 }}>
+                      <span style={{ fontSize: 14, fontWeight: 800, color: isSelected ? "#34D399" : "#C4B5FD", minWidth: 58, flexShrink: 0 }}>
                         {opt.durationStr}
                       </span>
-                      <span style={{ fontSize: 11, color: opt.stops === 0 ? "#34D399" : "#94A3B8" }}>
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, flexShrink: 0,
+                        color: isNonstop ? "#34D399" : "#94A3B8",
+                        background: isNonstop ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.06)",
+                        padding: "2px 6px", borderRadius: 5,
+                        border: isNonstop ? "1px solid rgba(52,211,153,0.4)" : "1px solid rgba(255,255,255,0.08)",
+                      }}>
                         {opt.stops === 0 ? "Nonstop" : `${opt.stops} stop${opt.stops > 1 ? "s" : ""}`}
                       </span>
                       {opt.airline && (
-                        <span style={{ fontSize: 11, color: "#64748B" }}>
+                        <span style={{ fontSize: 11, color: "#64748B", flexShrink: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {opt.airline}{opt.flightNumber ? ` ${opt.flightNumber}` : ""}
                         </span>
                       )}
-                      {opt.price != null && (
-                        <span style={{ fontSize: 12, fontWeight: 700, color: "#34D399", marginLeft: "auto" }}>
-                          ${opt.price}
-                        </span>
-                      )}
+                      <span style={{ marginLeft: "auto", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
+                        {opt.price != null && (
+                          <span style={{ fontSize: 15, fontWeight: 800, color: isCheapest ? "#FCD34D" : "#E2E8F0" }}>
+                            ${opt.price}
+                          </span>
+                        )}
+                        {isCheapest && (
+                          <span style={{ fontSize: 9, fontWeight: 700, color: "#FCD34D", textTransform: "uppercase", letterSpacing: "0.05em" }}>Best price</span>
+                        )}
+                      </span>
                     </>
                   )}
                 </button>

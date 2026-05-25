@@ -242,7 +242,10 @@ async def search_flights_route(
     one-way flight option via Serpapi Google Flights.
     Requires SERPAPI_API_KEY to be set.
     """
-    from integrations.serpapi_flights_client import SerpApiFlightsClient, _nearest_airport
+    from datetime import date, timedelta
+    from integrations.serpapi_flights_client import (
+        SerpApiFlightsClient, _nearest_airport, _AIRPORT_BY_IATA,
+    )
 
     dep_iata, dep_name = _nearest_airport(origin_lat, origin_lng)
     arr_iata, arr_name = _nearest_airport(dest_lat, dest_lng)
@@ -250,16 +253,28 @@ async def search_flights_route(
     if dep_iata == arr_iata:
         raise HTTPException(status_code=422, detail="Origin and destination are served by the same airport")
 
+    outbound_date = (date.today() + timedelta(days=7)).isoformat()
+
     try:
-        options = await SerpApiFlightsClient().search_flights(dep_iata, arr_iata)
+        options = await SerpApiFlightsClient().search_flights(dep_iata, arr_iata, outbound_date)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     if not options:
         raise HTTPException(status_code=404, detail=f"No flights found from {dep_iata} to {arr_iata}")
 
+    dep_airport = _AIRPORT_BY_IATA.get(dep_iata)
+    arr_airport = _AIRPORT_BY_IATA.get(arr_iata)
+
     for opt in options:
         opt["departure_airport_display"] = dep_name
         opt["arrival_airport_display"]   = arr_name
+        opt["outbound_date"]             = outbound_date
+        if dep_airport:
+            opt["dep_lat"] = dep_airport[2]
+            opt["dep_lng"] = dep_airport[3]
+        if arr_airport:
+            opt["arr_lat"] = arr_airport[2]
+            opt["arr_lng"] = arr_airport[3]
 
     return {"options": options}
 
