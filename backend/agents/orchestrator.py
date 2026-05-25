@@ -60,7 +60,18 @@ JSON schema (use null for unknown fields except city):
   "other_signals": [string]
 }
 
-IMPORTANT: city must NEVER be null or "Unknown". If the query says "in the city", "near me",
+CUISINE RULE — CRITICAL: When a specific food item is mentioned, use the FOOD ITEM as cuisine,
+NOT a broad cuisine category. Examples:
+  "best pancakes" → cuisine="pancakes" (NOT "american")
+  "best tacos" → cuisine="tacos" (NOT "mexican")
+  "best sushi" → cuisine="sushi" (NOT "japanese")
+  "best pizza" → cuisine="pizza" (NOT "italian")
+  "best ramen" → cuisine="ramen" (NOT "japanese")
+  "best burgers" → cuisine="burgers" (NOT "american")
+Only use a broad category (american, italian, etc.) when NO specific dish is mentioned
+and the user explicitly says "Italian restaurant", "Mexican food", etc.
+
+CITY RULE: city must NEVER be null or "Unknown". If the query says "in the city", "near me",
 or contains a city name anywhere (including appended at the end like "in New York City"), extract it.
 If the query mentions a known city or major metro in any form (NYC, LA, SF, Chicago, etc.), normalize it
 to the full name. For suburbs and small towns (e.g. "North Caldwell", "Maplewood", "Hoboken",
@@ -77,6 +88,14 @@ Examples:
   {"occasion":"birthday_dinner","group_size":8,"cuisine":"italian",
    "noise_preference":"quiet","needs_private_room":false,"city":"New York City",
    "neighborhood":null,"date":null,"price_band":null,"dietary_restrictions":[],"other_signals":[]}
+- "best pancakes in North Caldwell" →
+  {"occasion":"dining","group_size":1,"cuisine":"pancakes",
+   "noise_preference":null,"needs_private_room":false,"city":"North Caldwell",
+   "neighborhood":null,"date":null,"price_band":null,"dietary_restrictions":[],"other_signals":[]}
+- "best tacos Upper East Side" →
+  {"occasion":"dining","group_size":1,"cuisine":"tacos",
+   "noise_preference":null,"needs_private_room":false,"city":"New York City",
+   "neighborhood":"Upper East Side","date":null,"price_band":null,"dietary_restrictions":[],"other_signals":[]}
 - "business lunch Tokyo private room 4 people" →
   {"occasion":"business_lunch","group_size":4,"cuisine":null,
    "noise_preference":"quiet","needs_private_room":true,"city":"Tokyo",
@@ -370,14 +389,18 @@ async def orchestrate(
             await asyncio.to_thread(_ch.upsert_venue_signals, enriched_venues, intent.city, intent.cuisine or "")
 
         # If the city geocode was rejected during validation, derive an anchor from the
-        # fresh scrape results.  This handles cases like "North Caldwell" where Google
-        # returns a street in Charlotte NC — the text-only Places query returns NJ venues
-        # whose coordinates form a reliable centroid for the distance filter.
+        # fresh scrape results.  Uses median (not mean) so a single far-away outlier
+        # (e.g. Charlotte NC appearing in a text-only "North Caldwell" search) doesn't
+        # drag the anchor hundreds of miles away and filter out the correct NJ results.
         if city_geocode is None and enriched_venues:
-            _lats = [v["latitude"] for v in enriched_venues if v.get("latitude") and v.get("longitude")]
-            _lngs = [v["longitude"] for v in enriched_venues if v.get("latitude") and v.get("longitude")]
-            if _lats:
-                city_geocode = (sum(_lats) / len(_lats), sum(_lngs) / len(_lngs))
+            _coords = sorted(
+                [(v["latitude"], v["longitude"])
+                 for v in enriched_venues if v.get("latitude") and v.get("longitude")],
+                key=lambda c: c[0],
+            )
+            if _coords:
+                mid = len(_coords) // 2
+                city_geocode = _coords[mid]
 
         # Step 5 — score venues
         yield {"event": "status", "data": "Ranking matches..."}
