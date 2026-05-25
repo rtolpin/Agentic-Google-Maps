@@ -390,7 +390,6 @@ export function VenueMap({
     }
 
     // ── Address autocomplete — jump to any address or area ─────────────────
-    // Uses the Places Autocomplete widget; pans the map to the chosen place.
     (async () => {
       if (!addressInputRef.current || !mapInstanceRef.current) return;
       try {
@@ -407,7 +406,7 @@ export function VenueMap({
           setAddressInputValue(place.formatted_address || place.name || "");
           setShowSearchArea(true);
         });
-      } catch (_) { /* places library unavailable — address bar still renders, just without autocomplete */ }
+      } catch (_) { /* Places API not enabled — address bar still works via geocoder on button click */ }
     })();
   }, [mapsReady, config, selectVenue]);
 
