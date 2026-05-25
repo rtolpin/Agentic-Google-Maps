@@ -1137,13 +1137,17 @@ export function VenueMap({
       )}
 
       {/* ── Address search + Search This Area bar (always visible once map is ready) ── */}
-      {mapsReady && state.status !== "searching" && (
+      {/* Keep this mounted at all times so the Google Places Autocomplete widget
+          stays bound to the input element. Hiding with display:none during search
+          instead of conditional rendering prevents the DOM node from being recreated
+          and losing its Autocomplete binding on the second input. */}
+      {mapsReady && (
         <div style={{
           position: "absolute",
           top: 172,
           left: showLeftPanel ? leftPanelW : 0,
           right: 0,
-          display: "flex",
+          display: state.status === "searching" ? "none" : "flex",
           justifyContent: "center",
           alignItems: "flex-end",
           gap: 8,
