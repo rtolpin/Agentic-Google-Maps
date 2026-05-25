@@ -372,6 +372,8 @@ export function VenueMap({
   // different city without searching. handleSearch will use the map center instead
   // of GPS so "best matcha" searches the viewed city, not the GPS city.
   const mapNavigatedRef = useRef(false);
+  // Stores the GPS-derived city name so My Location can restore it after map navigation.
+  const gpsDetectedCityRef = useRef("");
   const [showAllMatches, setShowAllMatches] = useState(false);
   const [modalQuery, setModalQuery] = useState("");
   const [showSearchArea, setShowSearchArea] = useState(false);
@@ -512,7 +514,10 @@ export function VenueMap({
           const locality = results[0].address_components.find((c) => c.types.includes("locality"));
           const area = results[0].address_components.find((c) => c.types.includes("administrative_area_level_1"));
           const city = locality?.long_name || area?.long_name || "";
-          if (city) setDetectedCity(city);
+          if (city) {
+            setDetectedCity(city);
+            gpsDetectedCityRef.current = city;
+          }
         }
       });
     };
@@ -1171,6 +1176,7 @@ export function VenueMap({
                     if (!q.toLowerCase().includes(" in ")) q = `${q} in ${name}`;
                     setInputValue(q);
                     setDetectedCity(name);
+                    gpsDetectedCityRef.current = name;
                   }
                 }
                 resolve();
@@ -2557,6 +2563,7 @@ export function VenueMap({
             setHasAddressText(false);
             setShowSearchArea(false);
             mapNavigatedRef.current = false;
+            if (gpsDetectedCityRef.current) setDetectedCity(gpsDetectedCityRef.current);
             if (userLocationRef.current) {
               mapInstanceRef.current?.setCenter(userLocationRef.current);
               mapInstanceRef.current?.setZoom(14);
