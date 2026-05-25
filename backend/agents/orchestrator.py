@@ -108,7 +108,13 @@ Output ONLY valid JSON with exactly these keys:
   },
   "live_signal": string | null, // urgency alert (e.g. "Books out 3 weeks ahead") or null
   "suggestions": [string]       // exactly 4 follow-up questions the user might ask
-}\
+}
+
+CRITICAL — grounding rule: never invent or assert specific menu items, dishes, or prices
+that do not appear in the venue's key_quotes or the user's search query.
+If a specific food item was searched (e.g. "pancakes", "tacos") but does NOT appear in
+the venue's key_quotes, describe the venue's cuisine and atmosphere instead — do NOT
+claim the venue serves that item. Write around the gap naturally.\
 """
 
 
@@ -476,16 +482,20 @@ def _score_enriched_fallback(enriched: list[dict], intent: VenueIntent) -> list[
         rating = ev.get("google_rating") or 0.0
         score += round(max(0.0, min(40.0, (rating - 2.0) * 13.3)), 1)
 
-        # Cuisine keyword match bonus (0-15 pts): venues whose name or snippet
-        # mention the searched food item OR its broader category get a boost.
-        # "Pancake House" matches "pancakes"; a "breakfast diner" matches via category.
+        # Cuisine keyword match bonus:
+        #   +15 pts when the specific food item appears in name/snippet
+        #         ("Pancake House", "known for their pancakes")
+        #   +3 pts when only the broader category appears — weak signal, not the dish
+        #         (a generic "breakfast diner" for a pancakes search)
         if intent.cuisine:
             from agents.scraper_agent import _FOOD_TO_CATEGORY
             cuisine_kw = intent.cuisine.lower()
             food_cat = _FOOD_TO_CATEGORY.get(cuisine_kw, "")
             text = name.lower() + " " + (ev.get("snippet") or "").lower()
-            if cuisine_kw in text or (food_cat and food_cat in text):
+            if cuisine_kw in text:
                 score += 15
+            elif food_cat and food_cat in text:
+                score += 3
 
         score = min(100.0, max(0.0, score))
         venue_id = (name + city).lower().replace(" ", "_").replace("'", "")

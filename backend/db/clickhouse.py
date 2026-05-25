@@ -197,7 +197,7 @@ SELECT
 FROM rightspot.venue_signals
 FINAL
 WHERE (city = {city:String} OR {city:String} = 'Unknown')
-  AND (cuisine = {cuisine:String} OR {cuisine:String} = '' OR cuisine = '')
+  AND (cuisine = {cuisine:String} OR {cuisine:String} = '')
   AND scraped_at >= now() - INTERVAL 7 DAY
   AND name != ''
 ORDER BY match_score DESC
@@ -282,10 +282,18 @@ class ClickHouseClient:
             try:
                 if not raw.get("name"):
                     continue  # skip nameless venues — they produce blank cards
-                # Enrich with city and searched cuisine so venue_id is scoped correctly
-                # and the ClickHouse cache can surface these results on repeat searches.
+                # Enrich with city so venue_id is scoped correctly.
                 raw["city"] = raw.get("city") or city
-                raw["cuisine"] = raw.get("cuisine") or cuisine
+                # Only tag with the intent cuisine if the food item actually appears
+                # in the venue's name or review text — prevents branding a generic
+                # American restaurant as a "pancakes" venue in the cache.
+                if cuisine and not raw.get("cuisine"):
+                    name_l = raw.get("name", "").lower()
+                    snippet_l = (raw.get("snippet") or "").lower()
+                    quotes = raw.get("key_quotes") or []
+                    quotes_l = " ".join(str(q) for q in quotes).lower()
+                    if cuisine.lower() in (name_l + " " + snippet_l + " " + quotes_l):
+                        raw["cuisine"] = cuisine
                 # EnrichedVenue uses Optional[NoiseLevel] (can be None); VenueSignal
                 # requires NoiseLevel.  Coerce None → default so model_validate succeeds.
                 for enum_field, default in (
