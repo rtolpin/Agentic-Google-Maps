@@ -711,6 +711,17 @@ class ScraperAgent:
             "meal_delivery", "bakery", "night_club", "coffee_shop",
         })
 
+        # Non-dining filter only makes sense for food/restaurant searches.
+        # "best nail salon" or "gym near me" must NOT have their results filtered out.
+        _DINING_OCCASION_FRAGMENTS = (
+            "din", "lunch", "brunch", "breakfast", "cafe", "bar",
+            "restaurant", "happy", "cocktail", "drink", "coffee",
+            "date", "birthday", "food",
+        )
+        is_food_search = bool(intent.cuisine) or any(
+            frag in intent.occasion.lower() for frag in _DINING_OCCASION_FRAGMENTS
+        )
+
         def _ingest(batch: Any, source_fallback: str) -> None:
             if isinstance(batch, Exception) or not isinstance(batch, list):
                 return
@@ -722,9 +733,10 @@ class ScraperAgent:
                 # adjacent to real venues (e.g. "81 St-Museum of Natural History" subway stop)
                 if place_types & _TRANSIT_TYPES:
                     continue
-                # Drop non-dining businesses (liquor stores, contractors, banks, etc.)
-                # only when the venue has NO dining-related type at all.
-                if place_types & _NON_DINING_TYPES and not place_types & _DINING_TYPES:
+                # Drop non-dining businesses (nail salons, contractors, banks, etc.)
+                # ONLY for food/restaurant searches — if the user explicitly searches
+                # "best nail salons" or "gym near me", let those results through.
+                if is_food_search and place_types & _NON_DINING_TYPES and not place_types & _DINING_TYPES:
                     continue
                 pid = v.get("place_id", "")
                 key = pid or v.get("name", "").lower()
