@@ -1008,14 +1008,20 @@ export function VenueMap({
 
   // ── Handlers ───────────────────────────────────────────────────────────
 
+  // Matches any query that implies "use my current location" so we resolve GPS
+  // instead of falling back to a stale detectedCity.
+  // Covers: "near me", "nearby", "near here", "within 5 miles", "within 2 km",
+  //         "around me", "around here", "close to me", "in my area"
+  const PROXIMITY_RE = /(near me|near here|nearby|within\s+\d+\s*(mile|km|meter|mi)\w*|around me|around here|close to me|in my area)/i;
+
   const handleSearch = useCallback(async (rawQ: string) => {
     let q = rawQ.trim();
     if (!q) return;
 
-    // "near me" → resolve GPS coords; pass them to backend as locationBias instead of
+    // Proximity phrase → resolve GPS coords; pass them to backend as locationBias instead of
     // replacing the query text with a broad city name like "Manhattan, New York".
     let searchCoords: { lat: number; lng: number; radiusM?: number } | undefined;
-    if (/near me/i.test(q)) {
+    if (PROXIMITY_RE.test(q)) {
       // Check localStorage cache first, then request fresh position
       if (!userLocationRef.current) {
         try {
@@ -1045,12 +1051,19 @@ export function VenueMap({
 
       if (userLocationRef.current) {
         const userLoc = userLocationRef.current;
-        searchCoords = { ...userLoc, radiusM: 2000 };
+
+        // Extract explicit radius from "within N miles/km" — convert to metres
+        const distMatch = q.match(/within\s+(\d+(?:\.\d+)?)\s*(mile|km|mi)\w*/i);
+        let radiusM = 2000;
+        if (distMatch) {
+          const n = parseFloat(distMatch[1]);
+          const unit = distMatch[2].toLowerCase();
+          radiusM = unit.startsWith("km") ? n * 1000 : n * 1609;
+        }
+        searchCoords = { ...userLoc, radiusM };
 
         // Await reverse geocode so we can inject the neighborhood into the query
-        // BEFORE it reaches the LLM.  "best restaurant near me" becomes
-        // "best restaurant near me in Upper East Side" automatically — identical
-        // to the user typing the neighborhood explicitly.
+        // BEFORE it reaches the LLM — identical to the user typing it explicitly.
         await new Promise<void>((resolve) => {
           try {
             const geocoder = new google.maps.Geocoder();
@@ -1066,8 +1079,11 @@ export function VenueMap({
                 );
                 const name = nbhd?.long_name || locality?.long_name || area?.long_name || "";
                 if (name) {
-                  // Rewrite query: "best restaurant near me" → "best restaurant near me in Upper East Side"
-                  q = q.replace(/\bnear me\b/i, `near me in ${name}`);
+                  // Rewrite query to inject resolved location, e.g.
+                  // "restaurant within 5 miles" → "restaurant within 5 miles in North Caldwell"
+                  if (!q.toLowerCase().includes(" in ")) {
+                    q = `${q} in ${name}`;
+                  }
                   setInputValue(q);
                   setDetectedCity(name);
                 }
@@ -1094,9 +1110,9 @@ export function VenueMap({
     const detected = classifyQueryCategory(q);
     if (detected !== "all") setActiveCategory(detected);
 
-    // For "near me" queries, omit user_city — the backend reverse-geocodes the GPS
-    // coords itself, avoiding stale detectedCity from a prior search in a different area.
-    const userCityParam = /near me/i.test(q) ? undefined : (detectedCity || undefined);
+    // For proximity queries, omit user_city — the backend uses the GPS coords directly,
+    // avoiding stale detectedCity from a prior search in a different area.
+    const userCityParam = PROXIMITY_RE.test(q) ? undefined : (detectedCity || undefined);
     try {
       await search(q, userCityParam, searchCoords);
     } finally {
@@ -1132,9 +1148,9 @@ export function VenueMap({
     }
     const areaCoords = { lat: centerLat, lng: centerLng, radiusM };
 
-    // Strip "near me" and any previously injected "in [location]" suffix
+    // Strip proximity phrases and any previously injected "in [location]" suffix
     const baseQuery = rawQ
-      .replace(/\s*near me\s*/gi, " ")
+      .replace(/\s*(near me|near here|nearby|within\s+\d+\s*(mile|km|mi)\w*|around me|around here|close to me|in my area)\s*/gi, " ")
       .replace(/\s+in\s+[^,]+(,\s*[^,]+)*$/i, "")
       .trim();
 
@@ -1186,7 +1202,7 @@ export function VenueMap({
 
     const rawQ = inputValue || CATEGORIES[activeCategory].defaultQuery || "places near me";
     const baseQuery = rawQ
-      .replace(/\s*near me\s*/gi, " ")
+      .replace(/\s*(near me|near here|nearby|within\s+\d+\s*(mile|km|mi)\w*|around me|around here|close to me|in my area)\s*/gi, " ")
       .replace(/\s+in\s+[^,]+(,\s*[^,]+)*$/i, "")
       .trim();
 
