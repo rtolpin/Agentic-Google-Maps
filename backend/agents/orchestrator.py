@@ -406,6 +406,8 @@ async def _filter_by_location(
     user_radius_m: float | None,
 ) -> list[ScoredVenue]:
     """Remove venues whose coordinates fall outside the expected search area."""
+    is_suburb = False  # suburb/small-town mode: tighter radius + address fallback
+
     if user_lat is not None and user_lng is not None:
         clat, clng = user_lat, user_lng
         max_m = max(500.0, min(50000.0, user_radius_m or 5000.0)) * 2
@@ -413,24 +415,34 @@ async def _filter_by_location(
         city_key = intent.city.strip()
         if city_key in _CITY_COORDS:
             clat, clng, _ = _CITY_COORDS[city_key]
+            max_m = 35_000.0  # major city — generous metro radius
         else:
-            # Fallback: live geocoding for cities not in the hardcoded table
+            # Suburb / small town — geocode but use a tight 15 km radius.
+            # On geocoding failure, fall back to address-string matching rather
+            # than failing open (which previously returned all venues unfiltered).
+            is_suburb = True
+            city_l = city_key.lower()
             try:
                 async with GoogleMapsClient() as gc:
                     geo = await gc.geocode(intent.city)
                 if not geo:
-                    return venues
+                    return [v for v in venues if not v.address or city_l in v.address.lower()]
                 clat, clng = geo.latitude, geo.longitude
             except Exception:
-                return venues
-        max_m = 35_000.0  # 35 km covers any city metro area
+                return [v for v in venues if not v.address or city_l in v.address.lower()]
+            max_m = 15_000.0  # 15 km: covers a suburb + adjacent towns
     else:
         return venues
 
     filtered = []
     for v in venues:
         if v.latitude is None or v.longitude is None:
-            filtered.append(v)  # no coords — keep for list
+            if is_suburb:
+                # No coords in a suburb search: require address to mention the town
+                if intent.city.lower() in (v.address or "").lower():
+                    filtered.append(v)
+            else:
+                filtered.append(v)  # major city: keep coord-less venues for list
             continue
         if _haversine_m(clat, clng, v.latitude, v.longitude) <= max_m:
             filtered.append(v)

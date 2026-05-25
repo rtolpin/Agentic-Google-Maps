@@ -547,14 +547,16 @@ class ScraperAgent:
             bias: dict | None = {"lat": user_lat, "lng": user_lng, "radius_m": radius}
             country_code = "US"
         elif intent.city not in ("Unknown", ""):
-            city_radius = 80000.0 if is_outdoor else 30000.0
             bias = None
             city_key = intent.city.strip()
             if city_key in _CITY_COORDS:
+                city_radius = 80000.0 if is_outdoor else 30000.0
                 clat, clng, country_code = _CITY_COORDS[city_key]
                 bias = {"lat": clat, "lng": clng, "radius_m": city_radius}
             else:
-                # Unknown city — attempt live geocoding as fallback
+                # Suburb / small town — 12 km bias so Google Places stays local.
+                # 30 km was too wide and caused cross-county/cross-state results.
+                city_radius = 80000.0 if is_outdoor else 12000.0
                 try:
                     async with GoogleMapsClient() as geocoder:
                         geo = await geocoder.geocode(intent.city)
@@ -652,9 +654,16 @@ class ScraperAgent:
         # Nimble results bypass locationRestriction, so this is the safety net.
         if bias:
             clat, clng, max_m = bias["lat"], bias["lng"], bias["radius_m"]
+            is_gps_bias = user_lat is not None and user_lng is not None
+            city_l = intent.city.lower()
             def _in_radius(v: RawVenueResult) -> bool:
                 if v.latitude is None or v.longitude is None:
-                    return True  # no coords — keep for list, won't appear on map
+                    # GPS search: keep coord-less venues (they appear as list items only)
+                    # Named-city search: require address to mention the searched city
+                    # so a venue from the wrong state can't slip through without coords.
+                    if is_gps_bias:
+                        return True
+                    return not v.address or city_l in v.address.lower()
                 dlat = (v.latitude - clat) * 111320
                 dlng = (v.longitude - clng) * 111320 * math.cos(math.radians(clat))
                 return math.sqrt(dlat ** 2 + dlng ** 2) <= max_m * 1.15  # 15% buffer
