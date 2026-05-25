@@ -245,8 +245,26 @@ _AIRPORT_DB: list[tuple[str, str, float, float]] = [
 ]
 
 
+# Secondary airports that lack long-haul international service → redirect to hub
+_SECONDARY_TO_HUB: dict[str, str] = {
+    "LGA": "JFK",  # LaGuardia has no transatlantic service
+    "LCY": "LHR",  # London City is a short-haul/business airport
+    "MDW": "ORD",  # Midway is mainly domestic low-cost
+    "HOU": "IAH",  # Hobby is mainly domestic
+    "DCA": "IAD",  # Reagan has no international long-haul
+    "ORY": "CDG",  # Orly is secondary to CDG for long-haul
+    "HND": "NRT",  # Haneda is growing but Narita is the primary hub
+}
+
+_AIRPORT_BY_IATA: dict[str, tuple[str, str, float, float]] = {a[0]: a for a in _AIRPORT_DB}
+
+
 def _nearest_airport(lat: float, lng: float) -> tuple[str, str]:
-    """Return (iata, name) of the closest airport in _AIRPORT_DB."""
+    """Return (iata, name) of the nearest major international airport.
+
+    Physically closest is found first, then redirected to the hub airport
+    if that airport lacks long-haul international service (e.g. LGA→JFK).
+    """
     best = min(
         _AIRPORT_DB,
         key=lambda a: math.asin(math.sqrt(
@@ -255,6 +273,12 @@ def _nearest_airport(lat: float, lng: float) -> tuple[str, str]:
             * math.sin(math.radians((a[3] - lng) / 2)) ** 2
         )),
     )
+    iata = best[0]
+    if iata in _SECONDARY_TO_HUB:
+        hub_iata = _SECONDARY_TO_HUB[iata]
+        hub = _AIRPORT_BY_IATA.get(hub_iata)
+        if hub:
+            return hub[0], hub[1]
     return best[0], best[1]
 
 
