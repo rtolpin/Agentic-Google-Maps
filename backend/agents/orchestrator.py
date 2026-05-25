@@ -308,13 +308,18 @@ async def orchestrate(
         # filter use identical coordinates.  Without this, two independent geocoding
         # calls can diverge (or one fails) causing cross-state venues to appear on
         # repeat searches when the ClickHouse cache is warm.
+        #
+        # Validation: geocoding "North Caldwell" (NJ) can return "N. Caldwell St,
+        # Charlotte, NC" because Google interprets it as a street name.  We check
+        # that all words of the queried city appear in the formatted_address; if not
+        # we discard the result and let the scraper do a text-only query instead.
         city_geocode: tuple[float, float] | None = None
         if user_lat is None and intent.city not in ("Unknown", "") \
                 and intent.city.strip() not in _CITY_COORDS:
             try:
                 async with GoogleMapsClient() as gc:
                     geo = await gc.geocode(intent.city)
-                if geo:
+                if geo and _geocode_matches_city(intent.city, geo.formatted_address):
                     city_geocode = (geo.latitude, geo.longitude)
             except Exception:
                 pass
@@ -356,6 +361,16 @@ async def orchestrate(
         with db_span("therightspot.upsert_venues", "venue_signals", city=intent.city,
                      row_count=len(enriched_venues)):
             await asyncio.to_thread(_ch.upsert_venue_signals, enriched_venues, intent.city, intent.cuisine or "")
+
+        # If the city geocode was rejected during validation, derive an anchor from the
+        # fresh scrape results.  This handles cases like "North Caldwell" where Google
+        # returns a street in Charlotte NC — the text-only Places query returns NJ venues
+        # whose coordinates form a reliable centroid for the distance filter.
+        if city_geocode is None and enriched_venues:
+            _lats = [v["latitude"] for v in enriched_venues if v.get("latitude") and v.get("longitude")]
+            _lngs = [v["longitude"] for v in enriched_venues if v.get("latitude") and v.get("longitude")]
+            if _lats:
+                city_geocode = (sum(_lats) / len(_lats), sum(_lngs) / len(_lngs))
 
         # Step 5 — score venues
         yield {"event": "status", "data": "Ranking matches..."}
@@ -410,6 +425,18 @@ async def orchestrate(
         yield {"event": "done", "data": {"total_venues": len(scored_venues)}}
 
 
+def _geocode_matches_city(city: str, formatted_address: str) -> bool:
+    """Return True if every word in city appears in the geocoded formatted_address.
+
+    Prevents accepting geocode results that point to a completely different place,
+    e.g. geocoding "North Caldwell" returning "N. Caldwell St, Charlotte, NC" where
+    "north" is absent — the distance anchor would then be in the wrong state.
+    """
+    city_words = city.lower().split()
+    addr_lower = formatted_address.lower()
+    return all(w in addr_lower for w in city_words)
+
+
 def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
     R = 6_371_000.0
     dlat = math.radians(lat2 - lat1)
@@ -448,14 +475,19 @@ async def _filter_by_location(
             max_m = 20_000.0  # 20 km: covers adjacent towns, excludes distant cities
         else:
             # No pre-geocoded coords available — geocode as last resort.
+            # Fail closed (return []) rather than fail open (return venues): stale
+            # ClickHouse entries tagged with the wrong city would otherwise bypass
+            # the distance filter entirely.
             try:
                 async with GoogleMapsClient() as gc:
                     geo = await gc.geocode(intent.city)
                 if not geo:
-                    return venues  # can't anchor — trust scraper's query-text
+                    return []
+                if not _geocode_matches_city(intent.city, geo.formatted_address):
+                    return []
                 clat, clng = geo.latitude, geo.longitude
             except Exception:
-                return venues  # geocoding failed — trust scraper
+                return []
             max_m = 20_000.0
     else:
         return venues

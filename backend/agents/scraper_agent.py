@@ -562,12 +562,20 @@ class ScraperAgent:
                 bias = {"lat": city_lat, "lng": city_lng, "radius_m": city_radius}
             else:
                 # Last-resort: geocode independently (orchestrator geocode must have failed).
+                # Validate that the result actually maps to the queried city — geocoding
+                # "North Caldwell" can return "N. Caldwell St, Charlotte, NC" which would
+                # bias the search to the wrong state.  If validation fails, leave bias=None
+                # so Google Places uses only the text query for location inference.
                 city_radius = 80000.0 if is_outdoor else 20000.0
                 try:
                     async with GoogleMapsClient() as geocoder:
                         geo = await geocoder.geocode(intent.city)
                     if geo:
-                        bias = {"lat": geo.latitude, "lng": geo.longitude, "radius_m": city_radius}
+                        city_words = intent.city.lower().split()
+                        addr_lower = geo.formatted_address.lower()
+                        if all(w in addr_lower for w in city_words):
+                            bias = {"lat": geo.latitude, "lng": geo.longitude, "radius_m": city_radius}
+                        # else: geocode returned wrong place — text-only search (bias stays None)
                 except Exception:
                     pass
         else:
