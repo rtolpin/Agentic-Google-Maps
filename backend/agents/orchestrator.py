@@ -426,23 +426,26 @@ async def _filter_by_location(
                 async with GoogleMapsClient() as gc:
                     geo = await gc.geocode(intent.city)
                 if not geo:
-                    return [v for v in venues if not v.address or city_l in v.address.lower()]
+                    # Geocoding returned nothing — trust the scraper's query-text
+                    # anchoring and return all venues rather than zeroing out results.
+                    return venues
                 clat, clng = geo.latitude, geo.longitude
             except Exception:
-                return [v for v in venues if not v.address or city_l in v.address.lower()]
-            max_m = 15_000.0  # 15 km: covers a suburb + adjacent towns
+                # Geocoding failed (rate-limit, network, etc.) — same: trust scraper.
+                return venues
+            max_m = 20_000.0  # 20 km: tight enough to exclude distant cities, wide
+                               # enough to cover adjacent towns (West Caldwell → 5 km)
     else:
         return venues
 
     filtered = []
     for v in venues:
         if v.latitude is None or v.longitude is None:
-            if is_suburb:
-                # No coords in a suburb search: require address to mention the town
-                if intent.city.lower() in (v.address or "").lower():
-                    filtered.append(v)
-            else:
-                filtered.append(v)  # major city: keep coord-less venues for list
+            # No coordinates: keep for list rendering.
+            # The coordinate branch below handles the actual geographic filtering;
+            # coord-less venues can't be filtered by distance so we keep them and
+            # let the scoring + synthesis step sort relevance.
+            filtered.append(v)
             continue
         if _haversine_m(clat, clng, v.latitude, v.longitude) <= max_m:
             filtered.append(v)
