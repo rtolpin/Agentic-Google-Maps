@@ -2,7 +2,15 @@
 
 > **AI-powered venue intelligence that transforms Google Maps into a conversational discovery assistant.**
 
-## 🔗 Live Demo
+## 🎬 Demo Video
+
+### **[▶ Watch the Demo on YouTube](https://www.youtube.com/watch?v=6__Cdu6Jav4)**
+
+[![The Right Spot — Demo Video](https://img.youtube.com/vi/6__Cdu6Jav4/maxresdefault.jpg)](https://www.youtube.com/watch?v=6__Cdu6Jav4)
+
+---
+
+## 🔗 Live App
 
 ### **[https://agent-google-maps-nine.vercel.app](https://agent-google-maps-nine.vercel.app)**
 
