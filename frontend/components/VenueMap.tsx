@@ -1368,7 +1368,7 @@ export function VenueMap({
 
       {/* ── Zoom +/- buttons ── */}
       <div style={{
-        position: "absolute", bottom: 120, right: 12, zIndex: 20,
+        position: "absolute", bottom: 265, right: 12, zIndex: 20,
         display: "flex", flexDirection: "column", gap: 4,
       }}>
         {([{ label: "+", delta: 1 }, { label: "−", delta: -1 }] as const).map(({ label, delta }) => (
