@@ -213,11 +213,98 @@ const CATEGORIES: Record<PlaceCategory, CategoryConfig> = {
 
 // ─── Pin colours by state ─────────────────────────────────────────────────
 
-const PIN_STYLES: Record<MapPinColor, { background: string; glyph: string }> = {
-  primary:     { background: "#4F46E5", glyph: "#FFFFFF" },
-  highlighted: { background: "#F59E0B", glyph: "#1F2937" },
-  dimmed:      { background: "#9CA3AF", glyph: "#6B7280" },
-};
+function _scoreColors(score: number): { bg: string; pointer: string; shadow: string } {
+  if (score >= 90) return { bg: "linear-gradient(150deg,#FBBF24,#D97706)", pointer: "#D97706", shadow: "rgba(251,191,36,0.65)" };
+  if (score >= 85) return { bg: "linear-gradient(150deg,#34D399,#059669)", pointer: "#059669", shadow: "rgba(52,211,153,0.6)" };
+  if (score >= 80) return { bg: "linear-gradient(150deg,#818CF8,#4F46E5)", pointer: "#4F46E5", shadow: "rgba(99,102,241,0.6)" };
+  if (score >= 75) return { bg: "linear-gradient(150deg,#60A5FA,#2563EB)", pointer: "#2563EB", shadow: "rgba(96,165,250,0.6)" };
+  return { bg: "linear-gradient(150deg,#A78BFA,#7C3AED)", pointer: "#7C3AED", shadow: "rgba(167,139,250,0.6)" };
+}
+
+function buildPinElement(m: EnrichedMapMarker): HTMLElement {
+  const score  = Math.round(m.match_score);
+  const sel    = m.pinColor === "highlighted";
+  const dimmed = m.pinColor === "dimmed";
+  const { bg, pointer, shadow } = sel ? _scoreColors(score) : _scoreColors(score);
+
+  const wrap = document.createElement("div");
+  wrap.style.cssText = [
+    "position:relative;cursor:pointer;display:flex;flex-direction:column;align-items:center;",
+    "transform-origin:bottom center;transition:transform 0.15s,opacity 0.15s;",
+    sel    ? "transform:scale(1.22);" : "",
+    dimmed ? "opacity:0.38;transform:scale(0.8);" : "",
+  ].join("");
+
+  if (dimmed) {
+    const dot = document.createElement("div");
+    dot.style.cssText = [
+      "width:26px;height:26px;border-radius:50%;",
+      "background:linear-gradient(150deg,#475569,#1E293B);",
+      "border:1.5px solid rgba(255,255,255,0.18);",
+      "box-shadow:0 2px 6px rgba(0,0,0,0.35);",
+      "display:flex;align-items:center;justify-content:center;",
+    ].join("");
+    const lbl = document.createElement("span");
+    lbl.style.cssText = "font-size:9px;font-weight:700;color:rgba(255,255,255,0.65);pointer-events:none;";
+    lbl.textContent = String(score);
+    dot.appendChild(lbl);
+    wrap.appendChild(dot);
+    return wrap;
+  }
+
+  const size = sel ? 52 : 44;
+
+  if (sel) {
+    const ring = document.createElement("div");
+    ring.style.cssText = [
+      `position:absolute;top:${-(size*0.12)}px;left:${-(size*0.12)}px;`,
+      `width:${size*1.24}px;height:${size*1.24}px;`,
+      "border-radius:50%;border:2.5px solid " + pointer + ";",
+      "animation:pinRing 1.8s ease-out infinite;pointer-events:none;",
+    ].join("");
+    wrap.appendChild(ring);
+  }
+
+  const bubble = document.createElement("div");
+  bubble.style.cssText = [
+    `width:${size}px;height:${size}px;border-radius:50%;`,
+    `background:${bg};`,
+    `border:${sel ? "2.5px solid #fff" : "2px solid rgba(255,255,255,0.35)"};`,
+    `box-shadow:0 ${sel?8:5}px ${sel?22:14}px ${shadow};`,
+    "display:flex;flex-direction:column;align-items:center;justify-content:center;",
+    "position:relative;z-index:1;",
+  ].join("");
+
+  const scoreEl = document.createElement("span");
+  scoreEl.style.cssText = [
+    `font-size:${sel?17:13}px;font-weight:900;color:#fff;`,
+    "letter-spacing:-0.5px;line-height:1;",
+    "text-shadow:0 1px 3px rgba(0,0,0,0.35);pointer-events:none;",
+  ].join("");
+  scoreEl.textContent = String(score);
+  bubble.appendChild(scoreEl);
+
+  if (sel) {
+    const sub = document.createElement("span");
+    sub.style.cssText = "font-size:8px;font-weight:700;color:rgba(255,255,255,0.8);letter-spacing:0.05em;margin-top:2px;pointer-events:none;";
+    sub.textContent = "MATCH";
+    bubble.appendChild(sub);
+  }
+
+  const ptr = document.createElement("div");
+  const ph = sel ? 13 : 9, pw = sel ? 10 : 7;
+  ptr.style.cssText = [
+    "width:0;height:0;",
+    `border-left:${pw}px solid transparent;`,
+    `border-right:${pw}px solid transparent;`,
+    `border-top:${ph}px solid ${pointer};`,
+    "margin-top:-1px;filter:drop-shadow(0 2px 3px rgba(0,0,0,0.2));",
+  ].join("");
+
+  wrap.appendChild(bubble);
+  wrap.appendChild(ptr);
+  return wrap;
+}
 
 // ─── AI query classifier ──────────────────────────────────────────────────
 
@@ -478,34 +565,15 @@ export function VenueMap({
     enrichedMarkers.forEach((m) => {
       if (!m.latitude || !m.longitude) return;
       const pos = { lat: m.latitude, lng: m.longitude };
-      const style = PIN_STYLES[m.pinColor];
 
       const existing = markersRef.current.get(m.venue_id);
       if (existing) {
         existing.position = pos;
-        const pin = existing.content as HTMLElement;
-        if (pin) pin.style.backgroundColor = style.background;
+        existing.content = buildPinElement(m);
         return;
       }
 
-      // Build a custom pin element
-      const pinEl = document.createElement("div");
-      pinEl.className = "venue-pin";
-      pinEl.style.cssText = `
-        width: 36px; height: 36px; border-radius: 50% 50% 50% 0;
-        transform: rotate(-45deg); cursor: pointer;
-        background: ${style.background}; border: 2px solid #fff;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-        display: flex; align-items: center; justify-content: center;
-        transition: transform 0.15s, box-shadow 0.15s;
-      `;
-      const score = document.createElement("span");
-      score.style.cssText = `
-        transform: rotate(45deg); font-size: 11px; font-weight: 700;
-        color: ${style.glyph}; pointer-events: none;
-      `;
-      score.textContent = String(Math.round(m.match_score));
-      pinEl.appendChild(score);
+      const pinEl = buildPinElement(m);
 
       const marker = new google.maps.marker.AdvancedMarkerElement({
         map: mapInstanceRef.current!,
@@ -1234,6 +1302,11 @@ export function VenueMap({
         @keyframes pulse {
           0%, 100% { opacity: 1; transform: scale(1); }
           50%       { opacity: 0.4; transform: scale(0.75); }
+        }
+        @keyframes pinRing {
+          0%   { transform: scale(1);   opacity: 0.7; }
+          70%  { transform: scale(1.5); opacity: 0;   }
+          100% { transform: scale(1.5); opacity: 0;   }
         }
         /* Google Places Autocomplete dropdown — dark modern theme */
         .pac-container {
