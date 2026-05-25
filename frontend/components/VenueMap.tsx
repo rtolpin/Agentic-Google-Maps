@@ -2879,28 +2879,43 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
           </button>
         </div>
 
-        {/* Travel mode selector + route result */}
-        <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", marginBottom: 10 }}>
-          {TRAVEL_MODES.map(({ mode, icon, label }) => (
-            <button
-              key={mode}
-              onClick={() => onSetTravelMode(mode)}
-              style={{
-                padding: "3px 9px", borderRadius: 7, cursor: "pointer",
-                fontSize: 11, fontWeight: directionsTravelMode === mode ? 700 : 400,
-                background: directionsTravelMode === mode ? "rgba(99,102,241,0.25)" : "rgba(255,255,255,0.05)",
-                border: directionsTravelMode === mode ? "1.5px solid rgba(99,102,241,0.6)" : "1px solid rgba(255,255,255,0.1)",
-                color: directionsTravelMode === mode ? "#A5B4FC" : "#64748B",
-                transition: "all 0.12s",
-              }}
-            >
-              {icon} {label}
-            </button>
-          ))}
-          {directionsError && (
-            <span style={{ fontSize: 11, color: "#F87171", marginLeft: 4 }}>⚠️ {directionsError}</span>
-          )}
+        {/* Travel mode selector */}
+        <div style={{
+          display: "flex", gap: 3, marginBottom: 10,
+          background: "rgba(0,0,0,0.25)", borderRadius: 14, padding: 4,
+          border: "1px solid rgba(255,255,255,0.07)",
+        }}>
+          {TRAVEL_MODES.map(({ mode, icon, label }) => {
+            const sel = directionsTravelMode === mode;
+            const colors: Record<TravelMode, { bg: string; shadow: string }> = {
+              TRANSIT:   { bg: "linear-gradient(135deg,#B45309,#F59E0B)", shadow: "0 2px 10px rgba(245,158,11,0.45)" },
+              DRIVING:   { bg: "linear-gradient(135deg,#1D4ED8,#60A5FA)", shadow: "0 2px 10px rgba(96,165,250,0.45)" },
+              WALKING:   { bg: "linear-gradient(135deg,#065F46,#34D399)", shadow: "0 2px 10px rgba(52,211,153,0.45)" },
+              BICYCLING: { bg: "linear-gradient(135deg,#0E7490,#22D3EE)", shadow: "0 2px 10px rgba(34,211,238,0.45)" },
+              FLYING:    { bg: "linear-gradient(135deg,#6D28D9,#A78BFA)", shadow: "0 2px 10px rgba(167,139,250,0.45)" },
+            };
+            return (
+              <button
+                key={mode}
+                onClick={() => onSetTravelMode(mode)}
+                style={{
+                  flex: 1, border: "none", cursor: "pointer", borderRadius: 10,
+                  padding: "7px 2px", display: "flex", flexDirection: "column",
+                  alignItems: "center", gap: 3, transition: "all 0.18s",
+                  background: sel ? colors[mode].bg : "transparent",
+                  boxShadow: sel ? colors[mode].shadow : "none",
+                  transform: sel ? "scale(1.04)" : "scale(1)",
+                }}
+              >
+                <span style={{ fontSize: 18, lineHeight: 1 }}>{icon}</span>
+                <span style={{ fontSize: 10, fontWeight: sel ? 700 : 500, color: sel ? "#fff" : "#475569", letterSpacing: "0.02em" }}>{label}</span>
+              </button>
+            );
+          })}
         </div>
+        {directionsError && (
+          <div style={{ fontSize: 11, color: "#F87171", marginBottom: 6 }}>⚠️ {directionsError}</div>
+        )}
 
         {/* Route / flight options picker */}
         {routeOptions && routeOptions.length > 0 && (
