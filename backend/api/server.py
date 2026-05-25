@@ -84,7 +84,10 @@ async def env_check() -> dict:
         "GOOGLE_MAPS_API_KEY", "CLICKHOUSE_HOST", "REDIS_URL",
         "SENSO_API_KEY", "DD_API_KEY",
     ]
-    return {k: bool(os.environ.get(k)) for k in keys}
+    result = {k: bool(os.environ.get(k)) for k in keys}
+    # Show any env var names that contain "SERP" so we can spot name mismatches
+    result["_serp_keys_found"] = [k for k in os.environ if "SERP" in k.upper()]
+    return result
 
 
 # ─── Search (SSE) ─────────────────────────────────────────────────────────────
