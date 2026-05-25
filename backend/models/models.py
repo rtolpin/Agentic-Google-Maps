@@ -163,6 +163,9 @@ class RawVenueResult(BaseModel):
     address: str = ""
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    # Google Places aggregate rating (0-5).  Storable as a universal numeric value;
+    # not Google's editorial content.  Used to differentiate scores when snippets are absent.
+    google_rating: Optional[float] = None
 
 
 class ExtractedSignals(BaseModel):
@@ -242,6 +245,7 @@ class VenueSignal(BaseModel):
     birthday_mentions: int = Field(default=0, ge=0)
     key_quotes: list[str] = Field(default_factory=list)
     scraped_at: Optional[datetime] = None
+    google_rating: Optional[float] = None
 
     CH_COLUMNS: ClassVar[list[str]] = [
         "venue_id", "name", "city", "neighborhood", "cuisine", "url",
@@ -250,7 +254,7 @@ class VenueSignal(BaseModel):
         "birthday_score", "wifi_quality", "dog_friendly",
         "outdoor_seating", "price_per_head", "booking_difficulty",
         "special_occasion_score", "birthday_mentions", "key_quotes",
-        "scraped_at", "signal_age_hrs",
+        "scraped_at", "signal_age_hrs", "google_rating",
     ]
 
     def to_ch_row(self, now: datetime) -> list[Any]:
@@ -280,6 +284,7 @@ class VenueSignal(BaseModel):
             self.key_quotes,
             now,
             0,  # signal_age_hrs — freshness computed at query time via dateDiff
+            self.google_rating or 0.0,
         ]
 
 

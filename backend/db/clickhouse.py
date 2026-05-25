@@ -81,6 +81,7 @@ ALTER TABLE rightspot.venue_signals ADD COLUMN IF NOT EXISTS place_id String DEF
 ALTER TABLE rightspot.venue_signals ADD COLUMN IF NOT EXISTS address String DEFAULT '';
 ALTER TABLE rightspot.venue_signals ADD COLUMN IF NOT EXISTS latitude Float32 DEFAULT 0;
 ALTER TABLE rightspot.venue_signals ADD COLUMN IF NOT EXISTS longitude Float32 DEFAULT 0;
+ALTER TABLE rightspot.venue_signals ADD COLUMN IF NOT EXISTS google_rating Float32 DEFAULT 0;
 
 -- Pre-aggregated city benchmarks for the global insight panel.
 -- AggregatingMergeTree keeps running state functions so re-aggregating is O(1).
@@ -182,6 +183,17 @@ SELECT
 
         -- Private room bonus (0-5 pts)
         + multiIf({needs_private_room:Bool}, has_private_room * 5, 0)
+
+        -- Google Places rating bonus (0-15 pts): differentiates venues when
+        -- Claude has no snippet.  A 4.5-star restaurant beats an unreviewed one.
+        + multiIf(
+            google_rating >= 4.5, 15,
+            google_rating >= 4.0, 12,
+            google_rating >= 3.5,  8,
+            google_rating >= 3.0,  4,
+            google_rating  > 0,    1,
+            0
+          )
 
         -- Freshness penalty: capped at -5 pts (1 pt per day, max 5 days)
         - LEAST(5, dateDiff('hour', scraped_at, now()) / 24)

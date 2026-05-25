@@ -513,6 +513,7 @@ class ScraperAgent:
                     address=v.get("address", ""),
                     latitude=v.get("latitude"),
                     longitude=v.get("longitude"),
+                    google_rating=v.get("rating"),
                 ))
 
         for batch in google_batches:

@@ -255,7 +255,7 @@ export function VenueMap({
   const [directionsError, setDirectionsError] = useState<string | null>(null);
 
   const addressInputRef = useRef<HTMLInputElement>(null);
-  const [addressInputValue, setAddressInputValue] = useState("");
+  const [hasAddressText, setHasAddressText] = useState(false);
 
   const { state, search, fetchPlaceDetails, selectVenue, cancel } = useVenueSearch(userId);
 
@@ -403,7 +403,7 @@ export function VenueMap({
           if (!place.geometry?.location) return;
           mapInstanceRef.current?.panTo(place.geometry.location);
           mapInstanceRef.current?.setZoom(15);
-          setAddressInputValue(place.formatted_address || place.name || "");
+          setHasAddressText(true);
           setShowSearchArea(true);
         });
       } catch (_) { /* Places API not enabled — address bar still works via geocoder on button click */ }
@@ -843,7 +843,10 @@ export function VenueMap({
 
   // Geocode the typed address, pan the map, then search that area for venues.
   const handleAddressGoAndSearch = useCallback(async () => {
-    if (!addressInputValue.trim() || !mapInstanceRef.current) return;
+    const addressText = addressInputRef.current?.value?.trim() || "";
+    if (!addressText || !mapInstanceRef.current) return;
+
+    addressInputRef.current?.blur();
 
     const rawQ = inputValue || CATEGORIES[activeCategory].defaultQuery || "places near me";
     const baseQuery = rawQ
@@ -852,14 +855,14 @@ export function VenueMap({
       .trim();
 
     const geocoder = new google.maps.Geocoder();
-    geocoder.geocode({ address: addressInputValue }, async (results, status) => {
+    geocoder.geocode({ address: addressText }, async (results, status) => {
       if (status !== "OK" || !results?.[0]?.geometry?.location) {
         // Geocoding failed — pass the typed text as a city string fallback
-        setInputValue(`${baseQuery} in ${addressInputValue}`);
-        setQuery(`${baseQuery} in ${addressInputValue}`);
+        setInputValue(`${baseQuery} in ${addressText}`);
+        setQuery(`${baseQuery} in ${addressText}`);
         hasSearchedRef.current = true;
         const span = traceSearch({ query: baseQuery, userId });
-        try { await search(baseQuery, addressInputValue); } finally { span.finish(); }
+        try { await search(baseQuery, addressText); } finally { span.finish(); }
         setAiSuggestions(generateFollowUps(baseQuery, activeCategory));
         return;
       }
@@ -881,7 +884,7 @@ export function VenueMap({
       const admin = components.find((c: google.maps.GeocoderAddressComponent) =>
         c.types.includes("administrative_area_level_2") || c.types.includes("administrative_area_level_1")
       )?.long_name || "";
-      const displayCity = locality || admin || addressInputValue;
+      const displayCity = locality || admin || addressText;
       const displayArea = neighborhood ? `${neighborhood}, ${displayCity}` : displayCity;
 
       setDetectedCity(displayCity);
@@ -899,7 +902,7 @@ export function VenueMap({
       }
       setAiSuggestions(generateFollowUps(baseQuery, activeCategory));
     });
-  }, [addressInputValue, inputValue, activeCategory, search, userId]);
+  }, [inputValue, activeCategory, search, userId]);
 
   const handleCategorySwitch = useCallback((cat: PlaceCategory) => {
     setActiveCategory(cat);
@@ -1014,6 +1017,50 @@ export function VenueMap({
           0%, 100% { opacity: 1; transform: scale(1); }
           50%       { opacity: 0.4; transform: scale(0.75); }
         }
+        /* Google Places Autocomplete dropdown — dark modern theme */
+        .pac-container {
+          background: #1E293B !important;
+          border: 1.5px solid #3B82F6 !important;
+          border-radius: 12px !important;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.5), 0 2px 8px rgba(37,99,235,0.25) !important;
+          margin-top: 4px !important;
+          font-family: system-ui, -apple-system, sans-serif !important;
+          overflow: hidden !important;
+          padding: 4px 0 !important;
+        }
+        .pac-item {
+          background: transparent !important;
+          color: #E2E8F0 !important;
+          font-size: 13px !important;
+          padding: 10px 14px !important;
+          border-top: none !important;
+          cursor: pointer !important;
+          display: flex !important;
+          align-items: center !important;
+          gap: 8px !important;
+          transition: background 0.12s ease !important;
+        }
+        .pac-item:hover, .pac-item-selected {
+          background: rgba(59,130,246,0.18) !important;
+        }
+        .pac-item-query {
+          color: #F1F5F9 !important;
+          font-weight: 600 !important;
+          font-size: 13px !important;
+        }
+        .pac-matched {
+          color: #60A5FA !important;
+          font-weight: 700 !important;
+        }
+        .pac-icon {
+          display: none !important;
+        }
+        .pac-logo::after {
+          display: none !important;
+        }
+        .pac-container:after {
+          display: none !important;
+        }
       `}</style>
 
       {/* ── Map canvas (shifts right when panel is open) ── */}
@@ -1118,8 +1165,8 @@ export function VenueMap({
               <span style={{ fontSize: 15, flexShrink: 0 }}>🔍</span>
               <input
                 ref={addressInputRef}
-                value={addressInputValue}
-                onChange={(e) => setAddressInputValue(e.target.value)}
+                defaultValue=""
+                onInput={(e) => setHasAddressText(!!(e.target as HTMLInputElement).value)}
                 onKeyDown={(e) => { if (e.key === "Enter") handleAddressGoAndSearch(); }}
                 placeholder="Address, neighborhood, or city…"
                 style={{
@@ -1129,10 +1176,13 @@ export function VenueMap({
                   caretColor: "#3B82F6",
                 }}
               />
-              {addressInputValue && (
+              {hasAddressText && (
                 <button
                   type="button"
-                  onClick={() => setAddressInputValue("")}
+                  onClick={() => {
+                    if (addressInputRef.current) addressInputRef.current.value = "";
+                    setHasAddressText(false);
+                  }}
                   style={{ background: "none", border: "none", color: "#94A3B8", cursor: "pointer", fontSize: 17, padding: 0, lineHeight: 1, flexShrink: 0 }}
                 >×</button>
               )}
@@ -1142,23 +1192,23 @@ export function VenueMap({
           {/* Go To This Area & Search */}
           <button
             onClick={handleAddressGoAndSearch}
-            disabled={!addressInputValue.trim()}
+            disabled={!hasAddressText}
             style={{
               pointerEvents: "auto",
               display: "inline-flex", alignItems: "center", gap: 8,
               padding: "11px 22px", borderRadius: 24,
-              background: addressInputValue.trim()
+              background: hasAddressText
                 ? "linear-gradient(135deg, #2563EB, #1D4ED8)"
                 : "rgba(37,99,235,0.35)",
-              border: `1.5px solid ${addressInputValue.trim() ? "#3B82F6" : "rgba(59,130,246,0.3)"}`,
+              border: `1.5px solid ${hasAddressText ? "#3B82F6" : "rgba(59,130,246,0.3)"}`,
               color: "#fff", fontSize: 13, fontWeight: 800,
-              cursor: addressInputValue.trim() ? "pointer" : "default",
+              cursor: hasAddressText ? "pointer" : "default",
               whiteSpace: "nowrap", flexShrink: 0,
-              boxShadow: addressInputValue.trim()
+              boxShadow: hasAddressText
                 ? "0 4px 22px rgba(37,99,235,0.6), 0 2px 8px rgba(0,0,0,0.4)"
                 : "none",
               letterSpacing: "0.02em",
-              opacity: addressInputValue.trim() ? 1 : 0.55,
+              opacity: hasAddressText ? 1 : 0.55,
               transition: "all 0.18s ease",
             }}
           >

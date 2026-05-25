@@ -260,7 +260,13 @@ async def orchestrate(
         # Step 1 — intent parsing
         yield {"event": "status", "data": "Parsing your request..."}
         intent = await parse_intent(query)
-        if intent.city == "Unknown" and user_city:
+        # When GPS coords are present, user_city (from the frontend geocoder) is the
+        # authoritative city name — it comes from the same coordinates being searched.
+        # Apply it now so the GPS reverse-geocode block below can refine neighborhood/county
+        # on top of it, rather than fighting the LLM default "New York City".
+        if user_city and user_lat is not None and user_lng is not None:
+            intent = intent.model_copy(update={"city": user_city.strip()})
+        elif intent.city in ("Unknown", "") and user_city:
             intent = intent.model_copy(update={"city": user_city.strip()})
 
         # GPS override: reverse geocode → hyper-local area string (suburb/rural support)
@@ -463,6 +469,21 @@ def _score_enriched_fallback(enriched: list[dict], intent: VenueIntent) -> list[
             score += 3  # unknown price — minimal partial credit
         elif price_min <= price <= price_max:
             score += 15
+
+        # Google Places rating bonus (0-15 pts) — differentiates venues even when
+        # Claude extraction has no snippet to work with
+        rating = ev.get("google_rating") or 0.0
+        if rating >= 4.5:
+            score += 15
+        elif rating >= 4.0:
+            score += 12
+        elif rating >= 3.5:
+            score += 8
+        elif rating >= 3.0:
+            score += 4
+        elif rating > 0:
+            score += 1
+
         score = min(100.0, max(0.0, score))
         venue_id = (name + city).lower().replace(" ", "_").replace("'", "")
         results.append(ScoredVenue(
