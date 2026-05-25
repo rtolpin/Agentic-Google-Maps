@@ -627,8 +627,9 @@ export function VenueMap({
         rumAction("venue_marker_clicked", { venueId: m.venue_id, venueName: m.name });
 
         // Fetch live Google Place details (TOS: displayed on this map, not stored)
+        // Pass place_id directly to skip the ClickHouse lookup (works for fresh results too).
         const detailSpan = tracePlaceDetailsFetch(m.venue_id);
-        const details = await fetchPlaceDetails(m.venue_id);
+        const details = await fetchPlaceDetails(m.venue_id, m.place_id || undefined);
         setSelectedPlaceDetails(details);
         detailSpan.finish();
 

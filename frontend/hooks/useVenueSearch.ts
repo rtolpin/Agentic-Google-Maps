@@ -238,9 +238,10 @@ export interface UseVenueSearchReturn {
   sendFeedback: (venueId: string, query: string, feedback: FeedbackValue) => Promise<void>;
   /**
    * Fetch real-time Google Place details for a venue.
+   * Pass placeId when available to skip the ClickHouse lookup (faster, always works).
    * COMPLIANCE: Display the result on a Google Map only. Do not persist.
    */
-  fetchPlaceDetails: (venueId: string) => Promise<GooglePlaceDetails | null>;
+  fetchPlaceDetails: (venueId: string, placeId?: string) => Promise<GooglePlaceDetails | null>;
   selectVenue: (venueId: string | null) => void;
   cancel: () => void;
 }
@@ -351,13 +352,17 @@ export function useVenueSearch(userId: string): UseVenueSearchReturn {
 
   /**
    * Fetch real-time Google Place details from the backend.
-   * The backend calls the Google Maps Platform Places API fresh on every request.
+   * Uses /api/place/{placeId} when placeId is provided (skips ClickHouse lookup).
+   * Falls back to /api/venue/{venueId}/place for backwards compatibility.
    * COMPLIANCE: Do NOT store the returned object. Display on a Google Map only.
    */
   const fetchPlaceDetails = useCallback(
-    async (venueId: string): Promise<GooglePlaceDetails | null> => {
+    async (venueId: string, placeId?: string): Promise<GooglePlaceDetails | null> => {
       try {
-        const resp = await fetch(`${API_BASE}/api/venue/${encodeURIComponent(venueId)}/place`);
+        const url = placeId
+          ? `${API_BASE}/api/place/${encodeURIComponent(placeId)}`
+          : `${API_BASE}/api/venue/${encodeURIComponent(venueId)}/place`;
+        const resp = await fetch(url);
         if (!resp.ok) return null;
         return (await resp.json()) as GooglePlaceDetails;
       } catch {

@@ -178,15 +178,37 @@ async def get_venue_signals(venue_id: str) -> dict:
 # on every call — it is intentionally NOT cached.
 
 @app.get(
+    "/api/place/{place_id}",
+    response_model=GooglePlaceDetails,
+    summary="Real-time Google Place details by Place ID (not cached)",
+)
+async def get_place_details_by_place_id(place_id: str) -> GooglePlaceDetails:
+    """
+    Fetch live place details directly from the Google Maps Platform Places API.
+    Preferred over /api/venue/{venue_id}/place — skips the ClickHouse lookup so
+    it works even for venues not yet persisted (e.g. fresh search results).
+    Result is NOT stored — display on a Google Map per TOS requirements.
+    """
+    maps = GoogleMapsClient()
+    try:
+        details = await maps.get_place_details(place_id)
+    finally:
+        await maps.close()
+
+    if details is None:
+        raise HTTPException(status_code=404, detail="Place ID not found in Google Maps")
+    return details
+
+
+@app.get(
     "/api/venue/{venue_id}/place",
     response_model=GooglePlaceDetails,
-    summary="Real-time Google Place details (not cached)",
+    summary="Real-time Google Place details by venue ID (not cached)",
 )
 async def get_place_details(venue_id: str) -> GooglePlaceDetails:
     """
-    Fetch live place details from the Google Maps Platform Places API.
-    Call this when the user opens a venue card to show ratings, hours, and phone.
-    Result is NOT stored — display on a Google Map per TOS requirements.
+    Fetch live place details via ClickHouse venue lookup.
+    Prefer /api/place/{place_id} when the Place ID is already known.
     """
     row = await asyncio.to_thread(_ch.get_venue_by_id, venue_id)
     if row is None:
@@ -196,8 +218,7 @@ async def get_place_details(venue_id: str) -> GooglePlaceDetails:
     if not place_id:
         raise HTTPException(
             status_code=422,
-            detail="No Google Place ID on record for this venue. "
-                   "Run a fresh search to populate it via Nimble.",
+            detail="No Google Place ID on record for this venue.",
         )
 
     maps = GoogleMapsClient()
