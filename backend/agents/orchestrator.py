@@ -342,12 +342,17 @@ async def orchestrate(
         # Step 1 — intent parsing
         yield {"event": "status", "data": "Parsing your request..."}
         intent = await parse_intent(query)
+        # Save the LLM's city extraction before any GPS overrides.
+        # If the user explicitly named a city in the query (e.g. "in Manhattan"),
+        # we preserve it instead of letting GPS geocoding overwrite it.
+        _llm_extracted_city = intent.city if intent.city not in ("Unknown", "", None) else None
+
         # When GPS coords are present, user_city (from the frontend geocoder) is the
         # authoritative city name — it comes from the same coordinates being searched.
-        # Apply it now so the GPS reverse-geocode block below can refine neighborhood/county
-        # on top of it, rather than fighting the LLM default "New York City".
+        # Apply it only when the LLM didn't find an explicit city in the query.
         if user_city and user_lat is not None and user_lng is not None:
-            intent = intent.model_copy(update={"city": user_city.strip()})
+            if _llm_extracted_city is None:
+                intent = intent.model_copy(update={"city": user_city.strip()})
         elif intent.city in ("Unknown", "") and user_city:
             intent = intent.model_copy(update={"city": user_city.strip()})
 
@@ -386,7 +391,10 @@ async def orchestrate(
                     area_parts   = [p for p in [primary, county, state] if p]
                     user_area    = ", ".join(area_parts)
                     updates: dict = {}
-                    if city_name:
+                    # Only override city from GPS if the LLM didn't already extract
+                    # one from the query (e.g. "near me in Manhattan" → keep Manhattan,
+                    # not Google's reverse-geocode "New York").
+                    if city_name and _llm_extracted_city is None:
                         updates["city"] = city_name
                     if neighborhood:
                         updates["neighborhood"] = neighborhood
