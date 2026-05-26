@@ -500,39 +500,35 @@ async def orchestrate(
 
         root.set_tag("search.venues_scored", len(scored_venues))
 
-        # City-match re-rank: when the user named a specific town (not a GPS/proximity
-        # search and not a major metro), venues whose address or city contains the intent
-        # city get a +20 boost so they rank above same-distance neighbouring-town results.
+        # City-match re-rank: nudge venues in the named town above neighbouring-town results.
+        # Small values (+4/+2) so the ClickHouse base score stays the primary signal.
         if user_lat is None and intent.city not in ("Unknown", "") and intent.city.strip() not in _CITY_COORDS:
             city_lower = intent.city.lower()
             for v in scored_venues:
                 addr_lower = (v.address or "").lower()
                 v_city_lower = (v.city or "").lower()
                 if city_lower in v_city_lower or city_lower in addr_lower:
-                    v.match_score = min(100.0, v.match_score + 20.0)
+                    v.match_score = min(100.0, v.match_score + 4.0)
                 elif all(w in addr_lower for w in city_lower.split() if len(w) > 2):
-                    v.match_score = min(100.0, v.match_score + 10.0)
+                    v.match_score = min(100.0, v.match_score + 2.0)
             scored_venues.sort(key=lambda v: v.match_score, reverse=True)
 
-        # Romantic-occasion re-rank: boost quiet/upscale venues, penalise loud/casual ones.
-        # Also boost Italian cuisine when no specific cuisine was requested.
-        # Applied after city-match so both boosts stack naturally.
+        # Romantic-occasion re-rank: penalties filter out mismatches; small positive
+        # nudges break ties without saturating scores to 100.
         _occ_str = f"{intent.occasion} {' '.join(intent.other_signals or [])}".lower()
         _is_romantic = any(kw in _occ_str for kw in (
             "romantic", "romance", "intimate", "anniversary", "date night", "dinner for two"
         ))
         if _is_romantic:
             for v in scored_venues:
-                # Noise: quiet venues rise, loud venues drop
                 if v.noise_level in ("very_quiet", "quiet"):
-                    v.match_score = min(100.0, v.match_score + 15.0)
+                    v.match_score = min(100.0, v.match_score + 3.0)
                 elif v.noise_level in ("loud", "very_loud"):
-                    v.match_score = max(0.0, v.match_score - 15.0)
-                # Price: upscale rises, fast-casual drops
+                    v.match_score = max(0.0, v.match_score - 12.0)
                 if v.price_per_head >= 60:
-                    v.match_score = min(100.0, v.match_score + 10.0)
+                    v.match_score = min(100.0, v.match_score + 2.0)
                 elif 0 < v.price_per_head < 25:
-                    v.match_score = max(0.0, v.match_score - 10.0)
+                    v.match_score = max(0.0, v.match_score - 8.0)
             scored_venues.sort(key=lambda v: v.match_score, reverse=True)
 
         # Step 6 — synthesize intelligence for top 10 (bounded by semaphore)
@@ -725,24 +721,24 @@ def _score_enriched_fallback(enriched: list[dict], intent: VenueIntent) -> list[
         ev_addr_lower = (ev.get("address") or "").lower()
         if intent_city_lower and intent_city_lower not in ("unknown", "new york city", "los angeles", "san francisco", "chicago"):
             if intent_city_lower in ev_city_lower or intent_city_lower in ev_addr_lower:
-                score += 20
+                score += 4
             elif all(w in ev_addr_lower for w in intent_city_lower.split() if len(w) > 2):
-                score += 10
+                score += 2
 
-        # Romantic-occasion bonuses: quiet ambiance + upscale pricing + Italian preferred.
-        # Mirrors the re-rank applied to ClickHouse-scored venues above.
+        # Romantic-occasion: penalties filter out obvious mismatches; small positive
+        # nudges act as tiebreakers without pushing everything to 100.
         _occ_fallback = f"{occasion} {' '.join(intent.other_signals or [])}".lower()
         if any(kw in _occ_fallback for kw in (
             "romantic", "romance", "intimate", "anniversary", "date night", "dinner for two"
         )):
             if noise in ("very_quiet", "quiet"):
-                score += 15
+                score += 3
             elif noise in ("loud", "very_loud"):
-                score -= 15
+                score -= 12
             if price >= 60:
-                score += 10
+                score += 2
             elif 0 < price < 25:
-                score -= 10
+                score -= 8
         score = min(100.0, max(0.0, score))
         venue_id = (name + city).lower().replace(" ", "_").replace("'", "")
         results.append(ScoredVenue(
