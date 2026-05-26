@@ -109,11 +109,14 @@ _CAFE_KEYWORDS = {"cafe", "café", "coffee", "cosy", "cozy", "laptop", "remote",
 _WIFI_KEYWORDS = {"wifi", "wi-fi", "internet", "laptop"}
 
 _OUTDOOR_KEYWORDS = {
-    "hiking", "hike", "trail", "trails", "nature", "park", "outdoor", "outdoors",
+    "hiking", "hike", "trail", "trails", "nature", "park", "parks", "outdoor", "outdoors",
     "walk", "walking", "trekking", "trek", "forest", "mountain", "mountains",
     "waterfall", "scenic", "wilderness", "campsite", "camping", "cycling", "bike trail",
     "greenway", "preserve", "state park", "national park",
+    "garden", "gardens", "botanical", "arboretum", "meadow", "green space",
 }
+# Park/garden keywords separate from active-trail keywords — drive different query templates.
+_PARK_KEYWORDS = {"park", "parks", "garden", "gardens", "botanical", "arboretum", "meadow", "green space", "relax", "peaceful", "picnic"}
 
 _OPEN_NOW_KEYWORDS = {"open now", "open right now", "currently open"}
 # "open today" / "open this weekend" mean "operating today", not "open at this exact moment".
@@ -414,11 +417,37 @@ def _build_queries(
             ]
         return (base + [f"company offices {broad_loc}", "office building"])[:8] if is_gps else base
 
-    # ── Outdoor / hiking / nature ─────────────────────────────────────────
-    is_outdoor_search = any(kw in all_terms for kw in _OUTDOOR_KEYWORDS)
+    # ── Outdoor / parks / hiking / nature ────────────────────────────────
+    # Use substring matching (kw in term) so "park" matches "parks", "trail" matches "trails", etc.
+    all_terms_str = " ".join(all_terms)
+    is_outdoor_search = any(kw in all_terms_str for kw in _OUTDOOR_KEYWORDS)
     if is_outdoor_search:
-        activity = next((kw for kw in ("hiking", "trail", "walking", "cycling", "trekking") if kw in all_terms), "hiking trail")
-        if is_gps:
+        is_park_search = any(kw in all_terms_str for kw in _PARK_KEYWORDS)
+        is_trail_search = any(kw in all_terms_str for kw in ("hiking", "hike", "trail", "trek", "cycling"))
+
+        if is_park_search and not is_trail_search:
+            # User wants parks/gardens to visit/relax in, not hiking trails
+            if use_gps:
+                return [
+                    f"public park near {location}",
+                    f"city park {location}",
+                    f"botanical garden near {location}",
+                    f"peaceful park garden {location}",
+                    f"nature park {broad_loc}",
+                    f"green space park near me",
+                    f"park garden",
+                    f"public park",
+                ]
+            return [
+                f"public park {location}",
+                f"city park {location}",
+                f"botanical garden {location}",
+                f"peaceful park near {location}",
+                f"nature park {location}",
+            ]
+
+        activity = next((kw for kw in ("hiking", "trail", "walking", "cycling", "trekking") if kw in all_terms_str), "hiking trail")
+        if use_gps:
             return [
                 f"{activity} trails parks near {location}",
                 f"best {activity} trails near {location}",
@@ -651,6 +680,7 @@ class ScraperAgent:
 
         all_signals_lower = " ".join([intent.occasion] + (intent.other_signals or [])).lower()
         open_now = any(kw in all_signals_lower for kw in _OPEN_NOW_KEYWORDS)
+        # Substring match so "parks" triggers "park", "trails" triggers "trail", etc.
         is_outdoor = any(kw in all_signals_lower for kw in _OUTDOOR_KEYWORDS)
 
         # Build location restriction — always required to prevent cross-country results.
