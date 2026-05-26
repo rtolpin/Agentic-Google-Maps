@@ -470,6 +470,20 @@ async def orchestrate(
 
         root.set_tag("search.venues_scored", len(scored_venues))
 
+        # City-match re-rank: when the user named a specific town (not a GPS/proximity
+        # search and not a major metro), venues whose address or city contains the intent
+        # city get a +20 boost so they rank above same-distance neighbouring-town results.
+        if user_lat is None and intent.city not in ("Unknown", "") and intent.city.strip() not in _CITY_COORDS:
+            city_lower = intent.city.lower()
+            for v in scored_venues:
+                addr_lower = (v.address or "").lower()
+                v_city_lower = (v.city or "").lower()
+                if city_lower in v_city_lower or city_lower in addr_lower:
+                    v.match_score = min(100.0, v.match_score + 20.0)
+                elif all(w in addr_lower for w in city_lower.split() if len(w) > 2):
+                    v.match_score = min(100.0, v.match_score + 10.0)
+            scored_venues.sort(key=lambda v: v.match_score, reverse=True)
+
         # Step 6 — synthesize intelligence for top 10 (bounded by semaphore)
         intel_results = await asyncio.gather(
             *[synthesize_venue_intelligence(v, intent) for v in scored_venues[:10]],
@@ -552,8 +566,10 @@ async def _filter_by_location(
             max_m = 35_000.0  # major city — generous metro radius
         elif city_geocode is not None:
             # Use the pre-geocoded coordinates — no second API call needed.
+            # 8 km: tight enough to keep results in the named town (user said "in Montclair"
+            # → they want Montclair, not Bloomfield 5 km away). Still generous for small towns.
             clat, clng = city_geocode
-            max_m = 20_000.0  # 20 km: covers adjacent towns, excludes distant cities
+            max_m = 8_000.0
         else:
             # No pre-geocoded coords available — geocode as last resort.
             # Fail closed (return []) rather than fail open (return venues): stale
@@ -569,7 +585,7 @@ async def _filter_by_location(
                 clat, clng = geo.latitude, geo.longitude
             except Exception:
                 return []
-            max_m = 20_000.0
+            max_m = 8_000.0
     else:
         return venues
 
@@ -649,6 +665,18 @@ def _score_enriched_fallback(enriched: list[dict], intent: VenueIntent) -> list[
                 score += 15
             elif food_cat and food_cat in text:
                 score += 3
+
+        # City-match bonus: when the user explicitly named a town ("in Montclair"),
+        # strongly prefer venues whose address or city field contains that town.
+        # +20 for an exact city match; +10 for a partial word match in the address.
+        intent_city_lower = intent.city.lower()
+        ev_city_lower = (ev.get("city") or "").lower()
+        ev_addr_lower = (ev.get("address") or "").lower()
+        if intent_city_lower and intent_city_lower not in ("unknown", "new york city", "los angeles", "san francisco", "chicago"):
+            if intent_city_lower in ev_city_lower or intent_city_lower in ev_addr_lower:
+                score += 20
+            elif all(w in ev_addr_lower for w in intent_city_lower.split() if len(w) > 2):
+                score += 10
 
         score = min(100.0, max(0.0, score))
         venue_id = (name + city).lower().replace(" ", "_").replace("'", "")
