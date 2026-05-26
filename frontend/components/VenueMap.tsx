@@ -3495,7 +3495,21 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
               display: "flex", gap: 3, marginBottom: 10,
               background: "rgba(0,0,0,0.25)", borderRadius: 14, padding: 4,
               border: "1px solid rgba(255,255,255,0.07)",
+              position: "relative",
             }}>
+              {/* Collapse toggle */}
+              <button
+                onClick={() => setDirectionsCollapsed(true)}
+                title="Collapse"
+                style={{
+                  position: "absolute", top: 4, right: 4,
+                  width: 22, height: 22, borderRadius: 6,
+                  border: "none", background: "rgba(255,255,255,0.07)",
+                  color: "#64748B", cursor: "pointer", fontSize: 10,
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  zIndex: 1,
+                }}
+              >▼</button>
               {TRAVEL_MODES.map(({ mode, icon, label }) => {
                 const sel = directionsTravelMode === mode;
                 const colors: Record<TravelMode, { bg: string; shadow: string }> = {
