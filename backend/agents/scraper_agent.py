@@ -108,6 +108,24 @@ _OFFICE_OCCASIONS = {
     "scout offices", "office scouting", "office space", "company offices",
     "corporate offices", "headquarters",
 }
+# Industry sectors that modify office queries (e.g. "tech offices" → "tech company offices")
+_OFFICE_SECTORS = {
+    "tech": "tech company",
+    "technology": "tech company",
+    "finance": "financial",
+    "financial": "financial",
+    "startup": "startup",
+    "startups": "startup",
+    "law": "law firm",
+    "legal": "law firm",
+    "media": "media company",
+    "fashion": "fashion company",
+    "advertising": "advertising agency",
+    "consulting": "consulting firm",
+    "healthcare": "healthcare",
+    "biotech": "biotech",
+    "pharma": "pharmaceutical",
+}
 
 _CAFE_KEYWORDS = {"cafe", "café", "coffee", "cosy", "cozy", "laptop", "remote", "work from", "working"}
 _WIFI_KEYWORDS = {"wifi", "wi-fi", "internet", "laptop"}
@@ -447,8 +465,23 @@ def _build_queries(
             "companies", "near", "scout", "scouting", "building", "buildings",
             "space", "spaces", "business", "work", "working",
         }
+        # Detect industry sector (e.g. "tech offices" → sector = "tech company")
+        sector = next(
+            (label for kw, label in _OFFICE_SECTORS.items() if kw in all_terms_str),
+            None,
+        )
         named = [s for s in signals if s not in _OFFICE_STOP and len(s) > 2]
-        if named:
+        if sector:
+            base = [
+                f"{sector} offices {location}",
+                f"{sector} office buildings {location}",
+                f"{sector} company offices {location}",
+                f"corporate office {location}",
+                f"office buildings business district {location}",
+                f"coworking space {location}",
+                f"office park {location}",
+            ]
+        elif named:
             co = " ".join(named[:2])
             base = [
                 f"{co} office {location}",
