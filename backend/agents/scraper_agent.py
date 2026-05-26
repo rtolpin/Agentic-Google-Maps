@@ -176,6 +176,106 @@ _NAMED_RETAILERS: dict[str, str] = {
     "adidas":        "Adidas store",
 }
 
+# Named companies → canonical name used in office search queries.
+# Key is a lowercase match token; value is the display name for the query.
+_NAMED_COMPANIES: dict[str, str] = {
+    # Finance / banking
+    "jp morgan": "JPMorgan Chase",
+    "jpmorgan": "JPMorgan Chase",
+    "goldman sachs": "Goldman Sachs",
+    "goldman": "Goldman Sachs",
+    "morgan stanley": "Morgan Stanley",
+    "citibank": "Citibank",
+    "citi": "Citibank",
+    "bank of america": "Bank of America",
+    "wells fargo": "Wells Fargo",
+    "blackrock": "BlackRock",
+    "bloomberg": "Bloomberg",
+    "capital one": "Capital One",
+    "american express": "American Express",
+    "amex": "American Express",
+    "fidelity": "Fidelity Investments",
+    "charles schwab": "Charles Schwab",
+    "barclays": "Barclays",
+    "hsbc": "HSBC",
+    "deutsche bank": "Deutsche Bank",
+    "ubs": "UBS",
+    "credit suisse": "Credit Suisse",
+    "two sigma": "Two Sigma",
+    "citadel": "Citadel",
+    "bridgewater": "Bridgewater Associates",
+    # Big tech
+    "google": "Google",
+    "alphabet": "Google",
+    "apple": "Apple",
+    "meta": "Meta",
+    "facebook": "Meta",
+    "amazon": "Amazon",
+    "microsoft": "Microsoft",
+    "netflix": "Netflix",
+    "salesforce": "Salesforce",
+    "stripe": "Stripe",
+    "airbnb": "Airbnb",
+    "uber": "Uber",
+    "lyft": "Lyft",
+    "spotify": "Spotify",
+    "twitter": "X (Twitter)",
+    "linkedin": "LinkedIn",
+    "oracle": "Oracle",
+    "ibm": "IBM",
+    "cisco": "Cisco",
+    "intel": "Intel",
+    "nvidia": "NVIDIA",
+    "datadog": "Datadog",
+    "snowflake": "Snowflake",
+    "palantir": "Palantir",
+    "databricks": "Databricks",
+    "openai": "OpenAI",
+    "anthropic": "Anthropic",
+    "coinbase": "Coinbase",
+    "robinhood": "Robinhood",
+    "paypal": "PayPal",
+    "venmo": "Venmo",
+    "square": "Block (Square)",
+    "block": "Block (Square)",
+    "visa": "Visa",
+    "mastercard": "Mastercard",
+    # Consulting / professional services
+    "mckinsey": "McKinsey & Company",
+    "bcg": "Boston Consulting Group",
+    "bain": "Bain & Company",
+    "deloitte": "Deloitte",
+    "kpmg": "KPMG",
+    "pwc": "PwC",
+    "ernst & young": "EY",
+    "accenture": "Accenture",
+    "booz allen": "Booz Allen Hamilton",
+    # Media / entertainment
+    "nbcuniversal": "NBCUniversal",
+    "nbc": "NBCUniversal",
+    "disney": "Disney",
+    "viacom": "Paramount",
+    "paramount": "Paramount",
+    "conde nast": "Condé Nast",
+    "hearst": "Hearst",
+    "new york times": "New York Times",
+    "nyt": "New York Times",
+    "warner": "Warner Bros Discovery",
+    "wpp": "WPP",
+    # Healthcare / pharma
+    "johnson & johnson": "Johnson & Johnson",
+    "pfizer": "Pfizer",
+    "merck": "Merck",
+    "bristol myers": "Bristol Myers Squibb",
+    "abbvie": "AbbVie",
+    # Other
+    "spacex": "SpaceX",
+    "tesla": "Tesla",
+    "general electric": "GE",
+    "boeing": "Boeing",
+    "lockheed": "Lockheed Martin",
+}
+
 _OPEN_NOW_KEYWORDS = {"open now", "open right now", "currently open"}
 # "open today" / "open this weekend" mean "operating today", not "open at this exact moment".
 # Those are handled by including them in query text rather than setting openNow=true,
@@ -465,13 +565,25 @@ def _build_queries(
             "companies", "near", "scout", "scouting", "building", "buildings",
             "space", "spaces", "business", "work", "working",
         }
+        # Named company takes highest priority (e.g. "JP Morgan offices" → JPMorgan Chase)
+        named_co = next(
+            (label for kw, label in _NAMED_COMPANIES.items() if kw in all_terms_str),
+            None,
+        )
         # Detect industry sector (e.g. "tech offices" → sector = "tech company")
         sector = next(
             (label for kw, label in _OFFICE_SECTORS.items() if kw in all_terms_str),
             None,
         )
         named = [s for s in signals if s not in _OFFICE_STOP and len(s) > 2]
-        if sector:
+        if named_co:
+            base = [
+                f"{named_co} office {location}",
+                f"{named_co} headquarters {location}",
+                f"{named_co} office building {location}",
+                f"{named_co}",
+            ]
+        elif sector:
             base = [
                 f"{sector} offices {location}",
                 f"{sector} office buildings {location}",
