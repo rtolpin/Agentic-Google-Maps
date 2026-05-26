@@ -118,6 +118,42 @@ _OUTDOOR_KEYWORDS = {
 # Park/garden keywords separate from active-trail keywords — drive different query templates.
 _PARK_KEYWORDS = {"park", "parks", "garden", "gardens", "botanical", "arboretum", "meadow", "green space", "relax", "peaceful", "picnic"}
 
+_SHOPPING_KEYWORDS = {
+    "mall", "shopping mall", "shopping center", "shop", "shops", "shopping",
+    "store", "stores", "boutique", "boutiques", "retail",
+    "clothing", "clothes", "fashion", "apparel", "outfit", "outfits",
+    "bridal", "bride", "bridesmaid", "wedding dress", "wedding gown",
+    "tuxedo", "tux", "suit", "suits", "formal wear", "menswear", "men's wear",
+    "department store", "buy", "purchase",
+    "rei", "target", "macy", "bloomingdale", "nordstrom", "saks", "neiman",
+    "zara", "h&m", "gap", "banana republic", "j.crew", "uniqlo",
+    "anthropologie", "free people", "lululemon", "nike", "adidas",
+}
+_BRIDAL_KEYWORDS   = {"bridal", "bride", "bridesmaid", "wedding dress", "wedding gown", "bridal gown"}
+_FORMAL_KEYWORDS   = {"tuxedo", "tux", "suit", "suits", "formal wear", "menswear", "men's wear", "black tie", "dress shirt"}
+_MALL_KEYWORDS     = {"mall", "shopping mall", "shopping center"}
+# Named retailers → canonical search label
+_NAMED_RETAILERS: dict[str, str] = {
+    "rei":           "REI outdoor gear store",
+    "target":        "Target store",
+    "macy":          "Macy's department store",
+    "bloomingdale":  "Bloomingdale's department store",
+    "nordstrom":     "Nordstrom department store",
+    "saks":          "Saks Fifth Avenue",
+    "neiman":        "Neiman Marcus",
+    "zara":          "Zara clothing store",
+    "h&m":           "H&M clothing store",
+    "gap":           "Gap clothing store",
+    "banana republic": "Banana Republic",
+    "j.crew":        "J.Crew",
+    "uniqlo":        "Uniqlo",
+    "anthropologie": "Anthropologie",
+    "free people":   "Free People store",
+    "lululemon":     "Lululemon",
+    "nike":          "Nike store",
+    "adidas":        "Adidas store",
+}
+
 _OPEN_NOW_KEYWORDS = {"open now", "open right now", "currently open"}
 # "open today" / "open this weekend" mean "operating today", not "open at this exact moment".
 # Those are handled by including them in query text rather than setting openNow=true,
@@ -369,6 +405,7 @@ def _build_queries(
     occasion = intent.occasion.replace("_", " ").lower()
     signals = [s.lower() for s in (intent.other_signals or [])]
     all_terms = {occasion} | set(signals) | ({cuisine.lower()} if cuisine else set())
+    all_terms_str = " ".join(all_terms)  # substring-safe join for keyword detection
 
     # ── Location string resolution ─────────────────────────────────────────
     is_gps = user_lat is not None and user_lng is not None
@@ -418,8 +455,6 @@ def _build_queries(
         return (base + [f"company offices {broad_loc}", "office building"])[:8] if is_gps else base
 
     # ── Outdoor / parks / hiking / nature ────────────────────────────────
-    # Use substring matching (kw in term) so "park" matches "parks", "trail" matches "trails", etc.
-    all_terms_str = " ".join(all_terms)
     is_outdoor_search = any(kw in all_terms_str for kw in _OUTDOOR_KEYWORDS)
     if is_outdoor_search:
         is_park_search = any(kw in all_terms_str for kw in _PARK_KEYWORDS)
@@ -474,6 +509,60 @@ def _build_queries(
             f"nature parks scenic trails day trips near {location}",
         ]
 
+    # ── Shopping — malls, clothing, bridal, suits, named retailers ───────
+    is_shopping_search = not cuisine and any(kw in all_terms_str for kw in _SHOPPING_KEYWORDS)
+    if is_shopping_search:
+        is_bridal  = any(kw in all_terms_str for kw in _BRIDAL_KEYWORDS)
+        is_formal  = any(kw in all_terms_str for kw in _FORMAL_KEYWORDS)
+        is_mall    = any(kw in all_terms_str for kw in _MALL_KEYWORDS)
+        named_store = next((label for key, label in _NAMED_RETAILERS.items() if key in all_terms_str), None)
+
+        if is_bridal:
+            base = [
+                f"bridal boutique {location}",
+                f"wedding dress store {location}",
+                f"bridesmaid dress shop near {location}",
+                f"bridal shop near {location}",
+                f"wedding gown boutique {location}",
+                f"bridal store",
+            ]
+        elif is_formal:
+            base = [
+                f"men's suit store {location}",
+                f"tuxedo rental shop {location}",
+                f"formal wear store near {location}",
+                f"men's clothing store {location}",
+                f"suit tailor {location}",
+                f"tuxedo suit store",
+            ]
+        elif named_store:
+            base = [
+                f"{named_store} {location}",
+                f"{named_store} near {location}",
+                named_store,
+            ]
+        elif is_mall:
+            base = [
+                f"shopping mall {location}",
+                f"best shopping mall near {location}",
+                f"shopping center {location}",
+                f"indoor shopping mall {location}",
+                f"mall stores near {location}",
+            ]
+        else:
+            # General clothing / fashion / boutique shopping
+            base = [
+                f"clothing boutique {location}",
+                f"fashion stores {location}",
+                f"best clothing stores near {location}",
+                f"women's clothing boutique {location}",
+                f"shopping stores {location}",
+            ]
+
+        if use_gps:
+            base += [f"shopping near me", f"stores near me"]
+        return base[:8]
+
     # ── Café / remote-work / wifi ─────────────────────────────────────────
     has_wifi = any(kw in all_terms for kw in _WIFI_KEYWORDS)
     is_cafe_search = (
@@ -502,6 +591,7 @@ def _build_queries(
         "gym", "fitness", "pool", "swimming", "bowling", "cinema", "theatre",
         "theater", "arcade", "bookstore", "bookshop", "market", "farmers market",
         "spa", "salon", "pharmacy", "clinic", "hospital", "bank", "post office",
+        "mall", "store", "stores", "boutique", "clothing", "clothes", "fashion",
     }
 
     has_museum  = any(t in all_terms for t in ("museum", "museums"))
