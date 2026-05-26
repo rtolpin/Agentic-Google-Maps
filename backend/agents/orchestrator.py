@@ -122,7 +122,19 @@ Examples:
 - "best romantic restaurant dinner for two near me in North Caldwell" →
   {"occasion":"romantic_dinner","group_size":2,"cuisine":null,
    "noise_preference":"quiet","needs_private_room":false,"city":"North Caldwell",
-   "neighborhood":null,"date":null,"price_band":"upscale","dietary_restrictions":[],"other_signals":["romantic"]}\
+   "neighborhood":null,"date":null,"price_band":"upscale","dietary_restrictions":[],"other_signals":["romantic"]}
+- "hotels near me" →
+  {"occasion":"hotel_stay","group_size":1,"cuisine":null,
+   "noise_preference":null,"needs_private_room":false,"city":"Unknown",
+   "neighborhood":null,"date":null,"price_band":null,"dietary_restrictions":[],"other_signals":["hotel","lodging"]}
+- "best luxury resorts in Miami" →
+  {"occasion":"hotel_stay","group_size":2,"cuisine":null,
+   "noise_preference":null,"needs_private_room":false,"city":"Miami",
+   "neighborhood":null,"date":null,"price_band":"luxury","dietary_restrictions":[],"other_signals":["resort","luxury"]}
+- "cheap motels near me" →
+  {"occasion":"hotel_stay","group_size":1,"cuisine":null,
+   "noise_preference":null,"needs_private_room":false,"city":"Unknown",
+   "neighborhood":null,"date":null,"price_band":"budget","dietary_restrictions":[],"other_signals":["motel","budget"]}\
 """
 
 _SYNTHESIS_PROMPT = """\

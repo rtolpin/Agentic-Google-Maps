@@ -777,6 +777,46 @@ def _build_queries(
             ]
         return base[:8]
 
+    # ── Hotels / lodging ─────────────────────────────────────────────────
+    _LODGING_KWS = {
+        "hotel", "hotels", "motel", "motels", "inn", "inns", "resort", "resorts",
+        "lodge", "lodges", "lodging", "accommodation", "accommodations",
+        "bed and breakfast", "b&b", "hostel", "hostels", "stay", "overnight stay",
+    }
+    is_lodging = (
+        any(t in all_terms for t in _LODGING_KWS)
+        or any(t in all_terms_str for t in _LODGING_KWS)
+        or (cuisine.lower() in _LODGING_KWS)
+    )
+    if is_lodging and not cuisine.lower() in {"dining", "restaurant", "food"}:
+        # Pick an occasion-specific qualifier (luxury, budget, boutique…)
+        _price_tag = ""
+        if intent.price_band == "luxury":
+            _price_tag = "luxury 5-star "
+        elif intent.price_band == "upscale":
+            _price_tag = "upscale boutique "
+        elif intent.price_band == "budget":
+            _price_tag = "budget affordable "
+        base = [
+            f"{_price_tag}hotel {location}",
+            f"best {_price_tag}hotels near {location}",
+            f"hotel motel inn {location}",
+            f"resort lodge {location}",
+            f"{_price_tag}hotel accommodation {location}",
+        ]
+        if is_gps:
+            base += [
+                f"hotels near me {broad_loc}",
+                f"best place to stay {location}",
+                f"inn bed and breakfast {location}",
+            ]
+        else:
+            base += [
+                f"hotel resort {location}",
+                f"motel inn {location}",
+            ]
+        return base[:8]
+
     # ── Non-restaurant public venue types ─────────────────────────────────
     _PUBLIC_VENUES = {
         "library", "libraries", "museum", "museums", "gallery", "galleries",
@@ -1113,8 +1153,20 @@ class ScraperAgent:
             "restaurant", "happy", "cocktail", "drink", "coffee",
             "date", "birthday", "food",
         )
-        is_food_search = bool(intent.cuisine) or any(
-            frag in intent.occasion.lower() for frag in _DINING_OCCASION_FRAGMENTS
+        _LODGING_TERMS = {
+            "hotel", "hotels", "motel", "motels", "inn", "inns", "resort", "resorts",
+            "lodge", "lodges", "lodging", "accommodation", "accommodations",
+            "bed and breakfast", "b&b", "hostel", "hostels", "stay", "overnight",
+        }
+        is_lodging_search = (
+            (intent.cuisine or "").lower() in _LODGING_TERMS
+            or any(t in intent.occasion.lower() for t in _LODGING_TERMS)
+            or any(t in (s.lower() for s in (intent.other_signals or [])) for t in _LODGING_TERMS)
+        )
+        is_food_search = (not is_lodging_search) and (
+            bool(intent.cuisine) or any(
+                frag in intent.occasion.lower() for frag in _DINING_OCCASION_FRAGMENTS
+            )
         )
 
         def _ingest(batch: Any, source_fallback: str) -> None:
