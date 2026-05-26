@@ -3764,7 +3764,7 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
         )}
 
         {/* Pills row */}
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: placeDetails?.photo_url ? 12 : 10, marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: placeDetails?.photo_url ? 12 : 10, marginBottom: 16 }}>
           <DarkPill color="#818CF8" label={`${Math.round(venue.match_score)}% match`} large />
           {openLabel && <DarkPill color={openLabel.color} label={openLabel.label} />}
           {venue.has_private_room && <DarkPill color="#10B981" label="Private room" />}
@@ -4049,11 +4049,14 @@ function Pill({ label, color }: { label: string; color: string }) {
 function DarkPill({ label, color, large }: { label: string; color: string; large?: boolean }) {
   return (
     <span style={{
-      padding: large ? "5px 12px" : "3px 9px",
+      display: "inline-flex",
+      alignItems: "center",
+      lineHeight: 1,
+      padding: large ? "5px 12px" : "4px 10px",
       borderRadius: 20,
       background: `${color}20`,
       color, border: `1px solid ${color}45`,
-      fontSize: large ? 14 : 11,
+      fontSize: large ? 14 : 12,
       fontWeight: large ? 700 : 600,
       whiteSpace: "nowrap",
     }}>
