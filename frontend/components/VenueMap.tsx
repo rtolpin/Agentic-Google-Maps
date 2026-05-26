@@ -3287,7 +3287,7 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
         left: "50%",
         transform: "translate(-50%, -50%)",
         width: "min(900px, 92vw)",
-        maxHeight: "88vh",
+        height: "88vh",
         overflow: "hidden",
         zIndex: 101,
         background: "linear-gradient(160deg, #0f172a 0%, #1a2236 60%, #0f172a 100%)",
