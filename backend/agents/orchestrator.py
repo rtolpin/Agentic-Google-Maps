@@ -558,16 +558,31 @@ async def orchestrate(
         _is_romantic = any(kw in _occ_str for kw in (
             "romantic", "romance", "intimate", "anniversary", "date night", "dinner for two"
         ))
+        _FAST_CASUAL_KWS = {
+            "burger", "burgers", "shake", "shakes", "fast food", "counter",
+            "pizza", "sandwich", "sandwiches", "diner", "wings", "taco", "tacos",
+            "hot dog", "fries", "fried chicken", "bbq joint", "food truck",
+        }
         if _is_romantic:
             for v in scored_venues:
+                # Noise penalties — moderate is still a mismatch for romance
                 if v.noise_level in ("very_quiet", "quiet"):
                     v.match_score = min(100.0, v.match_score + 3.0)
+                elif v.noise_level == "moderate":
+                    v.match_score = max(0.0, v.match_score - 8.0)
                 elif v.noise_level in ("loud", "very_loud"):
-                    v.match_score = max(0.0, v.match_score - 12.0)
+                    v.match_score = max(0.0, v.match_score - 20.0)
+                # Price penalties — a $15 burger should sink in romantic results
                 if v.price_per_head >= 60:
                     v.match_score = min(100.0, v.match_score + 2.0)
-                elif 0 < v.price_per_head < 25:
-                    v.match_score = max(0.0, v.match_score - 8.0)
+                elif 35 <= v.price_per_head < 60:
+                    pass  # mid-range: neutral
+                elif 0 < v.price_per_head < 35:
+                    v.match_score = max(0.0, v.match_score - 25.0)
+                # Fast-casual name/cuisine penalty
+                _vc = f"{v.cuisine or ''} {v.name or ''}".lower()
+                if any(kw in _vc for kw in _FAST_CASUAL_KWS):
+                    v.match_score = max(0.0, v.match_score - 20.0)
             scored_venues.sort(key=lambda v: v.match_score, reverse=True)
 
         # Step 6 — synthesize intelligence for top 10 (bounded by semaphore)
@@ -772,12 +787,22 @@ def _score_enriched_fallback(enriched: list[dict], intent: VenueIntent) -> list[
         )):
             if noise in ("very_quiet", "quiet"):
                 score += 3
+            elif noise == "moderate":
+                score -= 8
             elif noise in ("loud", "very_loud"):
-                score -= 12
+                score -= 20
             if price >= 60:
                 score += 2
-            elif 0 < price < 25:
-                score -= 8
+            elif 0 < price < 35:
+                score -= 25
+            _vc = f"{ev.get('cuisine', '')} {name}".lower()
+            _FAST_CASUAL_KWS_FB = {
+                "burger", "burgers", "shake", "shakes", "fast food", "counter",
+                "pizza", "sandwich", "sandwiches", "diner", "wings", "taco", "tacos",
+                "hot dog", "fries", "fried chicken", "food truck",
+            }
+            if any(kw in _vc for kw in _FAST_CASUAL_KWS_FB):
+                score -= 20
         score = min(100.0, max(0.0, score))
         venue_id = (name + city).lower().replace(" ", "_").replace("'", "")
         results.append(ScoredVenue(
