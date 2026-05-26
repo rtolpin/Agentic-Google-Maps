@@ -3175,6 +3175,7 @@ interface VenueDetailSidebarProps {
 function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onClearDirections, onSelectRoute, directionsTravelMode, onSetTravelMode, directionsLeg, directionsLoading, directionsError, routeOptions, selectedRouteIndex, userLocation }: VenueDetailSidebarProps) {
   const [sidebarW, setSidebarW] = useState(380);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [directionsCollapsed, setDirectionsCollapsed] = useState(false);
 
   // ── Flight-specific state ──────────────────────────────────────────────────
   const defaultFlightDate = () => {
@@ -3453,101 +3454,119 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
           </button>
         </div>
 
-        {/* Travel mode selector */}
-        <div style={{
-          display: "flex", gap: 3, marginBottom: 10,
-          background: "rgba(0,0,0,0.25)", borderRadius: 14, padding: 4,
-          border: "1px solid rgba(255,255,255,0.07)",
-        }}>
-          {TRAVEL_MODES.map(({ mode, icon, label }) => {
-            const sel = directionsTravelMode === mode;
-            const colors: Record<TravelMode, { bg: string; shadow: string }> = {
-              TRANSIT:   { bg: "linear-gradient(135deg,#B45309,#F59E0B)", shadow: "0 2px 10px rgba(245,158,11,0.45)" },
-              DRIVING:   { bg: "linear-gradient(135deg,#1D4ED8,#60A5FA)", shadow: "0 2px 10px rgba(96,165,250,0.45)" },
-              WALKING:   { bg: "linear-gradient(135deg,#065F46,#34D399)", shadow: "0 2px 10px rgba(52,211,153,0.45)" },
-              BICYCLING: { bg: "linear-gradient(135deg,#0E7490,#22D3EE)", shadow: "0 2px 10px rgba(34,211,238,0.45)" },
-              FLYING:    { bg: "linear-gradient(135deg,#6D28D9,#A78BFA)", shadow: "0 2px 10px rgba(167,139,250,0.45)" },
-            };
-            return (
-              <button
-                key={mode}
-                onClick={() => onSetTravelMode(mode)}
-                style={{
-                  flex: 1, border: "none", cursor: "pointer", borderRadius: 10,
-                  padding: "7px 2px", display: "flex", flexDirection: "column",
-                  alignItems: "center", gap: 3, transition: "all 0.18s",
-                  background: sel ? colors[mode].bg : "transparent",
-                  boxShadow: sel ? colors[mode].shadow : "none",
-                  transform: sel ? "scale(1.04)" : "scale(1)",
-                }}
-              >
-                <span style={{ fontSize: 18, lineHeight: 1 }}>{icon}</span>
-                <span style={{ fontSize: 10, fontWeight: sel ? 700 : 600, color: sel ? "#fff" : "#94A3B8", letterSpacing: "0.02em" }}>{label}</span>
-              </button>
-            );
-          })}
-        </div>
-        {/* Flight options — date picker + airport selectors */}
-        {directionsTravelMode === "FLYING" && (
-          <div style={{ marginBottom: 10 }}>
-            {/* Departure date */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
-              <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, minWidth: 44 }}>Depart</span>
-              <FlightDatePicker
-                value={flightDate}
-                min={new Date().toISOString().split("T")[0]}
-                onChange={setFlightDate}
-              />
+        {/* Travel mode + flight options — collapse when user scrolls down to read venue details */}
+        {directionsCollapsed ? (
+          <button
+            onClick={() => setDirectionsCollapsed(false)}
+            style={{
+              display: "flex", alignItems: "center", justifyContent: "center",
+              gap: 6, width: "100%", marginBottom: 10, padding: "5px 10px",
+              borderRadius: 10, border: "1px solid rgba(255,255,255,0.1)",
+              background: "rgba(255,255,255,0.04)", color: "#94A3B8",
+              cursor: "pointer", fontSize: 11, fontWeight: 600,
+            }}
+          >
+            <span style={{ fontSize: 12 }}>▲</span>
+            <span>Show directions</span>
+          </button>
+        ) : (
+          <>
+            <div style={{
+              display: "flex", gap: 3, marginBottom: 10,
+              background: "rgba(0,0,0,0.25)", borderRadius: 14, padding: 4,
+              border: "1px solid rgba(255,255,255,0.07)",
+            }}>
+              {TRAVEL_MODES.map(({ mode, icon, label }) => {
+                const sel = directionsTravelMode === mode;
+                const colors: Record<TravelMode, { bg: string; shadow: string }> = {
+                  TRANSIT:   { bg: "linear-gradient(135deg,#B45309,#F59E0B)", shadow: "0 2px 10px rgba(245,158,11,0.45)" },
+                  DRIVING:   { bg: "linear-gradient(135deg,#1D4ED8,#60A5FA)", shadow: "0 2px 10px rgba(96,165,250,0.45)" },
+                  WALKING:   { bg: "linear-gradient(135deg,#065F46,#34D399)", shadow: "0 2px 10px rgba(52,211,153,0.45)" },
+                  BICYCLING: { bg: "linear-gradient(135deg,#0E7490,#22D3EE)", shadow: "0 2px 10px rgba(34,211,238,0.45)" },
+                  FLYING:    { bg: "linear-gradient(135deg,#6D28D9,#A78BFA)", shadow: "0 2px 10px rgba(167,139,250,0.45)" },
+                };
+                return (
+                  <button
+                    key={mode}
+                    onClick={() => onSetTravelMode(mode)}
+                    style={{
+                      flex: 1, border: "none", cursor: "pointer", borderRadius: 10,
+                      padding: "7px 2px", display: "flex", flexDirection: "column",
+                      alignItems: "center", gap: 3, transition: "all 0.18s",
+                      background: sel ? colors[mode].bg : "transparent",
+                      boxShadow: sel ? colors[mode].shadow : "none",
+                      transform: sel ? "scale(1.04)" : "scale(1)",
+                    }}
+                  >
+                    <span style={{ fontSize: 18, lineHeight: 1 }}>{icon}</span>
+                    <span style={{ fontSize: 10, fontWeight: sel ? 700 : 600, color: sel ? "#fff" : "#94A3B8", letterSpacing: "0.02em" }}>{label}</span>
+                  </button>
+                );
+              })}
             </div>
-            {airportsLoading ? (
-              <div style={{ fontSize: 11, color: "#64748B" }}>Finding airports…</div>
-            ) : (
-              <>
-                {depAirports.length > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                    <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, minWidth: 44 }}>From</span>
-                    <select value={selectedDepIata} onChange={e => setSelectedDepIata(e.target.value)} style={{
-                      flex: 1, background: "rgba(0,0,0,0.45)", border: "1px solid rgba(167,139,250,0.3)",
-                      borderRadius: 8, padding: "5px 8px", color: "#E2E8F0", fontSize: 11, cursor: "pointer",
-                    }}>
-                      {depAirports.map(a => <option key={a.iata} value={a.iata}>{a.iata} — {a.name}</option>)}
-                    </select>
-                  </div>
+            {/* Flight options — date picker + airport selectors */}
+            {directionsTravelMode === "FLYING" && (
+              <div style={{ marginBottom: 10 }}>
+                {/* Departure date */}
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
+                  <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, minWidth: 44 }}>Depart</span>
+                  <FlightDatePicker
+                    value={flightDate}
+                    min={new Date().toISOString().split("T")[0]}
+                    onChange={setFlightDate}
+                  />
+                </div>
+                {airportsLoading ? (
+                  <div style={{ fontSize: 11, color: "#64748B" }}>Finding airports…</div>
+                ) : (
+                  <>
+                    {depAirports.length > 0 && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                        <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, minWidth: 44 }}>From</span>
+                        <select value={selectedDepIata} onChange={e => setSelectedDepIata(e.target.value)} style={{
+                          flex: 1, background: "rgba(0,0,0,0.45)", border: "1px solid rgba(167,139,250,0.3)",
+                          borderRadius: 8, padding: "5px 8px", color: "#E2E8F0", fontSize: 11, cursor: "pointer",
+                        }}>
+                          {depAirports.map(a => <option key={a.iata} value={a.iata}>{a.iata} — {a.name}</option>)}
+                        </select>
+                      </div>
+                    )}
+                    {arrAirports.length > 0 && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, minWidth: 44 }}>To</span>
+                        <select value={selectedArrIata} onChange={e => setSelectedArrIata(e.target.value)} style={{
+                          flex: 1, background: "rgba(0,0,0,0.45)", border: "1px solid rgba(167,139,250,0.3)",
+                          borderRadius: 8, padding: "5px 8px", color: "#E2E8F0", fontSize: 11, cursor: "pointer",
+                        }}>
+                          {arrAirports.map(a => <option key={a.iata} value={a.iata}>{a.iata} — {a.name}</option>)}
+                        </select>
+                      </div>
+                    )}
+                  </>
                 )}
-                {arrAirports.length > 0 && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600, minWidth: 44 }}>To</span>
-                    <select value={selectedArrIata} onChange={e => setSelectedArrIata(e.target.value)} style={{
-                      flex: 1, background: "rgba(0,0,0,0.45)", border: "1px solid rgba(167,139,250,0.3)",
-                      borderRadius: 8, padding: "5px 8px", color: "#E2E8F0", fontSize: 11, cursor: "pointer",
-                    }}>
-                      {arrAirports.map(a => <option key={a.iata} value={a.iata}>{a.iata} — {a.name}</option>)}
-                    </select>
-                  </div>
+                {/* Search button inline with the controls */}
+                {!airportsLoading && venue && (
+                  <button
+                    onClick={() => onGetDirections(venue, "FLYING", { date: flightDate, depIata: selectedDepIata || undefined, arrIata: selectedArrIata || undefined })}
+                    disabled={directionsLoading}
+                    style={{
+                      display: "flex", width: "100%", alignItems: "center", justifyContent: "center",
+                      gap: 6, marginTop: 10, padding: "9px 14px", borderRadius: 10,
+                      background: directionsLoading ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg,#4F46E5,#7C3AED)",
+                      border: "1.5px solid rgba(99,102,241,0.6)", color: "#fff",
+                      cursor: directionsLoading ? "not-allowed" : "pointer",
+                      fontSize: 13, fontWeight: 700,
+                      boxShadow: directionsLoading ? "none" : "0 2px 12px rgba(99,102,241,0.45)",
+                      opacity: directionsLoading ? 0.7 : 1, transition: "all 0.18s",
+                    }}
+                  >
+                    <span style={{ fontSize: 14 }}>{directionsLoading ? "⏳" : "✈️"}</span>
+                    <span>{directionsLoading ? "Searching…" : "Search Flights"}</span>
+                  </button>
                 )}
-              </>
+              </div>
             )}
-            {/* Search button inline with the controls */}
-            {!airportsLoading && venue && (
-              <button
-                onClick={() => onGetDirections(venue, "FLYING", { date: flightDate, depIata: selectedDepIata || undefined, arrIata: selectedArrIata || undefined })}
-                disabled={directionsLoading}
-                style={{
-                  display: "flex", width: "100%", alignItems: "center", justifyContent: "center",
-                  gap: 6, marginTop: 10, padding: "9px 14px", borderRadius: 10,
-                  background: directionsLoading ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg,#4F46E5,#7C3AED)",
-                  border: "1.5px solid rgba(99,102,241,0.6)", color: "#fff",
-                  cursor: directionsLoading ? "not-allowed" : "pointer",
-                  fontSize: 13, fontWeight: 700,
-                  boxShadow: directionsLoading ? "none" : "0 2px 12px rgba(99,102,241,0.45)",
-                  opacity: directionsLoading ? 0.7 : 1, transition: "all 0.18s",
-                }}
-              >
-                <span style={{ fontSize: 14 }}>{directionsLoading ? "⏳" : "✈️"}</span>
-                <span>{directionsLoading ? "Searching…" : "Search Flights"}</span>
-              </button>
-            )}
-          </div>
+          </>
         )}
 
         {/* Routing errors — suppressed in FLYING mode (not relevant to flight search) */}
@@ -3562,7 +3581,14 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
       </div>
 
       {/* Scrollable body — includes route/flight options, venue name, and content */}
-      <div className="sidebar-scroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: isFullScreen ? "24px 32px 36px" : "16px 18px 28px" }}>
+      <div
+        className="sidebar-scroll"
+        style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: isFullScreen ? "24px 32px 36px" : "16px 18px 28px" }}
+        onScroll={(e) => {
+          const collapsed = (e.currentTarget.scrollTop ?? 0) > 40;
+          setDirectionsCollapsed(collapsed);
+        }}
+      >
 
         {/* Route / flight options picker */}
         {routeOptions && routeOptions.length > 0 && (
