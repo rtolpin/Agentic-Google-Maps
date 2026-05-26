@@ -1111,7 +1111,12 @@ export function VenueMap({
     // ── 3. Build searchCoords ─────────────────────────────────────────────────
     // Extract explicit radius from "within N/five miles/km" — convert to metres
     const distMatch = q.match(new RegExp(`within\\s+(\\d+(?:\\.\\d+)?|${_NUM_WORDS})\\s*(mile|km|mi)\\w*`, "i"));
-    let radiusM = isProximityQuery ? 2000 : 8000; // wider default for general queries
+    // Hiking/outdoor searches default to a much wider radius — trails are rarely
+    // within 2 km of suburban locations like North Caldwell.
+    const isOutdoorQuery = /hik|trail|nature|park|outdoor|walk|trek|forest|mountain|waterfall|scenic|preserve|reservation/i.test(q);
+    let radiusM = isProximityQuery
+      ? (isOutdoorQuery ? 25000 : 2000)
+      : (isOutdoorQuery ? 40000 : 8000);
     if (distMatch) {
       const raw = distMatch[1].toLowerCase();
       const n = _WORD_DIST[raw] ?? parseFloat(raw);

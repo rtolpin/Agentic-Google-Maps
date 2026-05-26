@@ -941,7 +941,15 @@ class ScraperAgent:
         # GPS coordinates take priority unless the query names a different place.
         country_code = ""
         if use_gps:
-            radius = max(500.0, min(50000.0, user_radius_m or 5000.0))
+            # Outdoor/hiking searches need a much wider net — trails around suburban
+            # locations like North Caldwell are typically 10-30 km away.
+            if is_outdoor:
+                default_radius = 25000.0
+                min_radius = 15000.0  # never tighter than 15 km for trails/parks
+            else:
+                default_radius = 5000.0
+                min_radius = 500.0
+            radius = max(min_radius, min(50000.0, user_radius_m or default_radius))
             bias: dict | None = {"lat": user_lat, "lng": user_lng, "radius_m": radius}
             country_code = "US"
         elif intent.city not in ("Unknown", ""):
