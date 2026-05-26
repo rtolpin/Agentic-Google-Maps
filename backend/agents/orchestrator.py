@@ -117,7 +117,7 @@ Given a scored venue and the user's search intent, produce a structured intellig
 Output ONLY valid JSON with exactly these keys:
 {
   "why_card": string,           // 2-sentence plain-English fit explanation
-  "scenario": string,           // hyper-realistic simulation of the user's evening
+  "scenario": string,           // realistic description of the venue's actual vibe
   "sensitivity_bars": {         // dimension → score 0-100
     "ambiance": int,
     "privacy": int,
@@ -128,6 +128,23 @@ Output ONLY valid JSON with exactly these keys:
   "live_signal": string | null, // urgency alert (e.g. "Books out 3 weeks ahead") or null
   "suggestions": [string]       // exactly 4 follow-up questions the user might ask
 }
+
+TONE CALIBRATION — match language to the venue's actual character (STRICTLY enforced):
+- noise_level "loud" or "very_loud" → use words like "buzzy", "energetic", "lively", "casual"
+  NEVER use "intimate", "romantic", "cosy", "quiet", or "elegant" for loud venues
+- price_per_head < $30 → describe as "affordable", "great value", "casual", "counter service"
+  NEVER use "upscale", "refined", "romantic dinner", "date night" for budget venues
+- noise_level "quiet" or "very_quiet" → "calm", "relaxed", "hushed", or "intimate" are fine
+- price_per_head ≥ $80 → "upscale", "refined", "special occasion" are appropriate
+- Fast-casual / counter-service chains (e.g. Dave's Hot Chicken, Shake Shack, Sweetgreen):
+  always use casual, energetic language — never romantic or fine-dining language
+- Only use "romantic" or "date night" if the venue is both quiet AND priced ≥ $60/head
+  AND at least one key_quote explicitly mentions atmosphere, ambiance, or date suitability
+
+SCENARIO: Write 1-2 sentences describing what arriving and eating at this venue actually
+feels like — based on its noise level, price, and cuisine. Ground it in the real venue
+character, not just the user's occasion. Do NOT simulate an evening that doesn't match
+what this type of venue actually is.
 
 LOCATION GROUNDING (critical): The venue's `address` field is the authoritative source
 for its actual city and neighbourhood. Use the city/area from `address` when writing
