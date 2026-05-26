@@ -1148,8 +1148,6 @@ export function VenueMap({
                 const name = (isUsableNeighborhood(nbhdName) ? nbhdName : null)
                   ?? locality?.long_name ?? area?.long_name ?? "";
                 if (name) {
-                  if (isProximityQuery && !q.toLowerCase().includes(" in ")) q = `${q} in ${name}`;
-                  setInputValue(q);
                   setDetectedCity(locality?.long_name || area?.long_name || name);
                 }
               }
@@ -1183,8 +1181,6 @@ export function VenueMap({
                 const name = (isUsableNeighborhood(nbhdName) ? nbhdName : null)
                   ?? locality?.long_name ?? area?.long_name ?? "";
                 if (name) {
-                  if (!q.toLowerCase().includes(" in ")) q = `${q} in ${name}`;
-                  setInputValue(q);
                   setDetectedCity(name);
                   gpsDetectedCityRef.current = name;
                 }
