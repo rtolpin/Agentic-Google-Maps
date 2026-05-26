@@ -3406,11 +3406,14 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
             </button>
           ) : (
             <button
-              onClick={() => onGetDirections(venue, directionsTravelMode,
-                directionsTravelMode === "FLYING"
-                  ? { date: flightDate, depIata: selectedDepIata || undefined, arrIata: selectedArrIata || undefined }
-                  : undefined
-              )}
+              onClick={() => {
+                setDirectionsCollapsed(false);
+                onGetDirections(venue, directionsTravelMode,
+                  directionsTravelMode === "FLYING"
+                    ? { date: flightDate, depIata: selectedDepIata || undefined, arrIata: selectedArrIata || undefined }
+                    : undefined
+                );
+              }}
               disabled={directionsLoading}
               style={{
                 display: "inline-flex", alignItems: "center", gap: 5,
