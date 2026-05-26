@@ -25,15 +25,28 @@ Instead of returning a pile of pins, The Right Spot understands *intent* — and
 | `"quiet cafe for deep work in SoHo"` | Venues scored by WiFi quality, noise level, and time-of-day crowd data |
 | `"hiking trails near me"` | Real trail recommendations anchored to your GPS position, not a city name |
 | `"first date spot in a new city"` | Atmospheric matches: dimly lit, conversational noise level, impressive but not intimidating |
-| `"best restaurant near me"` | GPS-biased search with a 15 km radius — falls back to map center if location permission is denied |
+| `"best restaurant near me"` | GPS-biased search with a 5 km radius — falls back to map center if location permission is denied |
+| `"best restaurant Midtown"` | Neighborhood-level 5 km bias centered on Midtown, not NYC's geographic center |
+| `"best restaurant Upper East Side"` | Correct results even when your GPS is in a different city — intent overrides GPS |
+| `"peaceful parks to relax"` | Actual parks and botanical gardens — not hiking trails |
+| `"bridal stores near me"` | Bridal boutiques, wedding dress shops, bridesmaid stores |
+| `"tuxedo or suit stores"` | Men's suit stores, tuxedo rentals, formal wear tailors |
+| `"shopping malls near me"` | Indoor malls and shopping centers with accurate location bias |
+| `"best clothing boutiques SoHo"` | Fashion stores and boutiques in the specified neighborhood |
+| `"REI"` / `"Target"` / `"Macy's"` / `"Bloomingdale's"` | Named retailer searched precisely by canonical store name + location |
+| `"JP Morgan offices"` / `"Google offices"` | Named company office search for 90+ major companies across finance, tech, consulting |
+| `"tech offices Midtown"` / `"finance offices"` | Industry-sector office queries: tech company offices, financial offices, etc. |
+| `"corporate headquarters to scout"` | Office buildings, business districts, coworking spaces (WeWork, Regus) |
 | `"public libraries near me"` | Non-restaurant venue types routed to the correct Google Places query |
-| `"offices to scout near Midtown"` | Neighborhood clustering with transit scores and coworking density |
-| *Type "montclair" in the address bar* | Autocomplete suggests as you type; one click pans the map and searches within 10 km |
 
-### Map Features
+### 🗺️ Map Features
+- **Venue photos in popup** — clicking any map pin fetches a live Google Places photo and displays it at the top of the info window popup
+- **Venue photos in sidebar** — same photo shown below the venue name in the detail sidebar (regular and fullscreen)
+- **Venue address** — formatted address displayed in the sidebar (both regular and fullscreen views), sourced from Google Places `formatted_address`
 - **Go To This Area & Search** — type any address, neighborhood, or city in the address bar; Google Places Autocomplete suggests as you type; hitting the button geocodes the input, pans the map, and runs a fresh 10 km radius search anchored to that location
 - **Search This Area** — drag or zoom the map, hit the button and the search re-runs anchored to the visible viewport (radius derived from zoom level)
 - **User location dot** — GPS position persisted in `localStorage` (30 min TTL) so the dot survives page refreshes; "near me" falls back to map center if location permission is denied
+- **My Location button** — returns map to your GPS position, clears the address bar, and restores the correct GPS city chip so the next search is anchored to your actual location
 - **Intent chips** — parsed occasion, cuisine, noise preference, and price band shown as tappable refinement chips below the search bar
 - **All Matches modal** — "View All ↗" opens a searchable, filterable grid of every result; deduplicates venues by name in case ClickHouse `ReplacingMergeTree` hasn't merged yet
 - **Resizable panels** — left AI panel and right venue detail sidebar are both drag-resizable; left panel is collapsible
@@ -69,6 +82,33 @@ Instead of returning a pile of pins, The Right Spot understands *intent* — and
 - **Hyper-local query building** — up to 8 parallel Google Places queries are generated using the GPS-derived area string (e.g. "North Caldwell New Jersey", "Essex County New Jersey") rather than a broad city name
 - **Google rating in scoring** — `google_rating` is stored in ClickHouse and adds 0–15 pts to each venue's match score, spreading results across a realistic range even when Claude has no review snippet to extract signals from
 - **In-memory fallback scoring** — if ClickHouse has no cached venues for a new location, the orchestrator scores the freshly scraped results in memory (including the rating bonus) so the first search in any area always returns results
+
+### 📍 Location Intelligence
+- **Neighborhood-level bias** — 20+ NYC neighborhoods (Midtown, SoHo, West Village, Upper East Side, Harlem, Williamsburg, etc.) each have hardcoded coordinates; intent.neighborhood triggers a precise 5 km bias instead of the broad 30 km city circle
+- **GPS override for explicit locations** — when a query names a specific neighborhood or city different from the user's GPS position (e.g. "best restaurant Upper East Side" from someone in Trenton), GPS is ignored entirely and intent coordinates drive the search
+- **City chip accuracy** — the city label shown above results reflects the GPS-derived city; clicking My Location restores it correctly even after navigating the map to another city
+
+### 🛍️ Shopping & Retail Search
+- **Bridal / wedding** — bridal boutiques, wedding dress stores, bridesmaid dress shops
+- **Formal wear** — men's suit stores, tuxedo rentals, tailors, formal wear shops
+- **Malls & shopping centers** — indoor malls, shopping centers, outlet malls
+- **Fashion & clothing** — clothing boutiques, fashion stores, women's and men's apparel
+- **Named retailers** — 18 major retailers matched precisely: REI, Target, Macy's, Bloomingdale's, Nordstrom, Saks Fifth Avenue, Zara, H&M, Gap, Banana Republic, J.Crew, Uniqlo, Anthropologie, Free People, Lululemon, Nike, Adidas, and more
+- **Non-dining filter bypass** — shopping venues (clothing_store, shopping_mall, department_store) are only filtered when the search is food-specific; retail searches always pass through
+
+### 🌳 Parks & Outdoor Spaces
+- **Park vs. hiking distinction** — "peaceful parks to relax" generates park/garden queries; "hiking trails near me" generates trail queries — not conflated
+- **Keyword matching** — substring detection so "parks", "gardens", "botanical" all correctly trigger the park branch
+- **Park queries** — "public park", "city park", "botanical garden", "green space", "nature park" — precise Google Places category terms
+
+### 🏢 Office & Corporate Search
+- **Named companies (90+)** — searches like "JP Morgan offices", "Google offices", "Meta offices", "Capital One offices", "American Express offices", "PayPal offices", "DataDog offices" resolve to canonical company names for precise results
+  - Finance: JPMorgan Chase, Goldman Sachs, Morgan Stanley, Citibank, Capital One, American Express, BlackRock, Bloomberg, Fidelity, Barclays, HSBC, Two Sigma, Citadel, PayPal, Visa, Mastercard…
+  - Tech: Google, Apple, Meta, Amazon, Microsoft, Netflix, Salesforce, Stripe, Airbnb, Uber, Nvidia, OpenAI, Anthropic, Datadog, Snowflake, Palantir, Coinbase…
+  - Consulting: McKinsey, BCG, Bain, Deloitte, KPMG, PwC, Accenture…
+  - Media/other: Disney, NBCUniversal, New York Times, Tesla, Boeing…
+- **Industry sectors** — "tech offices", "finance offices", "startup offices", "law firm offices", "consulting offices" generate sector-specific queries
+- **General office search** — "corporate headquarters to scout" surfaces office buildings, business districts, coworking spaces (WeWork), and office parks
 
 ---
 
@@ -171,7 +211,7 @@ agentic-engineering-hack/
 │   ├── db/
 │   │   └── clickhouse.py          # MergeTree schema + multi-factor scoring query
 │   ├── integrations/
-│   │   ├── google_maps_client.py      # Places API (real-time, TOS compliant, locationBias)
+│   │   ├── google_maps_client.py      # Places API (real-time, TOS compliant, locationBias, photos)
 │   │   ├── nimble_client.py           # Nimble google_maps + google_search engines
 │   │   ├── serpapi_flights_client.py  # Serpapi Google Flights (✈️ Fly mode, 130-airport DB)
 │   │   └── senso_client.py            # Senso knowledge base client
@@ -290,7 +330,7 @@ This starts:
 http://localhost:3000
 ```
 
-Type anything — `"quiet cafe for deep work"`, `"hiking near downtown"`, `"first date spot"` — and watch the AI layer unfold on the map.
+Type anything — `"quiet cafe for deep work"`, `"hiking near downtown"`, `"first date spot"`, `"bridal stores near me"`, `"JP Morgan offices"` — and watch the AI layer unfold on the map.
 
 ---
 
@@ -301,7 +341,7 @@ Type anything — `"quiet cafe for deep work"`, `"hiking near downtown"`, `"firs
 | **Anthropic Claude** | Intent parsing, signal extraction, synthesis | [console.anthropic.com](https://console.anthropic.com) |
 | **Nimble SERP** | Google Maps data extraction + review snippets | [nimbleway.com](https://nimbleway.com) |
 | **Senso.ai** | GEO publishing + AI citation tracking | [app.senso.ai](https://app.senso.ai) |
-| **Google Maps** | Map rendering + real-time place details + directions | [console.cloud.google.com](https://console.cloud.google.com) |
+| **Google Maps** | Map rendering + real-time place details + directions + photos | [console.cloud.google.com](https://console.cloud.google.com) |
 | **Serpapi** | Google Flights data for the ✈️ Fly travel mode | [serpapi.com](https://serpapi.com) |
 | **Datadog** | APM tracing (optional for local dev) | [app.datadoghq.com](https://app.datadoghq.com) |
 
@@ -312,7 +352,7 @@ Type anything — `"quiet cafe for deep work"`, `"hiking near downtown"`, `"firs
 Enable these APIs in Google Cloud Console:
 
 1. **Maps JavaScript API** — map rendering + AdvancedMarkerElement
-2. **Places API (New)** — text search with `locationBias`, real-time place details, and nearby transit search
+2. **Places API (New)** — text search with `locationBias`, real-time place details, nearby transit search, and venue photos (`skipHttpRedirect=true` for server-side photo URL resolution)
 3. **Geocoding API** — reverse geocoding for Search This Area label + user location city detection
 4. **Directions API** — in-map route rendering via `DirectionsService` (Transit, Drive, Walk, Bike modes)
 
@@ -376,7 +416,7 @@ Built for the **Anthropic + Senso.ai Hackathon**.
 - 🤖 [Anthropic Claude](https://anthropic.com) — multi-agent AI pipeline
 - 🔍 [Nimble SERP](https://nimbleway.com) — real-time Google Maps data extraction
 - 📡 [Senso.ai](https://senso.ai) — GEO publishing and AI citation tracking
-- 🗺️ [Google Maps Platform](https://mapsplatform.google.com) — interactive map display
+- 🗺️ [Google Maps Platform](https://mapsplatform.google.com) — interactive map display + venue photos
 - 📈 [Datadog](https://datadoghq.com) — distributed APM tracing
 
 ---
