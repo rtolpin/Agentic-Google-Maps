@@ -83,6 +83,13 @@ neighborhood: Extract sub-city areas like "Upper East Side", "SoHo", "Williamsbu
 "South of Market", "Capitol Hill", etc. These are distinct from city. Set to null if no
 sub-area is mentioned.
 
+ROMANTIC DINNER DEFAULTS (apply when fields are null — never override explicit user preferences):
+When the query contains romantic/intimate signals ("romantic", "romance", "intimate",
+"anniversary", "date night", "dinner for two", "candlelit", "proposal", "special dinner"):
+  • noise_preference → "quiet"   (unless user says "lively", "buzzy", "loud", "vibrant")
+  • price_band → "upscale"       (unless user says "budget", "cheap", "affordable", "casual")
+These capture the strong implied expectation for a refined, intimate dining experience.
+
 Examples:
 - "birthday dinner for 8 quiet Italian NYC" →
   {"occasion":"birthday_dinner","group_size":8,"cuisine":"italian",
@@ -107,7 +114,15 @@ Examples:
 - "furniture stores in Brooklyn" →
   {"occasion":"shopping","group_size":1,"cuisine":null,
    "noise_preference":null,"needs_private_room":false,"city":"New York City",
-   "neighborhood":"Brooklyn","date":null,"price_band":null,"dietary_restrictions":[],"other_signals":["furniture"]}\
+   "neighborhood":"Brooklyn","date":null,"price_band":null,"dietary_restrictions":[],"other_signals":["furniture"]}
+- "a nice quiet romantic dinner for two in Montclair" →
+  {"occasion":"romantic_dinner","group_size":2,"cuisine":null,
+   "noise_preference":"quiet","needs_private_room":false,"city":"Montclair",
+   "neighborhood":null,"date":null,"price_band":"upscale","dietary_restrictions":[],"other_signals":["romantic","intimate"]}
+- "best romantic restaurant dinner for two near me in North Caldwell" →
+  {"occasion":"romantic_dinner","group_size":2,"cuisine":null,
+   "noise_preference":"quiet","needs_private_room":false,"city":"North Caldwell",
+   "neighborhood":null,"date":null,"price_band":"upscale","dietary_restrictions":[],"other_signals":["romantic"]}\
 """
 
 _SYNTHESIS_PROMPT = """\
@@ -336,6 +351,21 @@ async def orchestrate(
         elif intent.city in ("Unknown", "") and user_city:
             intent = intent.model_copy(update={"city": user_city.strip()})
 
+        # Romantic dinner defaults: enforce quiet + upscale when signals are present
+        # but the LLM left noise_preference/price_band as null.  This is a code-level
+        # safety net — the intent parser prompt should handle most cases.
+        _occ_signals = f"{intent.occasion} {' '.join(intent.other_signals or [])}".lower()
+        _ROMANTIC_KWS = {"romantic", "romance", "intimate", "anniversary", "date night",
+                         "dinner for two", "candlelit", "proposal", "special dinner"}
+        if any(kw in _occ_signals for kw in _ROMANTIC_KWS):
+            _r_updates: dict = {}
+            if intent.noise_preference is None:
+                _r_updates["noise_preference"] = "quiet"
+            if intent.price_band is None:
+                _r_updates["price_band"] = "upscale"
+            if _r_updates:
+                intent = intent.model_copy(update=_r_updates)
+
         # GPS override: reverse geocode → hyper-local area string (suburb/rural support)
         # This runs whenever coordinates are provided, including Search This Area.
         user_area = ""
@@ -481,6 +511,32 @@ async def orchestrate(
                 if city_lower in v_city_lower or city_lower in addr_lower:
                     v.match_score = min(100.0, v.match_score + 20.0)
                 elif all(w in addr_lower for w in city_lower.split() if len(w) > 2):
+                    v.match_score = min(100.0, v.match_score + 10.0)
+            scored_venues.sort(key=lambda v: v.match_score, reverse=True)
+
+        # Romantic-occasion re-rank: boost quiet/upscale venues, penalise loud/casual ones.
+        # Also boost Italian cuisine when no specific cuisine was requested.
+        # Applied after city-match so both boosts stack naturally.
+        _occ_str = f"{intent.occasion} {' '.join(intent.other_signals or [])}".lower()
+        _is_romantic = any(kw in _occ_str for kw in (
+            "romantic", "romance", "intimate", "anniversary", "date night", "dinner for two"
+        ))
+        if _is_romantic:
+            for v in scored_venues:
+                # Noise: quiet venues rise, loud venues drop
+                if v.noise_level in ("very_quiet", "quiet"):
+                    v.match_score = min(100.0, v.match_score + 15.0)
+                elif v.noise_level in ("loud", "very_loud"):
+                    v.match_score = max(0.0, v.match_score - 15.0)
+                # Price: upscale rises, fast-casual drops
+                if v.price_per_head >= 60:
+                    v.match_score = min(100.0, v.match_score + 10.0)
+                elif 0 < v.price_per_head < 25:
+                    v.match_score = max(0.0, v.match_score - 10.0)
+                # Italian preference when no cuisine specified (canonical romantic cuisine)
+                if not intent.cuisine and v.cuisine and any(
+                    kw in v.cuisine.lower() for kw in ("italian", "trattoria", "ristorante", "osteria")
+                ):
                     v.match_score = min(100.0, v.match_score + 10.0)
             scored_venues.sort(key=lambda v: v.match_score, reverse=True)
 
@@ -677,6 +733,25 @@ def _score_enriched_fallback(enriched: list[dict], intent: VenueIntent) -> list[
                 score += 20
             elif all(w in ev_addr_lower for w in intent_city_lower.split() if len(w) > 2):
                 score += 10
+
+        # Romantic-occasion bonuses: quiet ambiance + upscale pricing + Italian preferred.
+        # Mirrors the re-rank applied to ClickHouse-scored venues above.
+        _occ_fallback = f"{occasion} {' '.join(intent.other_signals or [])}".lower()
+        if any(kw in _occ_fallback for kw in (
+            "romantic", "romance", "intimate", "anniversary", "date night", "dinner for two"
+        )):
+            if noise in ("very_quiet", "quiet"):
+                score += 15
+            elif noise in ("loud", "very_loud"):
+                score -= 15
+            if price >= 60:
+                score += 10
+            elif 0 < price < 25:
+                score -= 10
+            if not intent.cuisine:
+                ev_cuisine_lower = (ev.get("cuisine") or "").lower()
+                if any(kw in ev_cuisine_lower for kw in ("italian", "trattoria", "ristorante", "osteria")):
+                    score += 10
 
         score = min(100.0, max(0.0, score))
         venue_id = (name + city).lower().replace(" ", "_").replace("'", "")
