@@ -533,11 +533,6 @@ async def orchestrate(
                     v.match_score = min(100.0, v.match_score + 10.0)
                 elif 0 < v.price_per_head < 25:
                     v.match_score = max(0.0, v.match_score - 10.0)
-                # Italian preference when no cuisine specified (canonical romantic cuisine)
-                if not intent.cuisine and v.cuisine and any(
-                    kw in v.cuisine.lower() for kw in ("italian", "trattoria", "ristorante", "osteria")
-                ):
-                    v.match_score = min(100.0, v.match_score + 10.0)
             scored_venues.sort(key=lambda v: v.match_score, reverse=True)
 
         # Step 6 — synthesize intelligence for top 10 (bounded by semaphore)
@@ -748,11 +743,6 @@ def _score_enriched_fallback(enriched: list[dict], intent: VenueIntent) -> list[
                 score += 10
             elif 0 < price < 25:
                 score -= 10
-            if not intent.cuisine:
-                ev_cuisine_lower = (ev.get("cuisine") or "").lower()
-                if any(kw in ev_cuisine_lower for kw in ("italian", "trattoria", "ristorante", "osteria")):
-                    score += 10
-
         score = min(100.0, max(0.0, score))
         venue_id = (name + city).lower().replace(" ", "_").replace("'", "")
         results.append(ScoredVenue(

@@ -853,11 +853,6 @@ def _build_queries(
     occ_tag = _occasion_query_tag(occasion, intent.other_signals or [])
     occ_prefix = f"{occ_tag} " if occ_tag else ""
 
-    # For romantic occasions without a specified cuisine, mix in Italian-specific queries.
-    # Italian is the canonical romantic-dinner cuisine; adding it surfaces quiet upscale
-    # restaurants that use "Italian" in their name/category but not "fine dining".
-    _romantic_italian = occ_tag == "romantic fine dining" and not cuisine
-
     if is_gps:
         # `category` = the cuisine ("sushi") or "restaurant" when none given.
         # `cat_with_rest` adds "restaurant" after a specific cuisine so queries always
@@ -888,7 +883,7 @@ def _build_queries(
         # 3. near-me: reverse-geocode failed → pure proximity queries with phrase variety
         has_broad = broad_loc != location and location != "near me"
         if has_broad:
-            qs = [
+            return [
                 f"best {occ_prefix}{cat_with_rest} near {location}",
                 f"best {occ_prefix}{cat_with_rest} {location}",
                 f"best {occ_prefix}{cat_with_rest} {area_loc}" if area_loc != location else f"best {occ_prefix}{cat_with_rest} {broad_loc}",
@@ -898,15 +893,9 @@ def _build_queries(
                 f"local {category} near me",
                 f"{occ_prefix}{category} near me" if occ_prefix else f"{category} near me",
             ]
-            if _romantic_italian:
-                qs[4] = f"best quiet upscale italian restaurant near {location}"
-                qs[5] = f"best romantic fine dining italian restaurant {location}"
-                qs[6] = f"intimate upscale italian restaurant {broad_loc}"
-                qs[7] = f"quiet romantic italian restaurant near me"
-            return qs
         if location != "near me":
             # local-only: good city name but no county fallback — rely on near-location queries
-            qs = [
+            return [
                 f"best {occ_prefix}{cat_with_rest} near {location}",
                 f"best {occ_prefix}{cat_with_rest} {location}",
                 cat_query_3,
@@ -916,14 +905,8 @@ def _build_queries(
                 f"local {category} near me",
                 f"{occ_prefix}{category} near me" if occ_prefix else f"{category} near me",
             ]
-            if _romantic_italian:
-                qs[2] = f"best quiet upscale italian restaurant near {location}"
-                qs[5] = f"best romantic fine dining italian restaurant {location}"
-                qs[6] = f"intimate upscale italian restaurant {location}"
-                qs[7] = f"quiet romantic italian restaurant near me"
-            return qs
         # near-me: vary phrasing so Google returns diverse results across ranking signals
-        qs = [
+        return [
             f"best {occ_prefix}{cat_with_rest} near me",
             f"top rated {occ_prefix}{cat_with_rest} near me",
             cat_query_3,
@@ -933,24 +916,14 @@ def _build_queries(
             f"good {cat_with_rest} near me",
             f"{occ_prefix}{category} near me" if occ_prefix else f"{category} near me",
         ]
-        if _romantic_italian:
-            qs[2] = f"best quiet upscale italian restaurant near me"
-            qs[5] = f"best romantic fine dining italian restaurant near me"
-            qs[6] = f"intimate upscale italian restaurant near me"
-            qs[7] = f"quiet romantic italian restaurant"
-        return qs
     non_gps_cat = f"{cuisine} restaurant" if cuisine else "restaurant"
-    qs = [
+    return [
         f"best {occ_prefix}{non_gps_cat} {location}",
         f"best{cuisine_tag} restaurant {location}",
         cat_query_3,
         f"top rated{cuisine_tag} restaurant {location}",
         f"popular{cuisine_tag} restaurant {location}",
     ]
-    if _romantic_italian:
-        qs[2] = f"best quiet upscale italian restaurant {location}"
-        qs[4] = f"intimate romantic fine dining italian restaurant {location}"
-    return qs
 
 
 def _merge_snippet(google_snippet: str, nimble_snippet: str) -> str:
