@@ -342,16 +342,22 @@ async def orchestrate(
         # Step 1 — intent parsing
         yield {"event": "status", "data": "Parsing your request..."}
         intent = await parse_intent(query)
-        # Save the LLM's city extraction before any GPS overrides.
-        # If the user explicitly named a city in the query (e.g. "in Manhattan"),
-        # we preserve it instead of letting GPS geocoding overwrite it.
+        # Detect if the user explicitly named a specific place in the query
+        # (e.g. "in Manhattan", "in Montclair") vs. a pure "near me" search.
+        # Only preserve the LLM-extracted city in that case — for plain "near me"
+        # queries GPS is always authoritative.
         _llm_extracted_city = intent.city if intent.city not in ("Unknown", "", None) else None
+        _query_names_city = bool(re.search(
+            r'\bin\s+(?!a\b|an\b|the\b|my\b|this\b|that\b|any\b|some\b)\S+',
+            query, re.IGNORECASE,
+        ))
+        _preserve_llm_city = _llm_extracted_city is not None and _query_names_city
 
         # When GPS coords are present, user_city (from the frontend geocoder) is the
         # authoritative city name — it comes from the same coordinates being searched.
-        # Apply it only when the LLM didn't find an explicit city in the query.
+        # Skip when the user explicitly named a narrower place (e.g. "in Manhattan").
         if user_city and user_lat is not None and user_lng is not None:
-            if _llm_extracted_city is None:
+            if not _preserve_llm_city:
                 intent = intent.model_copy(update={"city": user_city.strip()})
         elif intent.city in ("Unknown", "") and user_city:
             intent = intent.model_copy(update={"city": user_city.strip()})
@@ -391,10 +397,11 @@ async def orchestrate(
                     area_parts   = [p for p in [primary, county, state] if p]
                     user_area    = ", ".join(area_parts)
                     updates: dict = {}
-                    # Only override city from GPS if the LLM didn't already extract
-                    # one from the query (e.g. "near me in Manhattan" → keep Manhattan,
-                    # not Google's reverse-geocode "New York").
-                    if city_name and _llm_extracted_city is None:
+                    # Only override city from GPS if the user didn't explicitly name
+                    # a specific place (e.g. "in Manhattan" → keep Manhattan, not
+                    # Google's reverse-geocode "New York"). Pure "near me" queries
+                    # always use GPS city.
+                    if city_name and not _preserve_llm_city:
                         updates["city"] = city_name
                     if neighborhood:
                         updates["neighborhood"] = neighborhood
