@@ -3711,6 +3711,12 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
             {fmt(venue.cuisine)}
           </div>
         )}
+        {(placeDetails?.formatted_address || venue.address) && (
+          <div style={{ fontSize: 12, color: "#94A3B8", marginTop: 4, display: "flex", alignItems: "flex-start", gap: 4 }}>
+            <span style={{ opacity: 0.6, flexShrink: 0, marginTop: 1 }}>📍</span>
+            <span>{placeDetails?.formatted_address || venue.address}</span>
+          </div>
+        )}
 
         {/* Photo */}
         {placeDetails?.photo_url && (
