@@ -3605,8 +3605,12 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
         className="sidebar-scroll"
         style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: isFullScreen ? "24px 32px 36px" : "16px 18px 28px" }}
         onScroll={(e) => {
-          const collapsed = (e.currentTarget.scrollTop ?? 0) > 40;
-          setDirectionsCollapsed(collapsed);
+          const top = e.currentTarget.scrollTop ?? 0;
+          // Hysteresis: collapse at 80px, restore only when back near the top (<20px).
+          // A single threshold causes a feedback loop — collapsing the header shifts
+          // content up, dropping scrollTop back below the threshold, re-expanding, etc.
+          if (!directionsCollapsed && top > 80) setDirectionsCollapsed(true);
+          else if (directionsCollapsed && top < 20) setDirectionsCollapsed(false);
         }}
       >
 
