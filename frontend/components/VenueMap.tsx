@@ -3495,21 +3495,7 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
               display: "flex", gap: 3, marginBottom: 10,
               background: "rgba(0,0,0,0.25)", borderRadius: 14, padding: 4,
               border: "1px solid rgba(255,255,255,0.07)",
-              position: "relative",
             }}>
-              {/* Collapse toggle */}
-              <button
-                onClick={() => setDirectionsCollapsed(true)}
-                title="Collapse"
-                style={{
-                  position: "absolute", top: 4, right: 4,
-                  width: 22, height: 22, borderRadius: 6,
-                  border: "none", background: "rgba(255,255,255,0.07)",
-                  color: "#64748B", cursor: "pointer", fontSize: 10,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  zIndex: 1,
-                }}
-              >▼</button>
               {TRAVEL_MODES.map(({ mode, icon, label }) => {
                 const sel = directionsTravelMode === mode;
                 const colors: Record<TravelMode, { bg: string; shadow: string }> = {
@@ -3538,6 +3524,24 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
                 );
               })}
             </div>
+            {/* Hide directions strip */}
+            <button
+              onClick={() => setDirectionsCollapsed(true)}
+              style={{
+                display: "flex", alignItems: "center", justifyContent: "center",
+                gap: 6, width: "100%", marginBottom: 10, padding: "6px 12px",
+                borderRadius: 10, cursor: "pointer",
+                background: "rgba(99,102,241,0.12)",
+                border: "1px solid rgba(99,102,241,0.35)",
+                color: "#A5B4FC", fontSize: 12, fontWeight: 600,
+                transition: "all 0.15s",
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(99,102,241,0.22)"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(99,102,241,0.12)"; }}
+            >
+              <span style={{ fontSize: 11 }}>▲</span>
+              <span>{directionsTravelMode === "FLYING" ? "Hide flight finder" : "Hide directions"}</span>
+            </button>
             {/* Flight options — date picker + airport selectors */}
             {directionsTravelMode === "FLYING" && (
               <div style={{ marginBottom: 10 }}>
