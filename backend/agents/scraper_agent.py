@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import re
 from typing import Any
 
 import anthropic
@@ -823,11 +824,14 @@ def _build_queries(
     _LODGING_KWS = {
         "hotel", "hotels", "motel", "motels", "inn", "inns", "resort", "resorts",
         "lodge", "lodges", "lodging", "accommodation", "accommodations",
-        "bed and breakfast", "b&b", "hostel", "hostels", "stay", "overnight stay",
+        "bed and breakfast", "b&b", "hostel", "hostels", "overnight stay",
     }
+    # Use whole-word matching — "inn" is a substring of "dinner", "stay" of "restaurant" etc.
+    _all_words = set(re.split(r"[\s_,]+", all_terms_str))
     is_lodging = (
-        any(t in all_terms for t in _LODGING_KWS)
-        or any(t in all_terms_str for t in _LODGING_KWS)
+        bool(all_terms & _LODGING_KWS)
+        or bool(_all_words & _LODGING_KWS)
+        or any(t in all_terms_str for t in _LODGING_KWS if " " in t)  # multi-word only
         or (cuisine.lower() in _LODGING_KWS)
     )
     if is_lodging and not cuisine.lower() in {"dining", "restaurant", "food"}:
@@ -1198,12 +1202,17 @@ class ScraperAgent:
         _LODGING_TERMS = {
             "hotel", "hotels", "motel", "motels", "inn", "inns", "resort", "resorts",
             "lodge", "lodges", "lodging", "accommodation", "accommodations",
-            "bed and breakfast", "b&b", "hostel", "hostels", "stay", "overnight",
+            "bed and breakfast", "b&b", "hostel", "hostels", "overnight",
         }
+        # Whole-word matching — "inn" is a substring of "dinner", which would
+        # misclassify "romantic_dinner" as a lodging search.
+        _occ_words  = set(re.split(r"[\s_,]+", intent.occasion.lower()))
+        _sig_words  = {w for s in (intent.other_signals or []) for w in re.split(r"[\s_,]+", s.lower())}
         is_lodging_search = (
             (intent.cuisine or "").lower() in _LODGING_TERMS
-            or any(t in intent.occasion.lower() for t in _LODGING_TERMS)
-            or any(t in (s.lower() for s in (intent.other_signals or [])) for t in _LODGING_TERMS)
+            or bool(_occ_words & _LODGING_TERMS)
+            or bool(_sig_words & _LODGING_TERMS)
+            or any(t in intent.occasion.lower() for t in _LODGING_TERMS if " " in t)  # multi-word
         )
         is_food_search = (not is_lodging_search) and (
             bool(intent.cuisine) or any(
