@@ -123,6 +123,18 @@ Examples:
   {"occasion":"romantic_dinner","group_size":2,"cuisine":null,
    "noise_preference":"quiet","needs_private_room":false,"city":"North Caldwell",
    "neighborhood":null,"date":null,"price_band":"upscale","dietary_restrictions":[],"other_signals":["romantic"]}
+- "shows in Paris" →
+  {"occasion":"show","group_size":2,"cuisine":null,
+   "noise_preference":null,"needs_private_room":false,"city":"Paris",
+   "neighborhood":null,"date":null,"price_band":null,"dietary_restrictions":[],"other_signals":["show","theatre","performance"]}
+- "best musicals in London" →
+  {"occasion":"show","group_size":2,"cuisine":null,
+   "noise_preference":null,"needs_private_room":false,"city":"London",
+   "neighborhood":null,"date":null,"price_band":null,"dietary_restrictions":[],"other_signals":["musical","west end","theatre"]}
+- "comedy shows near me" →
+  {"occasion":"show","group_size":2,"cuisine":null,
+   "noise_preference":null,"needs_private_room":false,"city":"Unknown",
+   "neighborhood":null,"date":null,"price_band":null,"dietary_restrictions":[],"other_signals":["comedy","show"]}
 - "hotels near me" →
   {"occasion":"hotel_stay","group_size":1,"cuisine":null,
    "noise_preference":null,"needs_private_room":false,"city":"Unknown",

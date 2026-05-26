@@ -130,6 +130,17 @@ _OFFICE_SECTORS = {
 _CAFE_KEYWORDS = {"cafe", "café", "coffee", "cosy", "cozy", "laptop", "remote", "work from", "working"}
 _WIFI_KEYWORDS = {"wifi", "wi-fi", "internet", "laptop"}
 
+_SHOWS_KEYWORDS = {
+    "show", "shows", "theatre", "theater", "theatres", "theaters",
+    "musical", "musicals", "opera", "ballet", "dance performance",
+    "concert", "concerts", "live music", "gig", "gigs",
+    "comedy show", "stand-up", "standup", "improv",
+    "performance", "performances", "performing arts",
+    "play", "plays", "cabaret", "circus", "variety show",
+    "exhibition", "exhibitions", "live show", "live entertainment",
+    "broadway", "west end", "off-broadway",
+}
+
 _OUTDOOR_KEYWORDS = {
     "hiking", "hike", "trail", "trails", "nature", "park", "parks", "outdoor", "outdoors",
     "walk", "walking", "trekking", "trek", "forest", "mountain", "mountains",
@@ -644,6 +655,37 @@ def _build_queries(
             ]
         if use_gps:
             base += [f"office buildings near me", "coworking office space"]
+        return base[:8]
+
+    # ── Shows / theatre / concerts / live entertainment ───────────────────
+    is_shows_search = any(kw in all_terms_str for kw in _SHOWS_KEYWORDS)
+    if is_shows_search and not cuisine.lower() in {"dining", "restaurant", "food"}:
+        # Pick the most specific sub-type from the query for tighter queries
+        _show_type = "show"
+        for _kw in ("broadway", "west end", "off-broadway", "musical", "opera", "ballet",
+                    "concert", "comedy", "improv", "cabaret", "circus", "theatre", "theater"):
+            if _kw in all_terms_str:
+                _show_type = _kw
+                break
+        base = [
+            f"{_show_type} {location}",
+            f"best {_show_type}s {location}",
+            f"theatre concert performing arts {location}",
+            f"live entertainment show {location}",
+            f"music venue concert hall {location}",
+        ]
+        if is_gps:
+            base += [
+                f"shows near me {broad_loc}",
+                f"live music theatre {location}",
+                f"performing arts venue {location}",
+            ]
+        else:
+            base += [
+                f"concert venue opera house {location}",
+                f"comedy club cabaret {location}",
+                f"performing arts center {location}",
+            ]
         return base[:8]
 
     # ── Outdoor / parks / hiking / nature ────────────────────────────────
