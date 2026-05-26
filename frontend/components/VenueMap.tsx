@@ -1453,6 +1453,17 @@ export function VenueMap({
     if (state.status === "searching") setLeftPanelOpen(true);
   }, [state.status]);
 
+  // Keep agent steps visible briefly after search completes so all 5 green
+  // checkmarks are visible before the results list takes over.
+  const [agentCompleteFlash, setAgentCompleteFlash] = useState(false);
+  useEffect(() => {
+    if (state.status === "done") {
+      setAgentCompleteFlash(true);
+      const t = setTimeout(() => setAgentCompleteFlash(false), 1400);
+      return () => clearTimeout(t);
+    }
+  }, [state.status]);
+
   // ─── Render ─────────────────────────────────────────────────────────────
 
   return (
@@ -1997,8 +2008,8 @@ export function VenueMap({
             </div>
           )}
 
-          {/* Agent steps — only while searching */}
-          {state.status === "searching" && (
+          {/* Agent steps — while searching and briefly after completion */}
+          {(state.status === "searching" || agentCompleteFlash) && (
           <div style={{ padding: "14px 20px 10px", flexShrink: 0 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
               AI Agents
@@ -2018,7 +2029,9 @@ export function VenueMap({
                     background: step.done ? "rgba(16,185,129,0.15)" : isActive ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.05)",
                     border: `1.5px solid ${step.done ? "#10B981" : isActive ? "#3B82F6" : "rgba(255,255,255,0.1)"}`,
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 11,
+                    fontSize: step.done ? 13 : 11,
+                    fontWeight: step.done ? 900 : 400,
+                    color: step.done ? "#34D399" : undefined,
                     animation: isActive ? "agentPulse 1.5s ease-in-out infinite" : "none",
                   }}>
                     {step.done ? "✓" : step.icon}
