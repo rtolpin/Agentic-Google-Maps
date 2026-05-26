@@ -276,7 +276,7 @@ def _city_from_address(address: str) -> str:
 
 def _fallback_intelligence(venue: ScoredVenue, intent: VenueIntent) -> VenueIntelligence:
     """Build a basic intelligence card from venue attributes and key_quotes."""
-    occasion = intent.occasion or "your outing"
+    occasion = (intent.occasion or "your outing").replace("_", " ")
     cuisine = venue.cuisine or "venue"
     # Prefer neighbourhood, then address-derived city, then stored city.
     # venue.city may be the intent default ("New York City") rather than the real city.
