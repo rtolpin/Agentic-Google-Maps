@@ -3487,7 +3487,7 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
             }}
           >
             <span style={{ fontSize: 12 }}>▲</span>
-            <span>Show directions</span>
+            <span>Show modes of transportation</span>
           </button>
         ) : (
           <>
