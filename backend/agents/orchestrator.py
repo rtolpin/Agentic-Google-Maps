@@ -552,27 +552,39 @@ async def orchestrate(
                     v.match_score = min(100.0, v.match_score + 2.0)
             scored_venues.sort(key=lambda v: v.match_score, reverse=True)
 
-        # Romantic-occasion re-rank: penalties filter out mismatches; small positive
-        # nudges break ties without saturating scores to 100.
+        # Upscale/special-occasion re-rank: filter out fast-casual and cheap venues
+        # when the user signals they want something nice.
         _occ_str = f"{intent.occasion} {' '.join(intent.other_signals or [])}".lower()
-        _is_romantic = any(kw in _occ_str for kw in (
-            "romantic", "romance", "intimate", "anniversary", "date night", "dinner for two"
-        ))
+        _ROMANTIC_KWS2 = {
+            "romantic", "romance", "intimate", "anniversary", "date night",
+            "dinner for two", "candlelit", "proposal",
+        }
+        _UPSCALE_KWS = {
+            "fancy", "upscale", "fine dining", "fine-dining", "special occasion",
+            "luxury", "luxurious", "elegant", "sophisticated", "posh", "swanky",
+            "high end", "high-end", "nice dinner", "nice restaurant", "nicer",
+            "special dinner", "treat", "splurge", "celebrate", "celebration",
+            "dress up", "white tablecloth", "michelin", "tasting menu",
+        }
+        _is_romantic  = any(kw in _occ_str for kw in _ROMANTIC_KWS2)
+        _is_upscale   = _is_romantic or any(kw in _occ_str for kw in _UPSCALE_KWS) or intent.price_band in ("upscale", "luxury")
         _FAST_CASUAL_KWS = {
             "burger", "burgers", "shake", "shakes", "fast food", "counter",
             "pizza", "sandwich", "sandwiches", "diner", "wings", "taco", "tacos",
             "hot dog", "fries", "fried chicken", "bbq joint", "food truck",
+            "takeout", "take-out", "carry out", "drive-thru", "drive thru",
         }
-        if _is_romantic:
+        if _is_upscale:
             for v in scored_venues:
-                # Noise penalties — moderate is still a mismatch for romance
-                if v.noise_level in ("very_quiet", "quiet"):
-                    v.match_score = min(100.0, v.match_score + 3.0)
-                elif v.noise_level == "moderate":
-                    v.match_score = max(0.0, v.match_score - 8.0)
-                elif v.noise_level in ("loud", "very_loud"):
-                    v.match_score = max(0.0, v.match_score - 20.0)
-                # Price penalties — a $15 burger should sink in romantic results
+                # Noise penalties only for romantic (upscale can be lively)
+                if _is_romantic:
+                    if v.noise_level in ("very_quiet", "quiet"):
+                        v.match_score = min(100.0, v.match_score + 3.0)
+                    elif v.noise_level == "moderate":
+                        v.match_score = max(0.0, v.match_score - 8.0)
+                    elif v.noise_level in ("loud", "very_loud"):
+                        v.match_score = max(0.0, v.match_score - 20.0)
+                # Price penalties apply to all upscale/fancy searches
                 if v.price_per_head >= 60:
                     v.match_score = min(100.0, v.match_score + 2.0)
                 elif 35 <= v.price_per_head < 60:
@@ -779,29 +791,39 @@ def _score_enriched_fallback(enriched: list[dict], intent: VenueIntent) -> list[
             elif all(w in ev_addr_lower for w in intent_city_lower.split() if len(w) > 2):
                 score += 2
 
-        # Romantic-occasion: penalties filter out obvious mismatches; small positive
-        # nudges act as tiebreakers without pushing everything to 100.
+        # Upscale/special-occasion: same penalties as the main re-rank.
         _occ_fallback = f"{occasion} {' '.join(intent.other_signals or [])}".lower()
-        if any(kw in _occ_fallback for kw in (
-            "romantic", "romance", "intimate", "anniversary", "date night", "dinner for two"
-        )):
-            if noise in ("very_quiet", "quiet"):
-                score += 3
-            elif noise == "moderate":
-                score -= 8
-            elif noise in ("loud", "very_loud"):
-                score -= 20
+        _fb_romantic = any(kw in _occ_fallback for kw in {
+            "romantic", "romance", "intimate", "anniversary", "date night",
+            "dinner for two", "candlelit", "proposal",
+        })
+        _fb_upscale = _fb_romantic or any(kw in _occ_fallback for kw in {
+            "fancy", "upscale", "fine dining", "fine-dining", "special occasion",
+            "luxury", "luxurious", "elegant", "sophisticated", "posh", "swanky",
+            "high end", "high-end", "nice dinner", "nice restaurant", "nicer",
+            "special dinner", "treat", "splurge", "celebrate", "celebration",
+            "dress up", "white tablecloth", "michelin", "tasting menu",
+        }) or intent.price_band in ("upscale", "luxury")
+        if _fb_upscale:
+            if _fb_romantic:
+                if noise in ("very_quiet", "quiet"):
+                    score += 3
+                elif noise == "moderate":
+                    score -= 8
+                elif noise in ("loud", "very_loud"):
+                    score -= 20
             if price >= 60:
                 score += 2
             elif 0 < price < 35:
                 score -= 25
             _vc = f"{ev.get('cuisine', '')} {name}".lower()
-            _FAST_CASUAL_KWS_FB = {
+            _FC_KWS = {
                 "burger", "burgers", "shake", "shakes", "fast food", "counter",
                 "pizza", "sandwich", "sandwiches", "diner", "wings", "taco", "tacos",
                 "hot dog", "fries", "fried chicken", "food truck",
+                "takeout", "take-out", "carry out", "drive-thru", "drive thru",
             }
-            if any(kw in _vc for kw in _FAST_CASUAL_KWS_FB):
+            if any(kw in _vc for kw in _FC_KWS):
                 score -= 20
         score = min(100.0, max(0.0, score))
         venue_id = (name + city).lower().replace(" ", "_").replace("'", "")
