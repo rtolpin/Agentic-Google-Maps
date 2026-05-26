@@ -103,7 +103,11 @@ async def _call_with_retry(
         return None
 
 
-_OFFICE_OCCASIONS = {"offices", "office", "scouting offices", "corporate", "business"}
+_OFFICE_OCCASIONS = {
+    "offices", "office", "scouting offices", "corporate", "business",
+    "scout offices", "office scouting", "office space", "company offices",
+    "corporate offices", "headquarters",
+}
 
 _CAFE_KEYWORDS = {"cafe", "café", "coffee", "cosy", "cozy", "laptop", "remote", "work from", "working"}
 _WIFI_KEYWORDS = {"wifi", "wi-fi", "internet", "laptop"}
@@ -435,24 +439,39 @@ def _build_queries(
     # ── Office / corporate HQ ─────────────────────────────────────────────
     is_office_search = (
         occasion in _OFFICE_OCCASIONS
-        or any(kw in signals for kw in ("office", "headquarters", "hq", "corporate", "company"))
+        or any(kw in all_terms_str for kw in ("office", "headquarters", "hq", "corporate", "coworking", "co-working", "workspace"))
     )
     if is_office_search:
-        named = [s for s in signals if s not in ("office", "offices", "headquarters", "hq", "corporate", "company", "near")]
+        _OFFICE_STOP = {
+            "office", "offices", "headquarters", "hq", "corporate", "company",
+            "companies", "near", "scout", "scouting", "building", "buildings",
+            "space", "spaces", "business", "work", "working",
+        }
+        named = [s for s in signals if s not in _OFFICE_STOP and len(s) > 2]
         if named:
             co = " ".join(named[:2])
             base = [
-                f"{co} headquarters office {location}",
-                f"corporate headquarters office buildings {location}",
-                f"tech company offices business district {location}",
+                f"{co} office {location}",
+                f"{co} headquarters {location}",
+                f"corporate office buildings {location}",
+                f"company offices business district {location}",
+                f"office building {location}",
+                f"commercial office {location}",
             ]
         else:
             base = [
-                f"corporate headquarters major company offices {location}",
-                f"tech company office buildings {location}",
-                f"business district office towers {location}",
+                f"corporate office {location}",
+                f"company offices {location}",
+                f"office buildings {location}",
+                f"business district office {location}",
+                f"commercial office space {location}",
+                f"coworking space {location}",
+                f"WeWork offices {location}",
+                f"office park {location}",
             ]
-        return (base + [f"company offices {broad_loc}", "office building"])[:8] if is_gps else base
+        if use_gps:
+            base += [f"office buildings near me", "coworking office space"]
+        return base[:8]
 
     # ── Outdoor / parks / hiking / nature ────────────────────────────────
     is_outdoor_search = any(kw in all_terms_str for kw in _OUTDOOR_KEYWORDS)
