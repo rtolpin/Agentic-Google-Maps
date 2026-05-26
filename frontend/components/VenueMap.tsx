@@ -1114,8 +1114,10 @@ export function VenueMap({
     // Hiking/outdoor searches default to a much wider radius — trails are rarely
     // within 2 km of suburban locations like North Caldwell.
     const isOutdoorQuery = /hik|trail|nature|park|outdoor|walk|trek|forest|mountain|waterfall|scenic|preserve|reservation/i.test(q);
+    // Restaurants and general venues: 8 km for proximity (suburban towns like North Caldwell
+    // have all their restaurants 5-15 km away). Outdoor/hiking already uses 25-40 km.
     let radiusM = isProximityQuery
-      ? (isOutdoorQuery ? 25000 : 2000)
+      ? (isOutdoorQuery ? 25000 : 8000)
       : (isOutdoorQuery ? 40000 : 8000);
     if (distMatch) {
       const raw = distMatch[1].toLowerCase();

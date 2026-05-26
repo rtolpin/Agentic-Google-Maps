@@ -276,6 +276,34 @@ _NAMED_COMPANIES: dict[str, str] = {
     "lockheed": "Lockheed Martin",
 }
 
+# Occasion-specific search modifiers — inject into restaurant queries so Google
+# Places returns romantically-appropriate venues instead of generic results.
+_ROMANTIC_SIGNALS = {
+    "romantic", "romance", "anniversary", "date night", "date", "intimate",
+    "candle", "candlelit", "special night", "couples", "honeymoon", "proposal",
+}
+_BIRTHDAY_SIGNALS = {"birthday", "celebrate", "celebration", "bday"}
+_BUSINESS_SIGNALS = {"business", "work lunch", "corporate lunch", "client dinner", "business dinner"}
+_GROUP_SIGNALS = {"group", "party", "birthday party", "large group", "team dinner"}
+
+def _occasion_query_tag(occasion: str, signals: list[str]) -> str:
+    """
+    Return a search-query prefix that narrows Google Places to the right venue type.
+    Returns empty string when the occasion is generic (plain dinner, lunch, etc.).
+    """
+    combined = f"{occasion} {' '.join(signals)}".lower()
+    if any(kw in combined for kw in _ROMANTIC_SIGNALS):
+        return "romantic fine dining"
+    if "dinner for two" in combined or "table for two" in combined:
+        return "romantic dinner"
+    if any(kw in combined for kw in _BIRTHDAY_SIGNALS):
+        return "birthday dinner celebration"
+    if any(kw in combined for kw in _BUSINESS_SIGNALS):
+        return "business dining"
+    if any(kw in combined for kw in _GROUP_SIGNALS):
+        return "group dining"
+    return ""
+
 _OPEN_NOW_KEYWORDS = {"open now", "open right now", "currently open"}
 # "open today" / "open this weekend" mean "operating today", not "open at this exact moment".
 # Those are handled by including them in query text rather than setting openNow=true,
@@ -819,6 +847,12 @@ def _build_queries(
         f"best {food_cat} restaurant {location}" if food_cat and food_cat != cuisine.lower()
         else f"popular{cuisine_tag} dining {location}"
     )
+
+    # Occasion-aware modifier — injects "romantic fine dining", "birthday dinner" etc.
+    # into query strings so Google Places returns appropriate venue types.
+    occ_tag = _occasion_query_tag(occasion, intent.other_signals or [])
+    occ_prefix = f"{occ_tag} " if occ_tag else ""
+
     if is_gps:
         # `category` = the cuisine ("sushi") or "restaurant" when none given.
         # `cat_with_rest` adds "restaurant" after a specific cuisine so queries always
@@ -850,41 +884,41 @@ def _build_queries(
         has_broad = broad_loc != location and location != "near me"
         if has_broad:
             return [
-                f"best {cat_with_rest} {location}",
-                f"best {cat_with_rest} near {location}",
+                f"best {occ_prefix}{cat_with_rest} near {location}",
+                f"best {occ_prefix}{cat_with_rest} {location}",
+                f"best {occ_prefix}{cat_with_rest} {area_loc}" if area_loc != location else f"best {occ_prefix}{cat_with_rest} {broad_loc}",
+                f"best {occ_prefix}{cat_with_rest} {broad_loc}",
                 cat_query_3,
                 f"top rated {cat_with_rest} near {location}",
-                f"best {cat_with_rest} {area_loc}" if area_loc != location else f"best {cat_with_rest} {broad_loc}",
-                f"popular {cat_with_rest} near {location}",
                 f"local {category} near me",
-                f"{category} near me",
+                f"{occ_prefix}{category} near me" if occ_prefix else f"{category} near me",
             ]
         if location != "near me":
             # local-only: good city name but no county fallback — rely on near-location queries
             return [
-                f"best {cat_with_rest} {location}",
-                f"best {cat_with_rest} near {location}",
+                f"best {occ_prefix}{cat_with_rest} near {location}",
+                f"best {occ_prefix}{cat_with_rest} {location}",
                 cat_query_3,
                 f"top rated {cat_with_rest} near {location}",
-                f"best {cat_with_rest} {area_loc}" if area_loc != location else f"popular {cat_with_rest} near {location}",
+                f"best {occ_prefix}{cat_with_rest} {area_loc}" if area_loc != location else f"popular {occ_prefix}{cat_with_rest} near {location}",
                 f"highly rated {cat_with_rest} {location}",
                 f"local {category} near me",
-                f"{category} near me",
+                f"{occ_prefix}{category} near me" if occ_prefix else f"{category} near me",
             ]
         # near-me: vary phrasing so Google returns diverse results across ranking signals
         return [
-            f"best {cat_with_rest} near me",
-            f"top rated {cat_with_rest} near me",
+            f"best {occ_prefix}{cat_with_rest} near me",
+            f"top rated {occ_prefix}{cat_with_rest} near me",
             cat_query_3,
             f"highly rated {cat_with_rest} near me",
-            f"popular {category} near me",
+            f"popular {occ_prefix}{category} near me",
             f"local {category} near me",
             f"good {cat_with_rest} near me",
-            f"{category} near me",
+            f"{occ_prefix}{category} near me" if occ_prefix else f"{category} near me",
         ]
     return [
+        f"best {occ_prefix}{cat_with_rest if cuisine else 'restaurant'} {location}",
         f"best{cuisine_tag} restaurant {location}",
-        f"{cuisine_tag} restaurant {location}".strip(),
         cat_query_3,
         f"top rated{cuisine_tag} restaurant {location}",
         f"popular{cuisine_tag} restaurant {location}",
