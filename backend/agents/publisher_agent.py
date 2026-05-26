@@ -75,33 +75,60 @@ class PublisherAgent:
     ) -> PublishedGuide:
         """
         Full Retrieve → Generate → Publish → Score → Report pipeline.
-        Returns a PublishedGuide that includes the governance score so the
-        orchestrator can surface compliance status to the user.
+        Each step degrades gracefully so a Senso API outage never crashes the
+        background task or propagates an exception to the main search stream.
         """
+        slug = _build_slug(intent)
+
         # ── Step 1: Retrieve Senso KB context (ground truth anchor) ──────────
-        kb_result = await self._senso.query_knowledge_base(
-            city=intent.city,
-            cuisine=intent.cuisine,
-            occasion=intent.occasion,
-        )
+        try:
+            kb_result = await self._senso.query_knowledge_base(
+                city=intent.city,
+                cuisine=intent.cuisine,
+                occasion=intent.occasion,
+            )
+        except Exception:
+            kb_result = SensoKBResult(entries=[])
 
         # ── Step 2: Build citation map (KB sources + live signals) ────────────
         citations = build_citation_map(venues, kb_result)
 
         # ── Step 3: Generate guide grounded in KB + live signals ──────────────
-        guide_md = await self._generate_grounded_guide(intent, venues, kb_result)
+        try:
+            guide_md = await self._generate_grounded_guide(intent, venues, kb_result)
+        except Exception:
+            await self._senso.close()
+            return PublishedGuide(
+                slug=slug, url="", status="generation_failed",
+                governance_score=GovernanceScore(overall_score=0, hallucination_risk=1.0),
+                citations_registered=0, gaps_reported=0, is_compliant=False,
+            )
 
         # ── Step 4: Publish to Senso with GEO metadata + citation map ────────
-        slug = _build_slug(intent)
-        geo = build_geo_metadata(intent, venues, citations)
-        publish_result = await self._senso.publish_content(slug, guide_md, citations, geo)
+        try:
+            geo = build_geo_metadata(intent, venues, citations)
+            publish_result = await self._senso.publish_content(slug, guide_md, citations, geo)
+        except Exception:
+            await self._senso.close()
+            return PublishedGuide(
+                slug=slug, url="", status="publish_failed",
+                governance_score=GovernanceScore(overall_score=0, hallucination_risk=1.0),
+                citations_registered=len(citations), gaps_reported=0, is_compliant=False,
+            )
 
         # ── Step 5: Request governance score ──────────────────────────────────
-        governance = await self._senso.score_content(guide_md, citations, kb_result)
+        try:
+            governance = await self._senso.score_content(guide_md, citations, kb_result)
+        except Exception:
+            governance = GovernanceScore(overall_score=0, hallucination_risk=1.0, compliance_flags=["score_unavailable"])
 
         # ── Step 6: Report content gaps for Senso remediation ────────────────
-        gaps = identify_content_gaps(venues, intent)
-        gaps_registered = await self._senso.report_content_gaps(gaps)
+        gaps_registered = 0
+        try:
+            gaps = identify_content_gaps(venues, intent)
+            gaps_registered = await self._senso.report_content_gaps(gaps)
+        except Exception:
+            pass
 
         await self._senso.close()
 

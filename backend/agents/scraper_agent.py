@@ -916,8 +916,9 @@ def _build_queries(
             f"good {cat_with_rest} near me",
             f"{occ_prefix}{category} near me" if occ_prefix else f"{category} near me",
         ]
+    non_gps_cat = f"{cuisine} restaurant" if cuisine else "restaurant"
     return [
-        f"best {occ_prefix}{cat_with_rest if cuisine else 'restaurant'} {location}",
+        f"best {occ_prefix}{non_gps_cat} {location}",
         f"best{cuisine_tag} restaurant {location}",
         cat_query_3,
         f"top rated{cuisine_tag} restaurant {location}",

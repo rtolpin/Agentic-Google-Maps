@@ -493,8 +493,15 @@ async def orchestrate(
 
         yield {"event": "results", "data": [v.model_dump() for v in scored_venues]}
 
-        # Step 8 — fire-and-forget guide publish
-        asyncio.create_task(PublisherAgent().publish_guide(intent, scored_venues[:5]))
+        # Step 8 — fire-and-forget guide publish (exceptions suppressed so they
+        # never propagate to the main SSE stream or produce "never retrieved" warnings)
+        async def _publish_quietly() -> None:
+            try:
+                await PublisherAgent().publish_guide(intent, scored_venues[:5])
+            except Exception:
+                pass
+
+        asyncio.create_task(_publish_quietly())
 
         yield {"event": "done", "data": {"total_venues": len(scored_venues)}}
 
