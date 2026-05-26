@@ -3288,6 +3288,7 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
         transform: "translate(-50%, -50%)",
         width: "min(900px, 92vw)",
         maxHeight: "88vh",
+        overflow: "hidden",
         zIndex: 101,
         background: "linear-gradient(160deg, #0f172a 0%, #1a2236 60%, #0f172a 100%)",
         boxShadow: "0 24px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(99,179,237,0.15)",
@@ -3301,6 +3302,7 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
         right: 0,
         bottom: 0,
         width: sidebarW,
+        overflow: "hidden",
         background: "linear-gradient(180deg, #0f172a 0%, #1a2236 100%)",
         boxShadow: "-4px 0 32px rgba(0,0,0,0.45)",
         zIndex: 12,
@@ -3358,6 +3360,8 @@ function VenueDetailSidebar({ venue, placeDetails, onClose, onGetDirections, onC
         padding: "14px 18px 14px",
         borderBottom: "1px solid rgba(255,255,255,0.07)",
         flexShrink: 0,
+        maxHeight: isFullScreen ? "44vh" : "48vh",
+        overflowY: "auto",
       }}>
         {/* Buttons row — Full screen | Get Directions | [Exit Full Screen] | Close */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
