@@ -437,7 +437,10 @@ async def test_synthesis_fallback_reason_is_logged(birthday_intent, mock_redis, 
         validator.return_value.run = AsyncMock(return_value={})
         global_agent.return_value.run = AsyncMock(return_value={})
         with caplog.at_level("WARNING", logger="therightspot.orchestrator"):
-            [e async for e in orchestrate("birthday dinner", "u1")]
+            events = [e async for e in orchestrate("birthday dinner", "u1")]
+
+    done = next(e for e in events if e["event"] == "done")
+    assert done["data"]["synthesis_fallbacks"] == {"guardrail:tone_mismatch": 1, "error:TimeoutError": 1}
 
     msgs = [r.getMessage() for r in caplog.records if "synthesis fallback" in r.getMessage()]
     assert "venue=a reason=guardrail:tone_mismatch" in msgs[0]
