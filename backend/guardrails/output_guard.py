@@ -48,9 +48,18 @@ class OutputGuardrailError(Exception):
 _WORD_RE = re.compile(r"[a-z0-9']+")
 _URL_RE = re.compile(r"(https?://|www\.)\S+", re.IGNORECASE)
 _PRICE_RE = re.compile(r"\$\s?(\d{1,4})(?:\.\d{2})?")
-_NEGATION_RE = (
-    r"(?:not|never|isn't|isnt|hardly|anything\s+but|far\s+from|rather\s+than|instead\s+of|than|no)\s+"
-    r"(?:a\s+|an\s+|very\s+|particularly\s+|exactly\s+|for\s+a\s+)?"
+# A tone word is "negated" when a negation cue appears earlier in the same clause
+# ("doesn't suit a quiet, romantic dinner", "falls short of the intimate…") or when
+# it describes what the user wants ("…the refined experience you're after").
+_NEGATION_CUE_RE = re.compile(
+    r"\b(?:not|never|no|isn't|isnt|aren't|wasn't|doesn't|doesnt|don't|won't|hardly|"
+    r"lacks?|lacking|without|anything\s+but|far\s+from|falls?\s+short\s+of|"
+    r"rather\s+than|instead\s+of|than)\b"
+)
+_CLAUSE_BREAK_RE = re.compile(r"[.;:!?\u2014]|\b(?:but|however|yet|while|although)\b")
+_DESIRE_AFTER_RE = re.compile(
+    r"^[^.;:!?\u2014]{0,40}?\b(?:you'?re\s+(?:after|looking\s+for|hoping\s+for)|"
+    r"you\s+(?:want|asked\s+for|need)|you\s+have\s+in\s+mind)\b"
 )
 
 _LEAKAGE_MARKERS = (
@@ -85,8 +94,10 @@ def _uses_word(text: str, word: str) -> bool:
     """Case-insensitive whole-phrase match that ignores negated uses ("not quiet")."""
     lowered = text.lower()
     for m in re.finditer(rf"\b{re.escape(word)}\b", lowered):
-        prefix = lowered[max(0, m.start() - 40):m.start()]
-        if re.search(_NEGATION_RE + r"$", prefix):
+        window = lowered[max(0, m.start() - 100):m.start()]
+        breaks = list(_CLAUSE_BREAK_RE.finditer(window))
+        clause = window[breaks[-1].end():] if breaks else window
+        if _NEGATION_CUE_RE.search(clause) or _DESIRE_AFTER_RE.search(lowered[m.end():]):
             continue
         return True
     return False

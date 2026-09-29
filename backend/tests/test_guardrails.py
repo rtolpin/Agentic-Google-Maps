@@ -141,6 +141,19 @@ class TestCheckIntelligence:
         intel = _intel(why_card="Not a quiet spot — buzzy and fun.")
         assert _codes(check_intelligence(intel, _venue(noise_level="loud"), VenueIntent())) == set()
 
+    @pytest.mark.parametrize("text", [
+        "It doesn't suit a quiet, upscale romantic dinner.",
+        "Great value, but falls short of the intimate, refined night you're after.",
+        "Better for a hangout than a romantic evening.",
+    ])
+    def test_negation_scoped_to_clause(self, text):
+        venue = _venue(noise_level="loud", price_per_head=18)
+        assert _codes(check_intelligence(_intel(why_card=text), venue, VenueIntent())) == set()
+
+    def test_negation_does_not_cross_clause_break(self):
+        intel = _intel(why_card="It isn't pricey, but it is an intimate hideaway.")
+        assert "tone_mismatch" in _codes(check_intelligence(intel, _venue(noise_level="loud"), VenueIntent()))
+
     def test_unknown_data_never_triggers_tone(self):
         intel = _intel(why_card="Could be romantic for date night.")
         assert _codes(check_intelligence(intel, _venue(noise_level="", price_per_head=0), VenueIntent())) == set()
