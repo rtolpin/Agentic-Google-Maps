@@ -409,3 +409,36 @@ def test_http_client_request_urls_not_logged_at_info():
     import logging
     from ..api import server  # noqa: F401  (import applies the logger config)
     assert not logging.getLogger("httpx").isEnabledFor(logging.INFO)
+
+
+@pytest.mark.asyncio
+async def test_synthesis_fallback_reason_is_logged(birthday_intent, mock_redis, caplog):
+    """Intermittent fallbacks must be diagnosable from logs: guard codes or error type."""
+    from ..agents.orchestrator import orchestrate
+    from ..guardrails.output_guard import Violation
+
+    ch = MagicMock()
+    ch.get_cached_scores.return_value = []
+    ch.score_venues.return_value = [_venue(venue_id="a"), _venue(venue_id="b")]
+    guard_err = OutputGuardrailError([Violation("tone_mismatch", "x")])
+    with (
+        patch("backend.agents.orchestrator._ch", ch),
+        patch("backend.agents.orchestrator._cache", mock_redis),
+        patch("backend.agents.orchestrator.parse_intent", AsyncMock(return_value=birthday_intent)),
+        patch("backend.agents.orchestrator.ScraperAgent") as scraper,
+        patch("backend.agents.orchestrator.ValidatorAgent") as validator,
+        patch("backend.agents.orchestrator.GlobalIntelligenceAgent") as global_agent,
+        patch("backend.agents.orchestrator._filter_by_location", AsyncMock(side_effect=lambda v, *a, **k: v)),
+        patch("backend.agents.orchestrator.synthesize_venue_intelligence",
+              AsyncMock(side_effect=[guard_err, TimeoutError()])),
+        patch("backend.agents.orchestrator.PublisherAgent"),
+    ):
+        scraper.return_value.run = AsyncMock(return_value=[])
+        validator.return_value.run = AsyncMock(return_value={})
+        global_agent.return_value.run = AsyncMock(return_value={})
+        with caplog.at_level("WARNING", logger="therightspot.orchestrator"):
+            [e async for e in orchestrate("birthday dinner", "u1")]
+
+    msgs = [r.getMessage() for r in caplog.records if "synthesis fallback" in r.getMessage()]
+    assert "venue=a reason=guardrail:tone_mismatch" in msgs[0]
+    assert "venue=b reason=error:TimeoutError" in msgs[1]

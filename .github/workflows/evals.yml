@@ -13,6 +13,12 @@ on:
       repeats:
         description: "Repeat each live case N times (measures variance)"
         default: "1"
+      suite:
+        description: "Run only this live suite (intent or synthesis); blank runs all"
+        default: ""
+      only:
+        description: "Run only live cases whose id contains this text; blank runs all"
+        default: ""
 
 jobs:
   offline:
@@ -59,6 +65,8 @@ jobs:
       - name: Live eval suites
         run: >
           python -m evals.run --live
+          ${{ inputs.suite && format('--suite {0}', inputs.suite) || '' }}
+          ${{ inputs.only && format('--only {0}', inputs.only) || '' }}
           ${{ inputs.judge && '--judge' || '' }}
           --repeats ${{ inputs.repeats }}
           --report eval-report-live.json --verbose

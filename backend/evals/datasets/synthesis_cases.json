@@ -133,6 +133,22 @@
         {"label": "good", "source": "live run 36633327765 — honest card previously blocked", "expect_codes": [], "output": {"why_card": "Maison Provence is a French restaurant in Williamsburg, Brooklyn that aligns with the romantic dinner intent — a moderate noise level is a reasonable fit, though it stops short of truly hushed. Pricing data is unavailable.", "scenario": "A French restaurant with a moderate noise level."}},
         {"label": "bad", "source": "venue itself described as romantic despite moderate noise", "expect_codes": ["tone_mismatch"], "output": {"why_card": "Maison Provence is a romantic French hideaway in Williamsburg with a romantic atmosphere.", "scenario": "A French restaurant."}}
       ]
+    },
+    {
+      "id": "prod_williamsburg_psaraki",
+      "source": "production search 'romantic dinner for two in Williamsburg' — intermittent fallback card; real venue record",
+      "intent": {"occasion": "romantic_dinner", "group_size": 2, "city": "New York City", "neighborhood": "Williamsburg", "noise_preference": "quiet", "price_band": "upscale", "other_signals": ["romantic", "intimate"]},
+      "venue": {"venue_id": "psarakinew_york_city", "name": "PSARAKI", "city": "New York City", "neighborhood": "", "cuisine": "", "address": "420 Kent Ave, Brooklyn, NY 11249, USA", "price_per_head": 0, "has_private_room": false, "max_group_size": 0, "noise_level": "moderate", "key_quotes": [], "match_score": 63.2},
+      "criteria": ["Is honest that price, cuisine and reviews are unknown", "Invents no cuisine, dishes, décor or atmosphere (the name alone is not evidence of cuisine)"],
+      "labelled_outputs": []
+    },
+    {
+      "id": "prod_williamsburg_le_crocodile",
+      "source": "production search 'romantic dinner for two in Williamsburg' — intermittent fallback card; real venue record",
+      "intent": {"occasion": "romantic_dinner", "group_size": 2, "city": "New York City", "neighborhood": "Williamsburg", "noise_preference": "quiet", "price_band": "upscale", "other_signals": ["romantic", "intimate"]},
+      "venue": {"venue_id": "le_crocodilenew_york_city", "name": "Le Crocodile", "city": "New York City", "neighborhood": "", "cuisine": "", "address": "80 Wythe Ave, Brooklyn, NY 11249, USA", "price_per_head": 0, "has_private_room": false, "max_group_size": 0, "noise_level": "moderate", "key_quotes": [], "match_score": 63.2},
+      "criteria": ["Is honest that price, cuisine and reviews are unknown", "Invents no cuisine, dishes, décor or atmosphere (the name alone is not evidence of cuisine)"],
+      "labelled_outputs": []
     }
   ]
 }
