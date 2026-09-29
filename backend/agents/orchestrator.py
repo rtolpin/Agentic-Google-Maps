@@ -464,10 +464,14 @@ async def orchestrate(
                 pass
 
         # Step 2 — warm cache check (non-blocking thread)
-        with db_span("therightspot.cache_check", "venue_signals", city=intent.city):
-            cached_venues = await asyncio.to_thread(
-                _ch.get_cached_scores, intent.city, intent.cuisine or ""
-            )
+        with db_span("therightspot.cache_check", "venue_signals", city=intent.city) as span:
+            try:
+                cached_venues = await asyncio.to_thread(
+                    _ch.get_cached_scores, intent.city, intent.cuisine or ""
+                )
+            except Exception:
+                span.set_tag("db.unavailable", True)
+                cached_venues = []
 
         # Step 3 — dispatch sub-agents in parallel
         yield {"event": "status", "data": "Searching across sources..."}
@@ -498,8 +502,11 @@ async def orchestrate(
 
         # Step 4 — persist signals (thread pool; non-critical path)
         with db_span("therightspot.upsert_venues", "venue_signals", city=intent.city,
-                     row_count=len(enriched_venues)):
-            await asyncio.to_thread(_ch.upsert_venue_signals, enriched_venues, intent.city, intent.cuisine or "")
+                     row_count=len(enriched_venues)) as span:
+            try:
+                await asyncio.to_thread(_ch.upsert_venue_signals, enriched_venues, intent.city, intent.cuisine or "")
+            except Exception:
+                span.set_tag("db.unavailable", True)
 
         # If the city geocode was rejected during validation, derive an anchor from the
         # fresh scrape results.  Uses median (not mean) so a single far-away outlier
@@ -518,7 +525,12 @@ async def orchestrate(
         # Step 5 — score venues
         yield {"event": "status", "data": "Ranking matches..."}
         with db_span("therightspot.score_venues", "venue_signals", city=intent.city) as span:
-            scored_venues: list[ScoredVenue] = await asyncio.to_thread(_ch.score_venues, intent)
+            # ClickHouse down → empty list, which triggers the in-memory fallback below.
+            try:
+                scored_venues: list[ScoredVenue] = await asyncio.to_thread(_ch.score_venues, intent)
+            except Exception:
+                span.set_tag("db.unavailable", True)
+                scored_venues = []
             span.set_tag("db.rows_returned", len(scored_venues))
 
         # Filter BEFORE fallback check — ClickHouse may hold stale entries with wrong
