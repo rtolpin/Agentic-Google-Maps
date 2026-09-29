@@ -150,6 +150,19 @@ class TestCheckIntelligence:
         venue = _venue(noise_level="loud", price_per_head=18)
         assert _codes(check_intelligence(_intel(why_card=text), venue, VenueIntent())) == set()
 
+    @pytest.mark.parametrize("text", [
+        "A French spot in Williamsburg that could suit a romantic dinner, though price is unknown.",
+        "If a calm, refined atmosphere matters, this venue is unlikely to deliver.",
+    ])
+    def test_occasion_and_conditional_mentions_allowed(self, text):
+        venue = _venue(noise_level="moderate", price_per_head=0)
+        assert _codes(check_intelligence(_intel(why_card=text), venue, VenueIntent())) == set()
+
+    def test_describing_venue_as_romantic_still_blocked(self):
+        intel = _intel(why_card="A romantic hideaway with a romantic atmosphere.")
+        venue = _venue(noise_level="moderate", price_per_head=0)
+        assert "tone_mismatch" in _codes(check_intelligence(intel, venue, VenueIntent()))
+
     def test_negation_does_not_cross_clause_break(self):
         intel = _intel(why_card="It isn't pricey, but it is an intimate hideaway.")
         assert "tone_mismatch" in _codes(check_intelligence(intel, _venue(noise_level="loud"), VenueIntent()))
@@ -389,3 +402,10 @@ class TestPublisherGuardrail:
             result = await PublisherAgent().publish_guide(birthday_intent, [_venue()])
         assert result.status == "guardrail_blocked" and not result.is_compliant
         senso.publish_content.assert_not_called()
+
+
+def test_http_client_request_urls_not_logged_at_info():
+    """Request URLs can carry API keys (Geocoding `?key=`), so httpx INFO logs must be off."""
+    import logging
+    from ..api import server  # noqa: F401  (import applies the logger config)
+    assert not logging.getLogger("httpx").isEnabledFor(logging.INFO)

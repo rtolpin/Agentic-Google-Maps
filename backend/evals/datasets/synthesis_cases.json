@@ -12,7 +12,8 @@
         {"label": "good", "source": "live run 36631418369 — honest caveat previously blocked", "expect_codes": [], "output": {"why_card": "Stack Shack Burgers is a casual, energetic burger spot in Williamsburg that doesn't align well with a quiet, upscale romantic dinner. At $18 per head and a consistently loud atmosphere, it's a great value pick for a casual hangout but falls short of the intimate, refined experience you're after.", "scenario": "Loud and busy on weekends, with smash burgers at around $18 a head."}},
         {"label": "good", "source": "live run 36631418369 — honest caveat previously blocked", "expect_codes": [], "output": {"why_card": "Stack Shack Burgers is a casual, energetic burger spot in Williamsburg that doesn't align well with a quiet, upscale romantic dinner. At $18 per head and a loud weekend atmosphere, it's better suited to a laid-back hangout than a special evening for two.", "scenario": "Loud and busy on weekends, with smash burgers at around $18 a head."}},
         {"label": "bad", "source": "negation must not leak across a clause break", "expect_codes": ["tone_mismatch"], "output": {"why_card": "Stack Shack isn't expensive, but it is an intimate, romantic hideaway.", "scenario": "Loud and busy on weekends."}},
-        {"label": "good", "source": "live run 36631922088 — honest caveat previously blocked", "expect_codes": [], "output": {"why_card": "Stack Shack Burgers is a loud, casual burger spot priced at around $18 per head — a significant mismatch with your request for a quiet, upscale romantic dinner.", "scenario": "Loud and busy on weekends.", "suggestions": ["Are there quiet spots over $80 a head nearby?", "Is it calmer on weekdays?", "Do they take reservations?", "What else is in Williamsburg?"]}}
+        {"label": "good", "source": "live run 36631922088 — honest caveat previously blocked", "expect_codes": [], "output": {"why_card": "Stack Shack Burgers is a loud, casual burger spot priced at around $18 per head — a significant mismatch with your request for a quiet, upscale romantic dinner.", "scenario": "Loud and busy on weekends.", "suggestions": ["Are there quiet spots over $80 a head nearby?", "Is it calmer on weekdays?", "Do they take reservations?", "What else is in Williamsburg?"]}},
+        {"label": "good", "source": "live run 36633327765 — honest card previously blocked", "expect_codes": [], "output": {"why_card": "Stack Shack Burgers is an affordable, energetic burger spot in Brooklyn — loud and priced at around $18 per head. If a calm, refined atmosphere is important for this occasion, this venue is unlikely to deliver.", "scenario": "Loud and busy on weekends."}}
       ]
     },
     {
@@ -120,6 +121,18 @@
       "venue": {"venue_id": "h4", "name": "Riverside Art Museum", "city": "Philadelphia", "cuisine": "", "address": "500 Kelly Dr, Philadelphia, PA 19130, USA", "price_per_head": 25, "noise_level": "quiet", "key_quotes": ["Beautiful impressionist galleries"], "match_score": 72.0},
       "criteria": ["Does not describe food, drinks or dining at the venue", "Invents no specific exhibits, artists, events or architecture beyond the key_quotes"],
       "labelled_outputs": []
+    },
+    {
+      "id": "prod_romantic_search_moderate_unknown_price",
+      "source": "production search 'romantic dinner for two in Williamsburg' — top 3 cards all fell back",
+      "intent": {"occasion": "romantic_dinner", "group_size": 2, "city": "New York City", "neighborhood": "Williamsburg", "noise_preference": "quiet", "price_band": "upscale", "other_signals": ["romantic"]},
+      "venue": {"venue_id": "p1", "name": "Maison Provence Restaurant", "city": "New York City", "neighborhood": "Williamsburg", "cuisine": "french", "address": "140 Grand St, Brooklyn, NY 11249, USA", "price_per_head": 0, "noise_level": "moderate", "key_quotes": [], "match_score": 65.0},
+      "criteria": ["Gives an honest fit assessment for a romantic dinner: notes the moderate noise and that price is unknown", "Invents no atmosphere, décor or dishes"],
+      "labelled_outputs": [
+        {"label": "good", "source": "live run 36633327765 — honest card previously blocked", "expect_codes": [], "output": {"why_card": "Maison Provence is a French restaurant in Williamsburg, Brooklyn that could suit a romantic dinner, but the data is thin — no pricing is confirmed, so it's unclear whether it meets the upscale bar you're looking for.", "scenario": "A French restaurant with a moderate noise level."}},
+        {"label": "good", "source": "live run 36633327765 — honest card previously blocked", "expect_codes": [], "output": {"why_card": "Maison Provence is a French restaurant in Williamsburg, Brooklyn that aligns with the romantic dinner intent — a moderate noise level is a reasonable fit, though it stops short of truly hushed. Pricing data is unavailable.", "scenario": "A French restaurant with a moderate noise level."}},
+        {"label": "bad", "source": "venue itself described as romantic despite moderate noise", "expect_codes": ["tone_mismatch"], "output": {"why_card": "Maison Provence is a romantic French hideaway in Williamsburg with a romantic atmosphere.", "scenario": "A French restaurant."}}
+      ]
     }
   ]
 }
