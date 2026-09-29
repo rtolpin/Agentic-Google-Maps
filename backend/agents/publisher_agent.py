@@ -14,9 +14,12 @@ eliminates hallucination, not just a publishing destination.
 """
 from __future__ import annotations
 
+import os
 from datetime import date
 
 import anthropic
+
+from guardrails.output_guard import blocking, check_guide
 
 from models.models import (
     GEOMetadata,
@@ -34,7 +37,7 @@ from integrations.senso_client import (
     identify_content_gaps,
 )
 
-_client = anthropic.AsyncAnthropic()
+_client = anthropic.AsyncAnthropic(timeout=float(os.environ.get("LLM_TIMEOUT_S", "30")), max_retries=2)
 
 _GUIDE_PROMPT = """\
 You are a venue intelligence writer for The Right Spot.
@@ -101,6 +104,22 @@ class PublisherAgent:
             return PublishedGuide(
                 slug=slug, url="", status="generation_failed",
                 governance_score=GovernanceScore(overall_score=0, hallucination_risk=1.0),
+                citations_registered=0, gaps_reported=0, is_compliant=False,
+            )
+
+        # ── Step 3b: Guardrail — never publish ungrounded content ────────────
+        # Guides are public and AI-indexed; a hallucinated quote or price is far
+        # costlier here than in the UI, so any blocking violation stops publish.
+        blocked = blocking(check_guide(guide_md, venues))
+        if blocked:
+            await self._senso.close()
+            return PublishedGuide(
+                slug=slug, url="", status="guardrail_blocked",
+                governance_score=GovernanceScore(
+                    overall_score=0, hallucination_risk=1.0,
+                    compliance_flags=[f"guardrail:{v.code}" for v in blocked],
+                    unverified_claims=[v.detail for v in blocked],
+                ),
                 citations_registered=0, gaps_reported=0, is_compliant=False,
             )
 

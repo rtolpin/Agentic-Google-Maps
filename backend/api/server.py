@@ -27,11 +27,14 @@ import uuid
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import ValidationError
 
 from agents.orchestrator import orchestrate
+from guardrails.input_guard import check_query
+from guardrails.rate_limit import client_key, search_limiter
 from db.clickhouse import ClickHouseClient
 from integrations.google_maps_client import GoogleMapsClient
 from models.models import (
@@ -45,6 +48,10 @@ from models.models import (
 
 _ch = ClickHouseClient()
 _log = logging.getLogger("therightspot.api")
+
+# Shown to users instead of raw exception text, which can leak provider
+# errors, hostnames, or query fragments.
+_GENERIC_ERROR = "Something went wrong while searching. Please try again."
 
 
 @asynccontextmanager
@@ -103,22 +110,41 @@ async def env_check() -> dict:
 
 # ─── Search (SSE) ─────────────────────────────────────────────────────────────
 
-@app.post("/api/search/stream")
-async def search_stream(req: SearchRequest) -> StreamingResponse:
+@app.post("/api/search/stream", response_model=None)
+async def search_stream(req: SearchRequest, request: Request) -> StreamingResponse | JSONResponse:
     """
     Server-Sent Events endpoint.
     Each event is a JSON object: {"event": "<type>", "data": <payload>}.
     The frontend consumes with a ReadableStream (not EventSource) so it can
     pass an Authorization header and read partial results as they arrive.
+
+    Guardrails: per-client rate limit (429), then input guard. A blocked query
+    still returns a normal SSE stream carrying an `error` event so the UI can
+    show the message inline.
     """
+    allowed, retry_after = search_limiter.check(client_key(request))
+    if not allowed:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Too many searches — please wait a moment and try again."},
+            headers={"Retry-After": str(int(retry_after) + 1)},
+        )
+
+    guard = check_query(req.query)
     user_id = req.user_id or str(uuid.uuid4())
 
     async def event_generator() -> AsyncIterator[str]:
+        if not guard.allowed:
+            _log.warning("search blocked by input guardrail: %s", guard.reason)
+            yield f"data: {json.dumps({'event': 'error', 'data': guard.user_message})}\n\n"
+            yield 'data: {"event": "end"}\n\n'
+            return
         try:
-            async for result in orchestrate(req.query, user_id, user_city=req.user_city, user_lat=req.user_lat, user_lng=req.user_lng, user_radius_m=req.user_radius_m):
+            async for result in orchestrate(guard.query, user_id, user_city=req.user_city, user_lat=req.user_lat, user_lng=req.user_lng, user_radius_m=req.user_radius_m):
                 yield f"data: {json.dumps(result, default=str)}\n\n"
-        except Exception as exc:
-            yield f"data: {json.dumps({'event': 'error', 'data': str(exc)})}\n\n"
+        except Exception:
+            _log.exception("search pipeline failed")
+            yield f"data: {json.dumps({'event': 'error', 'data': _GENERIC_ERROR})}\n\n"
         finally:
             yield 'data: {"event": "end"}\n\n'
 
@@ -138,9 +164,23 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str) -> None:
     try:
         while True:
             raw = await websocket.receive_text()
-            payload = json.loads(raw)
-            async for result in orchestrate(payload["query"], user_id):
-                await websocket.send_text(json.dumps(result, default=str))
+            try:
+                req = SearchRequest.model_validate_json(raw)
+            except ValidationError:
+                await websocket.send_text(json.dumps({"event": "error", "data": "Invalid request."}))
+                continue
+            allowed, _ = search_limiter.check(f"ws:{user_id}")
+            guard = check_query(req.query)
+            if not allowed or not guard.allowed:
+                msg = "Too many searches — please wait a moment." if not allowed else guard.user_message
+                await websocket.send_text(json.dumps({"event": "error", "data": msg}))
+                continue
+            try:
+                async for result in orchestrate(guard.query, user_id):
+                    await websocket.send_text(json.dumps(result, default=str))
+            except Exception:
+                _log.exception("websocket search failed")
+                await websocket.send_text(json.dumps({"event": "error", "data": _GENERIC_ERROR}))
     except WebSocketDisconnect:
         pass
 

@@ -384,6 +384,51 @@ The backend uses a `SpanRecorder` mock tracer — no live Datadog agent needed f
 
 ---
 
+## 🛡️ Evals & Guardrails
+
+### Guardrails (run on every request)
+
+| Layer | Where | What it does |
+|---|---|---|
+| **Rate limit** | `guardrails/rate_limit.py` | 20 searches/min per client (`SEARCH_RATE_LIMIT_PER_MIN`) → HTTP 429. In-process, so each serverless instance enforces its own window. |
+| **Request bounds** | `models/models.py` | Query 3–500 chars; lat/lng range-checked; `user_city` / `user_id` / feedback fields length-capped → HTTP 422. |
+| **Input guard** | `guardrails/input_guard.py` | Unicode-normalizes and strips zero-width/control chars; blocks prompt-injection & jailbreak patterns; redacts emails, phones, card numbers (Luhn-checked) and SSNs before anything reaches Claude, Redis, ClickHouse or Datadog. |
+| **Prompt hardening** | `agents/orchestrator.py` | User query wrapped in `<user_query>` tags; synthesis prompt marks scraped venue data as untrusted. |
+| **LLM call hygiene** | all agents | 30 s timeout (`LLM_TIMEOUT_S`), 2 retries; truncated (`max_tokens`) or refused responses are rejected before parsing. |
+| **Intent guard** | `output_guard.sanitize_intent` | Bounds every parsed intent field — an injected or bloated `city` is reset to `Unknown`. |
+| **Why-card guard** | `output_guard.check_intelligence` | Enforces the synthesis prompt's rules in code: tone vs noise/price, city leakage, invented `$` amounts or quotes, URLs, prompt leakage. A blocking violation swaps in the deterministic, data-grounded fallback card. Only *contradicted* claims are flagged — unknown data never is. |
+| **Quote grounding** | `output_guard.filter_grounded_quotes` | Drops extracted `key_quotes` that don't appear in the source review text. |
+| **Publish guard** | `agents/publisher_agent.py` | Guides with ungrounded quotes/prices, prompt leakage, or no ranked venues are never sent to Senso (`status="guardrail_blocked"`). |
+| **Error hygiene** | `api/server.py` | Clients get a generic error message; the exception is logged server-side. |
+
+Violations are tagged on Datadog spans (`guardrail.violations`, `guardrail.blocked`, `guardrail.intent_fixes`, `guardrail.quotes_dropped`).
+
+### Evals
+
+```bash
+cd backend
+python -m evals.run                    # offline suites — free, deterministic, run in CI
+python -m evals.run --live             # + intent & synthesis against real Claude (costs API credits)
+python -m evals.run --live --judge     # + LLM-as-judge scoring and judge calibration
+python -m evals.run --suite intent --live --repeats 3 --report report.json
+```
+
+| Suite | Mode | Measures | Threshold |
+|---|---|---|---|
+| `input_guard` | offline | Attack recall, false-positive rate on look-alike venue searches, PII redaction | 100% |
+| `output_guard` | offline | Guardrail precision/recall on hand-labelled good/bad why-cards | 100% |
+| `ranking` | offline | Romantic / upscale / casual re-rank regressions | 100% |
+| `intent` | live | Field accuracy on 24 golden queries (held out from the prompt's few-shots) + p50/p95 latency | 90% |
+| `synthesis` | live | Share of real why-cards passing the output guardrail | 85% |
+| `synthesis_judge` | live + judge | LLM judge: faithfulness, tone fit, helpfulness, scenario criteria | 80% |
+| `judge_calibration` | live + judge | Judge agreement with the hand labels — trust judge scores only when this passes | 90% |
+
+Datasets live in `backend/evals/datasets/`. When you fix a production bug in intent parsing, ranking or synthesis, add a case for it there first.
+
+**CI** (`.github/workflows/evals.yml`): offline suites and guardrail tests run on every PR and push to `main`. Live suites run only via *Actions → Evals & Guardrails → Run workflow* and need an `ANTHROPIC_API_KEY` repository secret.
+
+---
+
 ## 📊 Observability
 
 Every operation is traced end-to-end with Datadog APM:

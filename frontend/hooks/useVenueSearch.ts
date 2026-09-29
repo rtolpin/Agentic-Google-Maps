@@ -297,6 +297,10 @@ export function useVenueSearch(userId: string): UseVenueSearchReturn {
           signal: abortRef.current.signal,
         });
 
+        if (resp.status === 429) {
+          const body = await resp.json().catch(() => null);
+          throw new Error(body?.detail ?? "Too many searches — please wait a moment.");
+        }
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         if (!resp.body) throw new Error("No response body");
 

@@ -120,7 +120,9 @@ class TestSearchStream:
 
         error_events = [r for r in received if r.get("event") == "error"]
         assert len(error_events) == 1
-        assert "Scraper timeout" in error_events[0]["data"]
+        # Internal exception text is logged server-side, never streamed to the client
+        assert "Scraper timeout" not in error_events[0]["data"]
+        assert "try again" in error_events[0]["data"]
 
     @pytest.mark.asyncio
     async def test_user_id_auto_assigned_when_absent(self, mock_ch):
