@@ -120,6 +120,14 @@
       "venue": {"venue_id": "h4", "name": "Riverside Art Museum", "city": "Philadelphia", "cuisine": "", "address": "500 Kelly Dr, Philadelphia, PA 19130, USA", "price_per_head": 25, "noise_level": "quiet", "key_quotes": ["Beautiful impressionist galleries"], "match_score": 72.0},
       "criteria": ["Does not describe food, drinks or dining at the venue", "Invents no specific exhibits, artists, events or architecture beyond the key_quotes"],
       "labelled_outputs": []
+    },
+    {
+      "id": "prod_romantic_search_moderate_unknown_price",
+      "source": "production search 'romantic dinner for two in Williamsburg' — top 3 cards all fell back",
+      "intent": {"occasion": "romantic_dinner", "group_size": 2, "city": "New York City", "neighborhood": "Williamsburg", "noise_preference": "quiet", "price_band": "upscale", "other_signals": ["romantic"]},
+      "venue": {"venue_id": "p1", "name": "Maison Provence Restaurant", "city": "New York City", "neighborhood": "Williamsburg", "cuisine": "french", "address": "140 Grand St, Brooklyn, NY 11249, USA", "price_per_head": 0, "noise_level": "moderate", "key_quotes": [], "match_score": 65.0},
+      "criteria": ["Gives an honest fit assessment for a romantic dinner: notes the moderate noise and that price is unknown", "Invents no atmosphere, décor or dishes"],
+      "labelled_outputs": []
     }
   ]
 }
