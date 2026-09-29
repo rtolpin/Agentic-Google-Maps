@@ -286,6 +286,7 @@ async def suite_synthesis(repeats: int, use_judge: bool) -> list[SuiteResult]:
     guard_failures: list[dict[str, Any]] = []
     judge_pass = judged = 0
     judge_failures: list[dict[str, Any]] = []
+    split: dict[str, list[bool]] = {"tuned": [], "held_out": []}
     scores: dict[str, list[int]] = {"faithfulness": [], "tone_fit": [], "helpfulness": []}
     for (sc, rep), res in zip(jobs, results):
         if isinstance(res, Exception):
@@ -303,6 +304,7 @@ async def suite_synthesis(repeats: int, use_judge: bool) -> list[SuiteResult]:
             judged += 1
             for k in scores:
                 scores[k].append(getattr(verdict, k))
+            split["held_out" if sc.get("held_out") else "tuned"].append(verdict.overall_pass)
             if verdict.overall_pass:
                 judge_pass += 1
             else:
@@ -317,7 +319,8 @@ async def suite_synthesis(repeats: int, use_judge: bool) -> list[SuiteResult]:
         out.append(SuiteResult(
             "synthesis_judge", judge_pass / max(1, total), THRESHOLDS["synthesis_judge"], total,
             metrics={"judged": judged,
-                     **{f"mean_{k}": round(sum(v) / len(v), 2) for k, v in scores.items() if v}},
+                     **{f"mean_{k}": round(sum(v) / len(v), 2) for k, v in scores.items() if v},
+                     **{f"pass_rate_{k}": round(sum(v) / len(v), 3) for k, v in split.items() if v}},
             failures=judge_failures,
         ))
     return out
