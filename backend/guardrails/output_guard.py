@@ -56,7 +56,13 @@ _NEGATION_CUE_RE = re.compile(
     r"\b(?:not|never|no|nothing|none|isn't|isnt|aren't|wasn't|doesn't|doesnt|don't|won't|"
     r"hardly|lacks?|lacking|without|anything\s+but|far\s+from|falls?\s+short\s+of|"
     r"rather\s+than|instead\s+of|than|mismatch|request\s+for|you\s+asked\s+for|"
-    r"looking\s+for|searched\s+for|search\s+for)\b"
+    r"looking\s+for|searched\s+for|search\s+for|if|whether|unless)\b"
+)
+# "romantic dinner", "date night plans": the word names the user's occasion,
+# not the venue's character, so it isn't a tone claim about the venue.
+_OCCASION_AFTER_RE = re.compile(
+    r"^\s+(?:dinners?|evenings?|nights?|meals?|occasions?|dates?|intent|outings?|"
+    r"celebrations?|plans|request|search|getaway)\b"
 )
 # The searched city may be named only to place the venue outside it
 # ("in Trenton, NJ — outside New York City, where you searched").
@@ -95,10 +101,13 @@ def is_grounded(claim: str, sources: Iterable[str], threshold: float = 0.8) -> b
     return False
 
 
-def _uses_word(text: str, word: str, allowed_cue: re.Pattern[str] | None = None) -> bool:
+def _uses_word(
+    text: str, word: str, allowed_cue: re.Pattern[str] | None = None, occasion_ok: bool = False,
+) -> bool:
     """
     Case-insensitive whole-phrase match that ignores negated uses ("not quiet").
-    `allowed_cue` adds extra clause-level cues that also excuse a mention.
+    `allowed_cue` adds extra clause-level cues that also excuse a mention;
+    `occasion_ok` excuses uses that name the user's occasion ("a romantic dinner").
     """
     lowered = text.lower()
     for m in re.finditer(rf"\b{re.escape(word.lower())}\b", lowered):
@@ -108,6 +117,8 @@ def _uses_word(text: str, word: str, allowed_cue: re.Pattern[str] | None = None)
         if _NEGATION_CUE_RE.search(clause) or _DESIRE_AFTER_RE.search(lowered[m.end():]):
             continue
         if allowed_cue is not None and allowed_cue.search(clause):
+            continue
+        if occasion_ok and _OCCASION_AFTER_RE.search(lowered[m.end():]):
             continue
         return True
     return False
@@ -229,16 +240,16 @@ def check_intelligence(intel: Any, venue: Any, intent: Any, query: str = "") -> 
 
     # Tone calibration (mirrors _SYNTHESIS_PROMPT rules)
     if noise in ("loud", "very_loud"):
-        bad = [w for w in _LOUD_BANNED if _uses_word(narrative, w)]
+        bad = [w for w in _LOUD_BANNED if _uses_word(narrative, w, occasion_ok=True)]
         if bad:
             out.append(Violation("tone_mismatch", f"loud venue described as {bad}"))
     if 0 < price < 30:
-        bad = [w for w in _BUDGET_BANNED if _uses_word(narrative, w)]
+        bad = [w for w in _BUDGET_BANNED if _uses_word(narrative, w, occasion_ok=True)]
         if bad:
             out.append(Violation("tone_mismatch", f"${price}/head venue described as {bad}"))
     romantic_contradicted = noise in ("moderate", "loud", "very_loud") or 0 < price < 60
     if romantic_contradicted:
-        bad = [w for w in _ROMANTIC_WORDS if _uses_word(narrative, w)]
+        bad = [w for w in _ROMANTIC_WORDS if _uses_word(narrative, w, occasion_ok=True)]
         if bad and not any(v.code == "tone_mismatch" for v in out):
             out.append(Violation("tone_mismatch", f"romantic language for noise={noise or '?'} price=${price}"))
 

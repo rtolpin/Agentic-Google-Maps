@@ -48,6 +48,9 @@ from models.models import (
 
 _ch = ClickHouseClient()
 _log = logging.getLogger("therightspot.api")
+# httpx logs every request URL at INFO. Geocoding takes the Google Maps key as a
+# query parameter, so those lines put the API key in plain text in Vercel logs.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # Shown to users instead of raw exception text, which can leak provider
 # errors, hostnames, or query fragments.
