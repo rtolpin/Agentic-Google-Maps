@@ -644,7 +644,7 @@ async def orchestrate(
             *[synthesize_venue_intelligence(v, intent) for v in scored_venues[:10]],
             return_exceptions=True,
         )
-        fallbacks = 0
+        fallback_reasons: dict[str, int] = {}
         for venue, intel in zip(scored_venues[:10], intel_results):
             if isinstance(intel, VenueIntelligence):
                 venue.intelligence = intel
@@ -656,9 +656,9 @@ async def orchestrate(
                 else:
                     reason = f"error:{type(intel).__name__}"
                 _log.warning("synthesis fallback venue=%s reason=%s", venue.venue_id, reason)
-                fallbacks += 1
+                fallback_reasons[reason] = fallback_reasons.get(reason, 0) + 1
                 venue.intelligence = _fallback_intelligence(venue, intent)
-        root.set_tag("search.synthesis_fallbacks", fallbacks)
+        root.set_tag("search.synthesis_fallbacks", sum(fallback_reasons.values()))
         # Venues beyond top 10 always get a fallback card so descriptions are never blank
         for venue in scored_venues[10:]:
             venue.intelligence = _fallback_intelligence(venue, intent)
@@ -682,7 +682,12 @@ async def orchestrate(
 
         asyncio.create_task(_publish_quietly())
 
-        yield {"event": "done", "data": {"total_venues": len(scored_venues)}}
+        # Fallback reasons ride along on `done` because serverless log capture drops
+        # lines under load. Only codes and error class names — no messages or data.
+        yield {"event": "done", "data": {
+            "total_venues": len(scored_venues),
+            "synthesis_fallbacks": fallback_reasons,
+        }}
 
 
 def _apply_occasion_rerank(venues: list[ScoredVenue], intent: VenueIntent) -> list[ScoredVenue]:

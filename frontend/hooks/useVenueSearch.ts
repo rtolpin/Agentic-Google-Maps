@@ -135,7 +135,7 @@ export type SSEEvent =
   | { event: "validation";  data: ValidationResult }
   | { event: "global_intel"; data: Record<string, CityBenchmark> }
   | { event: "results";     data: VenueSignal[] }
-  | { event: "done";        data: { total_venues: number } }
+  | { event: "done";        data: { total_venues: number; synthesis_fallbacks?: Record<string, number> } }
   | { event: "error";       data: string }
   | { event: "end";         data: null };
 
