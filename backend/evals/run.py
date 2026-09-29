@@ -211,11 +211,16 @@ async def _bounded(coros: list[Callable[[], Awaitable[Any]]], limit: int = 4) ->
     return await asyncio.gather(*[_one(c) for c in coros])
 
 
-async def suite_intent(repeats: int) -> SuiteResult:
+def _only(items: list[dict[str, Any]], only: str | None) -> list[dict[str, Any]]:
+    """Filter cases/scenarios by id substring (for cheap targeted live runs)."""
+    return [i for i in items if not only or only in i["id"]]
+
+
+async def suite_intent(repeats: int, only: str | None = None) -> SuiteResult:
     import agents.orchestrator as orch
 
     orch._cache = _NoCache()
-    cases = _load("intent_cases.json")["cases"]
+    cases = _only(_load("intent_cases.json")["cases"], only)
     latencies: list[float] = []
 
     def _make(case: dict[str, Any]) -> Callable[[], Awaitable[Any]]:
@@ -257,7 +262,7 @@ async def suite_intent(repeats: int) -> SuiteResult:
     )
 
 
-async def suite_synthesis(repeats: int, use_judge: bool) -> list[SuiteResult]:
+async def suite_synthesis(repeats: int, use_judge: bool, only: str | None = None) -> list[SuiteResult]:
     from agents.orchestrator import generate_venue_intelligence
 
     judge = None
@@ -265,7 +270,7 @@ async def suite_synthesis(repeats: int, use_judge: bool) -> list[SuiteResult]:
         from evals.judge import Judge
         judge = Judge()
 
-    scenarios = _load("synthesis_cases.json")["scenarios"]
+    scenarios = _only(_load("synthesis_cases.json")["scenarios"], only)
     jobs = [(sc, r) for r in range(repeats) for sc in scenarios]
 
     def _make(sc: dict[str, Any]) -> Callable[[], Awaitable[Any]]:
@@ -381,9 +386,9 @@ async def _run(args: argparse.Namespace) -> list[SuiteResult]:
         if name in wanted:
             results.append(offline[name]())
     if "intent" in wanted:
-        results.append(await suite_intent(args.repeats))
+        results.append(await suite_intent(args.repeats, args.only))
     if "synthesis" in wanted:
-        results.extend(await suite_synthesis(args.repeats, args.judge))
+        results.extend(await suite_synthesis(args.repeats, args.judge, args.only))
     if "judge_calibration" in wanted:
         results.append(await suite_judge_calibration())
     return results
@@ -412,6 +417,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--live", action="store_true", help="enable suites that call the Anthropic API")
     parser.add_argument("--judge", action="store_true", help="add LLM-as-judge scoring (implies extra API cost)")
     parser.add_argument("--repeats", type=int, default=1, help="repeat live cases N times to measure variance")
+    parser.add_argument("--only", help="live suites: run only cases whose id contains this text")
     parser.add_argument("--report", type=Path, help="write a JSON report to this path")
     parser.add_argument("--verbose", action="store_true", help="show every failure")
     args = parser.parse_args(argv)

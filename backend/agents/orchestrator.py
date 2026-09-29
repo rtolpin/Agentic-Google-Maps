@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import math
 import re
 from typing import AsyncIterator
@@ -43,6 +44,7 @@ _LLM_TIMEOUT_S = float(os.environ.get("LLM_TIMEOUT_S", "30"))
 _client = anthropic.AsyncAnthropic(timeout=_LLM_TIMEOUT_S, max_retries=2)
 _ch = ClickHouseClient()
 _cache = RedisCache()
+_log = logging.getLogger("therightspot.orchestrator")
 
 # Limit simultaneous synthesis calls so we don't hammer the API rate limit
 _SYNTHESIS_SEM = asyncio.Semaphore(3)
@@ -642,11 +644,21 @@ async def orchestrate(
             *[synthesize_venue_intelligence(v, intent) for v in scored_venues[:10]],
             return_exceptions=True,
         )
+        fallbacks = 0
         for venue, intel in zip(scored_venues[:10], intel_results):
             if isinstance(intel, VenueIntelligence):
                 venue.intelligence = intel
             else:
+                # Record why, so intermittent fallbacks can be diagnosed from logs:
+                # a guardrail block names its violation codes, anything else its error type.
+                if isinstance(intel, OutputGuardrailError):
+                    reason = "guardrail:" + ",".join(sorted({v.code for v in intel.violations}))
+                else:
+                    reason = f"error:{type(intel).__name__}"
+                _log.warning("synthesis fallback venue=%s reason=%s", venue.venue_id, reason)
+                fallbacks += 1
                 venue.intelligence = _fallback_intelligence(venue, intent)
+        root.set_tag("search.synthesis_fallbacks", fallbacks)
         # Venues beyond top 10 always get a fallback card so descriptions are never blank
         for venue in scored_venues[10:]:
             venue.intelligence = _fallback_intelligence(venue, intent)
