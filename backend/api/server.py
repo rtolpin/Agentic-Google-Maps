@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -43,12 +44,22 @@ from models.models import (
 )
 
 _ch = ClickHouseClient()
+_log = logging.getLogger("therightspot.api")
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """Initialize schema on startup; clean up on shutdown."""
-    await asyncio.to_thread(_ch.initialize_schema)
+    """Initialize schema on startup; clean up on shutdown.
+
+    ClickHouse is a cache/ranking store, not a hard dependency: if it is
+    unreachable the app must still start (search falls back to in-memory
+    scoring). Letting this raise kills every request — including CORS
+    preflights, which then surface in the browser as CORS errors.
+    """
+    try:
+        await asyncio.to_thread(_ch.initialize_schema)
+    except Exception:
+        _log.exception("ClickHouse schema init failed — continuing without ClickHouse")
     yield
 
 
