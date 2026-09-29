@@ -49,13 +49,18 @@ _WORD_RE = re.compile(r"[a-z0-9']+")
 _URL_RE = re.compile(r"(https?://|www\.)\S+", re.IGNORECASE)
 _PRICE_RE = re.compile(r"\$\s?(\d{1,4})(?:\.\d{2})?")
 # A tone word is "negated" when a negation cue appears earlier in the same clause
-# ("doesn't suit a quiet, romantic dinner", "falls short of the intimate…") or when
-# it describes what the user wants ("…the refined experience you're after").
+# ("doesn't suit a quiet, romantic dinner", "falls short of the intimate…",
+# "a mismatch with your request for a quiet…") or when it describes what the user
+# wants ("…the refined experience you're after").
 _NEGATION_CUE_RE = re.compile(
-    r"\b(?:not|never|no|isn't|isnt|aren't|wasn't|doesn't|doesnt|don't|won't|hardly|"
-    r"lacks?|lacking|without|anything\s+but|far\s+from|falls?\s+short\s+of|"
-    r"rather\s+than|instead\s+of|than)\b"
+    r"\b(?:not|never|no|nothing|none|isn't|isnt|aren't|wasn't|doesn't|doesnt|don't|won't|"
+    r"hardly|lacks?|lacking|without|anything\s+but|far\s+from|falls?\s+short\s+of|"
+    r"rather\s+than|instead\s+of|than|mismatch|request\s+for|you\s+asked\s+for|"
+    r"looking\s+for|searched\s+for|search\s+for)\b"
 )
+# The searched city may be named only to place the venue outside it
+# ("in Trenton, NJ — outside New York City, where you searched").
+_OUTSIDE_CUE_RE = re.compile(r"\b(?:outside|beyond|away\s+from|not\s+in|from|than)\b")
 _CLAUSE_BREAK_RE = re.compile(r"[.;:!?\u2014]|\b(?:but|however|yet|while|although)\b")
 _DESIRE_AFTER_RE = re.compile(
     r"^[^.;:!?\u2014]{0,40}?\b(?:you'?re\s+(?:after|looking\s+for|hoping\s+for)|"
@@ -90,14 +95,19 @@ def is_grounded(claim: str, sources: Iterable[str], threshold: float = 0.8) -> b
     return False
 
 
-def _uses_word(text: str, word: str) -> bool:
-    """Case-insensitive whole-phrase match that ignores negated uses ("not quiet")."""
+def _uses_word(text: str, word: str, allowed_cue: re.Pattern[str] | None = None) -> bool:
+    """
+    Case-insensitive whole-phrase match that ignores negated uses ("not quiet").
+    `allowed_cue` adds extra clause-level cues that also excuse a mention.
+    """
     lowered = text.lower()
-    for m in re.finditer(rf"\b{re.escape(word)}\b", lowered):
+    for m in re.finditer(rf"\b{re.escape(word.lower())}\b", lowered):
         window = lowered[max(0, m.start() - 100):m.start()]
         breaks = list(_CLAUSE_BREAK_RE.finditer(window))
         clause = window[breaks[-1].end():] if breaks else window
         if _NEGATION_CUE_RE.search(clause) or _DESIRE_AFTER_RE.search(lowered[m.end():]):
+            continue
+        if allowed_cue is not None and allowed_cue.search(clause):
             continue
         return True
     return False
@@ -236,11 +246,12 @@ def check_intelligence(intel: Any, venue: Any, intent: Any, query: str = "") -> 
     city = (intent.city or "").strip()
     address = venue.address or ""
     if city and city != "Unknown" and address and not _city_in_address(city, address):
-        if re.search(rf"\b{re.escape(city)}\b", narrative, re.IGNORECASE):
+        if _uses_word(narrative, city, allowed_cue=_OUTSIDE_CUE_RE):
             out.append(Violation("location_ungrounded", f"mentions '{city}' but venue address is '{address}'"))
 
-    # Price grounding: every $ amount must match venue price, a quote, or the query
-    for m in _PRICE_RE.finditer(all_text):
+    # Price grounding: every $ amount in a factual field must match venue price, a
+    # quote, or the query. Suggestions are questions ("anything under $50?"), not claims.
+    for m in _PRICE_RE.finditer(f"{narrative}\n{intel.live_signal or ''}"):
         amt = int(m.group(1))
         if not _price_grounded(amt, price, [*quotes, query]):
             out.append(Violation("price_ungrounded", f"${amt} not supported by venue data"))

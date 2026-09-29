@@ -172,10 +172,11 @@ claim must come from the venue fields you are given: name, address, cuisine,
 price_per_head, noise_level, has_private_room, max_group_size, and key_quotes.
 Plausible-sounding detail is still invented detail. Do not describe service style
 (counter, table service, trays), décor, lighting, seating, table spacing, staff,
-crowds, amenities (wifi, outlets, parking), history, exhibits, or dishes unless a
-field states it. A true boolean field is a fact; false or 0 means "not available"
-or "unknown" — never imply the opposite. When the data is thin, say so in a few
-words and suggest what to check, rather than filling the gap. Attribute review
+crowds, amenities (wifi, outlets, parking), history, exhibits, neighbourhood names,
+or dishes unless a field states it. A true boolean field is a fact. False, 0 or
+empty means UNKNOWN, not absent — never state that something is missing (e.g. "no
+private room"). When the data is thin, say so in a few words and suggest what to
+check, rather than filling the gap. Attribute review
 content to reviewers ("reviewers mention…") instead of stating it as your own fact.
 
 Output ONLY valid JSON with exactly these keys:
@@ -211,9 +212,10 @@ cuisine and key_quotes. No invented sensory details, and no food or drink for ve
 that are not places to eat (museums, parks, shops, offices). Do NOT simulate an evening
 that doesn't match what this type of venue actually is.
 
-FIT CAVEATS: If the venue misses part of the intent — e.g. needs_private_room is true
-but has_private_room is false, or the noise or price contradicts what was asked — say
-so plainly in why_card.
+FIT CAVEATS: If the venue may miss part of the intent, say so plainly in why_card —
+e.g. the noise or price contradicts what was asked, or the user needs a private room
+and has_private_room is not true (say a private room "isn't confirmed"). Only raise
+private rooms when needs_private_room is true.
 
 LOCATION GROUNDING (critical): The venue's `address` field is the authoritative source
 for its actual city and neighbourhood. Use the city/area from `address` when writing
@@ -221,9 +223,9 @@ why_card and scenario — do NOT copy the intent's `city` field anywhere in your
 The intent city is a search-area default that frequently does not match the venue's real
 location (e.g. the intent may say "New York City" but the venue address says Trenton, NJ).
 Never mention "New York City" or any city from the intent unless it also appears in the
-venue's address field. If the address is in a different town from the intent's city,
-name the venue's real town and say it is outside the area searched — do not estimate a
-distance or travel time.
+venue's address field — with one exception: if the address is in a different town,
+name the venue's real town and you may say it is outside the searched city (e.g.
+"in Evanston, IL — outside Chicago"). Do not estimate a distance or travel time.
 
 CONTENT GROUNDING: Never invent or assert specific menu items, dishes, or prices
 that do not appear in the venue's key_quotes or the user's search query.

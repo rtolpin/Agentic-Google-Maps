@@ -163,6 +163,15 @@ class TestCheckIntelligence:
         venue = _venue(address="45 Hamilton Ave, Trenton, NJ 08611, USA")
         assert "location_ungrounded" in _codes(check_intelligence(intel, venue, VenueIntent(city="New York City")))
 
+    def test_searched_city_allowed_when_placing_venue_outside_it(self):
+        intel = _intel(why_card="It's in Trenton, NJ — outside New York City, where you searched.")
+        venue = _venue(address="45 Hamilton Ave, Trenton, NJ 08611, USA")
+        assert _codes(check_intelligence(intel, venue, VenueIntent(city="New York City"))) == set()
+
+    def test_prices_in_suggestions_are_not_claims(self):
+        intel = _intel(suggestions=["Anything under $15 nearby?", "b?", "c?", "d?"])
+        assert _codes(check_intelligence(intel, _venue(price_per_head=40), VenueIntent())) == set()
+
     def test_city_matches_address_variant(self):
         intel = _intel(why_card="A New York City favourite.")
         assert _codes(check_intelligence(intel, _venue(), VenueIntent(city="New York City"))) == set()
