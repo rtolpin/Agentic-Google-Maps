@@ -370,9 +370,9 @@ class UserPreferences(BaseModel):
 
 
 class FeedbackSignal(BaseModel):
-    user_id: str
-    venue_id: str
-    query: str
+    user_id: str = Field(..., min_length=1, max_length=128)
+    venue_id: str = Field(..., min_length=1, max_length=256)
+    query: str = Field(..., max_length=500)
     feedback: int = Field(..., ge=-1, le=1)
 
     @field_validator("feedback")
@@ -387,11 +387,11 @@ class FeedbackSignal(BaseModel):
 
 class SearchRequest(BaseModel):
     query: str = Field(..., min_length=3, max_length=500)
-    user_id: Optional[str] = None
-    user_city: Optional[str] = None  # browser-detected city; used as fallback when LLM can't extract one
-    user_lat: Optional[float] = None  # GPS latitude — biases Google Places search to exact user position
-    user_lng: Optional[float] = None  # GPS longitude
-    user_radius_m: Optional[float] = None  # search radius in metres (derived from map viewport for Search This Area)
+    user_id: Optional[str] = Field(default=None, max_length=128)
+    user_city: Optional[str] = Field(default=None, max_length=120)  # browser-detected city; used as fallback when LLM can't extract one
+    user_lat: Optional[float] = Field(default=None, ge=-90, le=90)  # GPS latitude — biases Google Places search to exact user position
+    user_lng: Optional[float] = Field(default=None, ge=-180, le=180)  # GPS longitude
+    user_radius_m: Optional[float] = Field(default=None, gt=0, le=20_000_000)  # search radius in metres (derived from map viewport for Search This Area)
 
 
 class CityBenchmark(BaseModel):

@@ -15,11 +15,13 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import os
 import re
 from typing import Any
 
 import anthropic
 
+from guardrails.output_guard import filter_grounded_quotes
 from tracing import ai_span
 from integrations.google_maps_client import GoogleMapsClient
 from integrations.nimble_client import NimbleClient
@@ -30,7 +32,7 @@ from models.models import (
     VenueIntent,
 )
 
-_client = anthropic.AsyncAnthropic()
+_client = anthropic.AsyncAnthropic(timeout=float(os.environ.get("LLM_TIMEOUT_S", "30")), max_retries=2)
 _CLAUDE_SEM = asyncio.Semaphore(5)
 
 _SIGNAL_EXTRACTOR_PROMPT = """\
@@ -91,9 +93,16 @@ async def _call_with_retry(
                 span.set_tag("tokens.input", response.usage.input_tokens)
                 span.set_tag("tokens.output", response.usage.output_tokens)
                 span.set_tag("attempts", attempt + 1)
-                return ExtractedSignals.model_validate(
+                signals = ExtractedSignals.model_validate(
                     json.loads(response.content[0].text)
                 )
+                # Guardrail: drop quotes the model paraphrased or invented —
+                # they are shown in the UI and cited in published guides.
+                grounded = filter_grounded_quotes(signals.key_quotes, raw.snippet)
+                if len(grounded) != len(signals.key_quotes):
+                    span.set_tag("guardrail.quotes_dropped", len(signals.key_quotes) - len(grounded))
+                    signals = signals.model_copy(update={"key_quotes": grounded})
+                return signals
             except anthropic.RateLimitError:
                 span.set_tag("rate_limited", True)
                 if attempt < max_attempts - 1:

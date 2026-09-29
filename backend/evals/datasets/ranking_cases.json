@@ -1,0 +1,60 @@
+{
+  "description": "Deterministic re-rank regression cases for _apply_occasion_rerank. Constraints: 'top' (name must be rank 1), 'above' ([a, b] means a ranks above b), 'not_in_top' ({name, k}).",
+  "cases": [
+    {
+      "id": "romantic_demotes_loud_cheap_burger",
+      "intent": {"occasion": "romantic_dinner", "group_size": 2, "city": "New York City", "other_signals": ["romantic"]},
+      "venues": [
+        {"name": "Stack Shack Burgers", "cuisine": "burgers", "price_per_head": 15, "noise_level": "loud", "match_score": 85},
+        {"name": "Trattoria Uno", "cuisine": "italian", "price_per_head": 45, "noise_level": "moderate", "match_score": 80},
+        {"name": "Maison Lumiere", "cuisine": "french", "price_per_head": 90, "noise_level": "quiet", "match_score": 70}
+      ],
+      "constraints": {"top": "Maison Lumiere", "not_in_top": {"name": "Stack Shack Burgers", "k": 2}}
+    },
+    {
+      "id": "fancy_signal_demotes_pizza",
+      "intent": {"occasion": "dining", "group_size": 2, "city": "Chicago", "other_signals": ["fancy"]},
+      "venues": [
+        {"name": "Slice Joint", "cuisine": "pizza", "price_per_head": 20, "noise_level": "moderate", "match_score": 90},
+        {"name": "Prime Steakhouse", "cuisine": "steakhouse", "price_per_head": 85, "noise_level": "moderate", "match_score": 75}
+      ],
+      "constraints": {"above": ["Prime Steakhouse", "Slice Joint"]}
+    },
+    {
+      "id": "casual_search_not_penalised",
+      "intent": {"occasion": "dining", "group_size": 2, "city": "Chicago"},
+      "venues": [
+        {"name": "Slice Joint", "cuisine": "pizza", "price_per_head": 20, "noise_level": "moderate", "match_score": 90},
+        {"name": "Prime Steakhouse", "cuisine": "steakhouse", "price_per_head": 85, "noise_level": "moderate", "match_score": 75}
+      ],
+      "constraints": {"top": "Slice Joint"}
+    },
+    {
+      "id": "celebration_allows_lively",
+      "intent": {"occasion": "celebration", "group_size": 6, "city": "Miami"},
+      "venues": [
+        {"name": "Club Tropicana", "cuisine": "latin", "price_per_head": 90, "noise_level": "loud", "match_score": 80},
+        {"name": "Hushed Room", "cuisine": "french", "price_per_head": 90, "noise_level": "quiet", "match_score": 78}
+      ],
+      "constraints": {"top": "Club Tropicana"}
+    },
+    {
+      "id": "luxury_price_band_demotes_counter",
+      "intent": {"occasion": "dining", "group_size": 2, "city": "Los Angeles", "cuisine": "sushi", "price_band": "luxury"},
+      "venues": [
+        {"name": "Sushi Counter Express", "cuisine": "sushi", "price_per_head": 25, "noise_level": "moderate", "match_score": 88},
+        {"name": "Omakase Hayashi", "cuisine": "sushi", "price_per_head": 150, "noise_level": "quiet", "match_score": 80}
+      ],
+      "constraints": {"top": "Omakase Hayashi"}
+    },
+    {
+      "id": "unknown_price_not_penalised",
+      "intent": {"occasion": "romantic_dinner", "group_size": 2, "city": "Denver", "other_signals": ["romantic"]},
+      "venues": [
+        {"name": "Mystery Bistro", "cuisine": "", "price_per_head": 0, "noise_level": "quiet", "match_score": 70},
+        {"name": "Budget Bites", "cuisine": "american", "price_per_head": 18, "noise_level": "quiet", "match_score": 72}
+      ],
+      "constraints": {"above": ["Mystery Bistro", "Budget Bites"]}
+    }
+  ]
+}

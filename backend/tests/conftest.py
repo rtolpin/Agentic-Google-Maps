@@ -206,6 +206,14 @@ def reset_asyncio_semaphores():
     yield
 
 
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    """The search rate limiter is process-global; clear it so tests don't throttle each other."""
+    import backend.api.server as _server
+    _server.search_limiter.reset()
+    yield
+
+
 # ─── httpx mock ───────────────────────────────────────────────────────────────
 
 @pytest.fixture
